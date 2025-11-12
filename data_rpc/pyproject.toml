@@ -1,0 +1,12 @@
+[project]
+name = "data_rpc"
+version = "0.1.0"
+description = "Data RPC"
+authors = [
+    { name = "ValueSingularity", email = "1791504346@qq.com" }
+]
+dependencies = [
+    "fastapi",
+    "tushare>=1.4.24",
+    "uvicorn",
+]
