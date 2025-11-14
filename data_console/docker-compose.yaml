@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  vs-data-mysql:
+    image: mysql:8.0
+    container_name: vs-data-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=123456
+      - MY_DATABASE=vs-data-db
+    volumes:
+      - ./resource/database/mysql:/var/lib/mysql
+      - ./backend/resource/database:/docker-entrypoint-initdb.d
+    expose:
+      - "3306"
+    
