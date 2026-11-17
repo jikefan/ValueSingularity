@@ -1,0 +1,30 @@
+/* Design tokens — 暗色金融终端风格。改这里，不要散落魔法色值。 */
+:root {
+  --ink: #050b11;
+  --ink-2: #071019;
+  --panel: #0c1620;
+  --panel-2: #10202e;
+  --line: #1e2f40;
+  --line-soft: rgba(126, 149, 170, 0.16);
+  --muted: #6e869c;
+  --soft: #9fb4c8;
+  --text: #dbe7f2;
+  --white: #f4f9ff;
+  --accent: #73f0c3;
+  --electric: #59c6ff;
+  --amber: #f6c760;
+  --rose: #ff6b8a;
+  --violet: #b79cff;
+  --green: #4ade80;
+  --red: #f87171;
+
+  --radius-lg: 22px;
+  --radius: 16px;
+  --radius-sm: 10px;
+
+  /* 全部使用本机字体栈，不引外部 CDN */
+  --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --sans: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+
+  color-scheme: dark;
+}
