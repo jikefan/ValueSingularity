@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { EChartsOption } from 'echarts'
+import { CHART_COLORS } from '../../lib/chartTheme'
 import { Chart } from '../../lib/charts'
 import { api } from '../../lib/api'
 import { chgClass, fmtDateTime, fmtMoney, fmtNum, fmtPct } from '../../lib/format'
@@ -59,13 +60,13 @@ export function MarketPage() {
       },
       xAxis: {
         type: 'value',
-        axisLabel: { color: '#6e869c', formatter: '{value} 亿' },
-        splitLine: { lineStyle: { color: 'rgba(126,149,170,0.12)' } },
+        axisLabel: { color: CHART_COLORS.muted, formatter: '{value} 亿' },
+        splitLine: { lineStyle: { color: CHART_COLORS.grid } },
       },
       yAxis: {
         type: 'category',
         data: flows.map((flow) => flow.name),
-        axisLabel: { color: '#9fb4c8' },
+        axisLabel: { color: CHART_COLORS.text },
         axisLine: { show: false },
         axisTick: { show: false },
       },
@@ -75,7 +76,10 @@ export function MarketPage() {
           barWidth: 14,
           data: flows.map((flow) => ({
             value: Number((flow.net_inflow / 1e8).toFixed(2)),
-            itemStyle: { color: flow.net_inflow >= 0 ? '#73f0c3' : '#ff6b8a', borderRadius: 6 },
+            itemStyle: {
+              color: flow.net_inflow >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative,
+              borderRadius: 6,
+            },
           })),
         },
       ],

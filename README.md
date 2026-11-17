@@ -31,6 +31,10 @@ make api         # http://127.0.0.1:8000/docs
 make web         # http://127.0.0.1:5173
 ```
 
+## 约定
+
+命名、分层红线、契约、错误三态、提交信息等规则见 [docs/conventions.md](docs/conventions.md)。
+
 ## 校验
 
 ```bash

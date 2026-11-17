@@ -21,7 +21,7 @@ async function get<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const body: unknown = await response.json()
       if (body && typeof body === 'object' && 'detail' in body) {
-        detail = String((body as { detail: unknown }).detail)
+        detail = String(body.detail)
       }
     } catch {
       // keep statusText

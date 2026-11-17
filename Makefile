@@ -1,4 +1,4 @@
-.PHONY: install dev api web test lint format build
+.PHONY: install dev api web test lint check format build
 
 install:
 	cd apps/api && uv sync
@@ -20,6 +20,8 @@ test:
 lint:
 	cd apps/api && uv run ruff check . && uv run mypy app
 	cd apps/web && pnpm lint && pnpm typecheck
+
+check: lint test
 
 format:
 	cd apps/api && uv run ruff format .
