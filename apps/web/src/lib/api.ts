@@ -1,14 +1,20 @@
 import createClient from 'openapi-fetch'
 import type {
+  AiPreferences,
+  AiPreferencesUpdate,
   AlertDeliveryItem,
   AlertScanSummary,
   DecisionLedgerReport,
+  DevilsAdvocateRequest,
+  DevilsAdvocateResponse,
   Health,
   JournalAction,
   JournalCreate,
   JournalEntryItem,
   LoginRequest,
   MarketOverview,
+  MdaDiffRequest,
+  MdaDiffResponse,
   NotificationPreferences,
   NotificationPreferencesUpdate,
   RegisterRequest,
@@ -51,6 +57,10 @@ export function getAccessToken(): string | null {
   return accessToken
 }
 
+export function getAuthEpoch(): number {
+  return authEpoch
+}
+
 export function setAccessToken(token: string | null): void {
   authEpoch += 1
   accessToken = token
@@ -65,6 +75,7 @@ export function subscribeAuthExpired(listener: () => void): () => void {
 }
 
 function notifyAuthExpired(): void {
+  authEpoch += 1
   for (const listener of authExpiredListeners) {
     listener()
   }
@@ -392,4 +403,16 @@ export const api = {
         signal,
       }),
     ),
+
+  runDevilsAdvocate: async (body: DevilsAdvocateRequest): Promise<DevilsAdvocateResponse> =>
+    unwrap(await client.POST('/api/ai/devils-advocate', { body })),
+
+  runMdaDiff: async (body: MdaDiffRequest): Promise<MdaDiffResponse> =>
+    unwrap(await client.POST('/api/ai/mda-diff', { body })),
+
+  getAiPreferences: async (signal?: AbortSignal): Promise<AiPreferences> =>
+    unwrap(await client.GET('/api/ai/preferences', { signal })),
+
+  updateAiPreferences: async (body: AiPreferencesUpdate): Promise<AiPreferences> =>
+    unwrap(await client.PUT('/api/ai/preferences', { body })),
 }

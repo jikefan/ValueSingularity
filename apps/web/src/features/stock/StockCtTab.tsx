@@ -3,6 +3,7 @@ import { Card } from '../../components/ui/Card'
 import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import type { CtCheckItem, StockSnapshotPayload } from '../../types/api'
+import { StockMdaDiffPanel } from './StockMdaDiffPanel'
 import { formatEvidenceMetric, getEvidenceMetricLabel, SIGNAL_META } from './stockHelpers'
 
 function collectEvidenceKeys(check: CtCheckItem): string[] {
@@ -36,7 +37,7 @@ export function StockCtTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
       <Card
         title="风险排雷 · 财务 CT 机"
         extra={
-          <span className="row" style={{ gap: 8 }}>
+          <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             <Tag color={overallMeta.color}>总评：{overallMeta.label}</Tag>
             <Tag color="rose">{ct.red_count} 红灯</Tag>
             <Tag color="amber">{ct.yellow_count} 黄灯</Tag>
@@ -121,6 +122,8 @@ export function StockCtTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
           })}
         </div>
       )}
+
+      <StockMdaDiffPanel code={snapshot.code} stockName={snapshot.name} snapshotAvailable />
     </div>
   )
 }

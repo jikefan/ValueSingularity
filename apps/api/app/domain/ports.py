@@ -7,14 +7,15 @@ only on the protocol, so tests and new data sources never touch business logic.
 from __future__ import annotations
 
 import builtins
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from app.domain.models import (
     AlertDeliveryItem,
     AuthenticatedUser,
+    DevilsAdvocateChallenge,
     IndexDailyRow,
     JournalAction,
     JournalCreate,
@@ -23,6 +24,8 @@ from app.domain.models import (
     MacroRateRow,
     MarketFeedBundle,
     MarketOverview,
+    MdaDiffHighlight,
+    MdaMetricShift,
     PlanTier,
     RefreshRotationResult,
     RefreshTokenRecord,
@@ -30,6 +33,7 @@ from app.domain.models import (
     StockFactBundle,
     StockMetaRecord,
     StockSnapshotPayload,
+    StoredAiConfig,
     StoredNotificationConfig,
     TradeCalendarEntry,
     TriggeredAlertCandidate,
@@ -332,4 +336,66 @@ class WebhookNotifierPort(Protocol):
         stock_alerts: Sequence[TriggeredAlertCandidate],
     ) -> bool:
         """Deliver alert summaries to an external webhook endpoint; return success boolean."""
+        ...
+
+
+class AiPreferencesRepository(Protocol):
+    async def get_config(self, user_id: UUID) -> StoredAiConfig:
+        """Return stored AI preferences (including BYOK config) or defaults."""
+        ...
+
+    async def save_config(self, user_id: UUID, config: StoredAiConfig) -> StoredAiConfig:
+        """Persist AI preferences for a user."""
+        ...
+
+    async def get_usage_today(self, user_id: UUID, day_shanghai: str) -> int:
+        """Return platform AI call count consumed by the user on the given CST date."""
+        ...
+
+    async def try_consume_quota(
+        self,
+        user_id: UUID,
+        day_shanghai: str,
+        daily_limit: int,
+    ) -> tuple[bool, int]:
+        """Atomically reserve one daily platform AI call if under daily_limit."""
+        ...
+
+    async def refund_quota(self, user_id: UUID, day_shanghai: str) -> int:
+        """Refund one reserved daily platform AI call (floored at 0) after upstream error."""
+        ...
+
+    async def release_read_transaction(self) -> None:
+        """Release any open read transaction before long-running external I/O."""
+        ...
+
+
+class LlmCompanionPort(Protocol):
+    async def generate_challenges(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+        timeout_seconds: float,
+        context: Mapping[str, Any],
+    ) -> list[DevilsAdvocateChallenge]:
+        """Generate 3 Devil's Advocate challenges via an OpenAI-compatible chat endpoint."""
+        ...
+
+    async def summarize_mda_diff(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+        timeout_seconds: float,
+        code: str,
+        stock_name: str,
+        previous_period_label: str,
+        current_period_label: str,
+        metric_shifts: Sequence[MdaMetricShift],
+        text_highlights: Sequence[MdaDiffHighlight],
+    ) -> str:
+        """Synthesize a concise summary of MD&A text and accounting metric shifts."""
         ...

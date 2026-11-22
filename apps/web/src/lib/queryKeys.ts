@@ -49,4 +49,11 @@ export const queryKeys = {
     all: ['events'] as const,
     list: () => ['events', 'list'] as const,
   },
+  ai: {
+    all: ['ai'] as const,
+    preferences: () => ['ai', 'preferences'] as const,
+    devilsAdvocate: (userKey: string, code: string) =>
+      ['ai', 'devils-advocate', userKey, code] as const,
+    mdaDiff: (userKey: string, code: string) => ['ai', 'mda-diff', userKey, code] as const,
+  },
 } as const

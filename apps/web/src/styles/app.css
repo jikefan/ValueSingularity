@@ -297,6 +297,7 @@ p {
 
 .card-title {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -660,6 +661,7 @@ p {
 
 .form-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
@@ -676,6 +678,14 @@ p {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.sentinel-list .tag {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .link-accent {
@@ -1169,6 +1179,152 @@ p {
   align-items: flex-end;
 }
 
+/* ---------- phase 4 restrained ai companion ---------- */
+.ai-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-quota-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--ink-2);
+}
+
+.da-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--ink-2);
+}
+
+.da-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.da-challenge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.da-challenge-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.da-fact-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.da-fact-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  padding: 3px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--soft);
+  background: var(--ink-2);
+}
+
+.da-suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-soft);
+}
+
+.da-gate-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(246, 199, 96, 0.45);
+  border-radius: var(--radius-sm);
+  background: rgba(246, 199, 96, 0.08);
+}
+
+.da-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.mda-shift-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.mda-shift-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--ink-2);
+}
+
+.mda-highlight-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mda-highlight-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--ink-2);
+}
+
+.mda-excerpt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mda-excerpt-box {
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: calc(var(--radius-sm) - 3px);
+  background: var(--panel);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 /* ---------- footer ---------- */
 .footer {
   padding: 20px;
@@ -1189,6 +1345,7 @@ p {
   }
   .grid-5,
   .grid-4,
+  .ai-quota-grid,
   .ledger-kpi-grid,
   .stock-meta-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1198,6 +1355,8 @@ p {
   .form-grid,
   .formula-list,
   .falsify-rule-row,
+  .mda-shift-grid,
+  .mda-excerpt-grid,
   .overview-hero {
     grid-template-columns: 1fr;
   }
@@ -1212,6 +1371,7 @@ p {
 @media (max-width: 560px) {
   .grid-5,
   .grid-4,
+  .ai-quota-grid,
   .ledger-kpi-grid,
   .stock-meta-grid {
     grid-template-columns: 1fr;

@@ -10,6 +10,7 @@ const USER_SCOPED_QUERY_KEYS = [
   queryKeys.journal.all,
   queryKeys.alerts.all,
   queryKeys.events.all,
+  queryKeys.ai.all,
 ] as const
 
 async function bootstrapSession(signal?: AbortSignal): Promise<UserProfile | null> {
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearUserCaches = useCallback(() => {
     for (const queryKey of USER_SCOPED_QUERY_KEYS) {
+      void queryClient.cancelQueries({ queryKey })
       queryClient.removeQueries({ queryKey })
     }
   }, [queryClient])

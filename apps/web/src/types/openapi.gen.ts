@@ -4,6 +4,58 @@
  */
 
 export interface paths {
+    "/api/ai/devils-advocate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Devils Advocate */
+        post: operations["ai_run_devils_advocate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/mda-diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run Mda Diff */
+        post: operations["ai_run_mda_diff"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/ai/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ai Preferences */
+        get: operations["ai_get_ai_preferences"];
+        /** Update Ai Preferences */
+        put: operations["ai_update_ai_preferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/alerts": {
         parameters: {
             query?: never;
@@ -392,6 +444,61 @@ export interface components {
             /** Win Rate Pct */
             win_rate_pct?: number | null;
         };
+        /** AiPreferences */
+        AiPreferences: {
+            /**
+             * Byok Api Key Configured
+             * @default false
+             */
+            byok_api_key_configured: boolean;
+            /** Byok Api Key Masked */
+            byok_api_key_masked?: string | null;
+            /** Byok Base Url Masked */
+            byok_base_url_masked?: string | null;
+            /**
+             * Byok Enabled
+             * @default false
+             */
+            byok_enabled: boolean;
+            /**
+             * Byok Model
+             * @default gpt-4o-mini
+             */
+            byok_model: string;
+            /**
+             * Prefer Rule Only
+             * @default false
+             */
+            prefer_rule_only: boolean;
+            quota: components["schemas"]["AiQuotaStatus"];
+        };
+        /** AiPreferencesUpdate */
+        AiPreferencesUpdate: {
+            /** Byok Api Key */
+            byok_api_key?: string | null;
+            /** Byok Base Url */
+            byok_base_url?: string | null;
+            /** Byok Enabled */
+            byok_enabled?: boolean | null;
+            /** Byok Model */
+            byok_model?: string | null;
+            /** Prefer Rule Only */
+            prefer_rule_only?: boolean | null;
+        };
+        /** AiQuotaStatus */
+        AiQuotaStatus: {
+            /** Byok Active */
+            byok_active: boolean;
+            /** Daily Limit */
+            daily_limit: number;
+            plan_tier: components["schemas"]["PlanTier"];
+            /** Remaining Today */
+            remaining_today: number;
+            /** Resets At Shanghai */
+            resets_at_shanghai: string;
+            /** Used Today */
+            used_today: number;
+        };
         /** AlertDeliveryItem */
         AlertDeliveryItem: {
             /** Channel */
@@ -509,6 +616,15 @@ export interface components {
             /** Year */
             year: number;
         };
+        /** CitedMetricFact */
+        CitedMetricFact: {
+            /** Label */
+            label: string;
+            /** Source Section */
+            source_section: string;
+            /** Value Text */
+            value_text: string;
+        };
         /** CtCheckItem */
         CtCheckItem: {
             /** Evidences */
@@ -573,6 +689,59 @@ export interface components {
             win_count: number;
             /** Win Rate Pct */
             win_rate_pct?: number | null;
+        };
+        /** DevilsAdvocateChallenge */
+        DevilsAdvocateChallenge: {
+            /** Cited Facts */
+            cited_facts?: components["schemas"]["CitedMetricFact"][];
+            /** Index */
+            index: number;
+            suggested_falsify_rule?: components["schemas"]["FalsifyRule"] | null;
+            /** Thesis */
+            thesis: string;
+            /** Title */
+            title: string;
+        };
+        /** DevilsAdvocateRequest */
+        DevilsAdvocateRequest: {
+            /** @default buy */
+            action: components["schemas"]["JournalAction"];
+            /** Code */
+            code: string;
+            /**
+             * Falsify Condition
+             * @default
+             */
+            falsify_condition: string;
+            /**
+             * Mode
+             * @default auto
+             * @enum {string}
+             */
+            mode: "auto" | "rule_only";
+            /** Reason */
+            reason: string;
+        };
+        /** DevilsAdvocateResponse */
+        DevilsAdvocateResponse: {
+            /** As Of */
+            as_of?: string | null;
+            /** Challenges */
+            challenges: components["schemas"]["DevilsAdvocateChallenge"][];
+            /** Code */
+            code: string;
+            /** Compliance Notice */
+            compliance_notice: string;
+            /** Fallback Reason */
+            fallback_reason?: string | null;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "deterministic" | "llm" | "byok" | "deterministic_fallback";
+            quota: components["schemas"]["AiQuotaStatus"];
+            /** Stock Name */
+            stock_name: string;
         };
         /** EmotionLedgerRow */
         EmotionLedgerRow: {
@@ -896,6 +1065,103 @@ export interface components {
              * @description 0=冰点，100=过热
              */
             score: number;
+        };
+        /** MdaDiffHighlight */
+        MdaDiffHighlight: {
+            /** Category */
+            category: string;
+            /**
+             * Change Type
+             * @enum {string}
+             */
+            change_type: "added" | "removed" | "modified";
+            /** Current Excerpt */
+            current_excerpt?: string | null;
+            /** Previous Excerpt */
+            previous_excerpt?: string | null;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "green" | "yellow" | "red" | "na";
+            /** Signal Tags */
+            signal_tags: string[];
+        };
+        /** MdaDiffRequest */
+        MdaDiffRequest: {
+            /** Code */
+            code: string;
+            /**
+             * Current Period Label
+             * @default 本期年报
+             */
+            current_period_label: string;
+            /**
+             * Current Text
+             * @default
+             */
+            current_text: string;
+            /**
+             * Mode
+             * @default auto
+             * @enum {string}
+             */
+            mode: "auto" | "rule_only";
+            /**
+             * Previous Period Label
+             * @default 上期年报
+             */
+            previous_period_label: string;
+            /**
+             * Previous Text
+             * @default
+             */
+            previous_text: string;
+        };
+        /** MdaDiffResponse */
+        MdaDiffResponse: {
+            /** Code */
+            code: string;
+            /** Compliance Notice */
+            compliance_notice: string;
+            /** Current Period Label */
+            current_period_label: string;
+            /** Fallback Reason */
+            fallback_reason?: string | null;
+            /** Metric Shifts */
+            metric_shifts: components["schemas"]["MdaMetricShift"][];
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "deterministic" | "llm" | "byok" | "deterministic_fallback";
+            /** Previous Period Label */
+            previous_period_label: string;
+            quota: components["schemas"]["AiQuotaStatus"];
+            /** Stock Name */
+            stock_name: string;
+            /** Summary */
+            summary: string;
+            /** Text Highlights */
+            text_highlights: components["schemas"]["MdaDiffHighlight"][];
+        };
+        /** MdaMetricShift */
+        MdaMetricShift: {
+            /** Current Text */
+            current_text: string;
+            /** Delta Text */
+            delta_text: string;
+            /** Interpretation */
+            interpretation: string;
+            /** Metric Label */
+            metric_label: string;
+            /** Previous Text */
+            previous_text: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "green" | "yellow" | "red" | "na";
         };
         /** MoatDimensionItem */
         MoatDimensionItem: {
@@ -1434,6 +1700,125 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    ai_run_devils_advocate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DevilsAdvocateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DevilsAdvocateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_run_mda_diff: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MdaDiffRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MdaDiffResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ai_get_ai_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiPreferences"];
+                };
+            };
+        };
+    };
+    ai_update_ai_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiPreferencesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiPreferences"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     alerts_list_alerts: {
         parameters: {
             query?: {

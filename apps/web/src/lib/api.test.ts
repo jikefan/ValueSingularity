@@ -1,6 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { TokenResponse, UserProfile, WatchlistItem, WatchlistUpsert } from '../types/api'
-import { ApiError, api, getAccessToken, setAccessToken, subscribeAuthExpired } from './api'
+import type {
+  AiPreferences,
+  DevilsAdvocateResponse,
+  MdaDiffResponse,
+  TokenResponse,
+  UserProfile,
+  WatchlistItem,
+  WatchlistUpsert,
+} from '../types/api'
+import {
+  ApiError,
+  api,
+  getAccessToken,
+  getAuthEpoch,
+  setAccessToken,
+  subscribeAuthExpired,
+} from './api'
 
 const SAMPLE_USER: UserProfile = {
   id: '11111111-1111-1111-1111-111111111111',
@@ -566,5 +581,248 @@ describe('api auth and single-flight refresh middleware', () => {
         },
       },
     ])
+  })
+
+  it('calls AI companion endpoints (devils-advocate, mda-diff, preferences) and propagates 422/429 errors', async () => {
+    setAccessToken('valid-token')
+    const calls: Array<{ method: string; url: string; body: unknown }> = []
+
+    const samplePrefs: AiPreferences = {
+      prefer_rule_only: false,
+      byok_enabled: true,
+      byok_base_url_masked: 'https://api.openai.com/****9999',
+      byok_api_key_configured: true,
+      byok_api_key_masked: 'sk-****1234',
+      byok_model: 'gpt-4o-mini',
+      quota: {
+        plan_tier: 'pro',
+        daily_limit: 30,
+        used_today: 1,
+        remaining_today: 29,
+        byok_active: true,
+        resets_at_shanghai: '2026-11-23 24:00 CST',
+      },
+    }
+
+    const sampleDa: DevilsAdvocateResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      as_of: '2026-11-20',
+      mode: 'deterministic',
+      fallback_reason: null,
+      challenges: [
+        {
+          index: 1,
+          title: '估值与隐含增速约束',
+          thesis: '需验证高增速假设能否持续。',
+          cited_facts: [{ label: 'PE(TTM)', value_text: '22.10', source_section: '估值截面' }],
+          suggested_falsify_rule: { metric: 'pe_percentile_10y', op: 'gte', value: 80, periods: 1 },
+        },
+      ],
+      quota: samplePrefs.quota,
+      compliance_notice: '仅供研究复盘，不构成投资建议。',
+    }
+
+    const sampleMda: MdaDiffResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      previous_period_label: '2024年报',
+      current_period_label: '2025年报',
+      mode: 'deterministic',
+      summary: '识别到 1 处口径变更。',
+      metric_shifts: [],
+      text_highlights: [],
+      quota: samplePrefs.quota,
+      compliance_notice: '仅供研究复盘，不构成投资建议。',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+      const rawBody =
+        request.method === 'POST' || request.method === 'PUT' ? await request.clone().text() : ''
+      const parsedBody: unknown = rawBody ? JSON.parse(rawBody) : null
+      calls.push({ method: request.method, url: url.pathname + url.search, body: parsedBody })
+
+      if (url.pathname === '/api/ai/preferences' && request.method === 'GET') {
+        return jsonResponse(samplePrefs, 200)
+      }
+      if (url.pathname === '/api/ai/preferences' && request.method === 'PUT') {
+        if (
+          typeof parsedBody === 'object' &&
+          parsedBody !== null &&
+          'byok_base_url' in parsedBody &&
+          parsedBody.byok_base_url === 'http://127.0.0.1:8000/v1'
+        ) {
+          return jsonResponse({ detail: 'BYOK Base URL 不能指向内网、回环或保留 IP 地址' }, 422)
+        }
+        return jsonResponse(samplePrefs, 200)
+      }
+      if (url.pathname === '/api/ai/devils-advocate' && request.method === 'POST') {
+        if (
+          typeof parsedBody === 'object' &&
+          parsedBody !== null &&
+          'reason' in parsedBody &&
+          parsedBody.reason === 'quota-exhausted'
+        ) {
+          return jsonResponse({ detail: '今日平台 AI 额度已用完（5/5）' }, 429)
+        }
+        return jsonResponse(sampleDa, 200)
+      }
+      if (url.pathname === '/api/ai/mda-diff' && request.method === 'POST') {
+        return jsonResponse(sampleMda, 200)
+      }
+      return jsonResponse({ detail: 'unexpected' }, 500)
+    })
+
+    expect(await api.getAiPreferences()).toEqual(samplePrefs)
+    expect(
+      await api.updateAiPreferences({
+        prefer_rule_only: true,
+        byok_enabled: false,
+        byok_model: 'gpt-4o-mini',
+      }),
+    ).toEqual(samplePrefs)
+    expect(
+      await api.runDevilsAdvocate({
+        code: '600519',
+        action: 'buy',
+        reason: '现金流稳健',
+        falsify_condition: '',
+        mode: 'auto',
+      }),
+    ).toEqual(sampleDa)
+    expect(
+      await api.runMdaDiff({
+        code: '600519',
+        previous_period_label: '2024年报',
+        current_period_label: '2025年报',
+        previous_text: '营收稳健增长',
+        current_text: '毛利率承压',
+        mode: 'rule_only',
+      }),
+    ).toEqual(sampleMda)
+
+    await expect(
+      api.updateAiPreferences({
+        prefer_rule_only: false,
+        byok_enabled: true,
+        byok_base_url: 'http://127.0.0.1:8000/v1',
+        byok_api_key: 'sk-test-1234',
+        byok_model: 'gpt-4o-mini',
+      }),
+    ).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 422,
+      message: 'BYOK Base URL 不能指向内网、回环或保留 IP 地址',
+    })
+
+    await expect(
+      api.runDevilsAdvocate({
+        code: '600519',
+        action: 'buy',
+        reason: 'quota-exhausted',
+        falsify_condition: '',
+        mode: 'auto',
+      }),
+    ).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 429,
+      message: '今日平台 AI 额度已用完（5/5）',
+    })
+
+    expect(calls).toHaveLength(6)
+    expect(calls[0]).toEqual({ method: 'GET', url: '/api/ai/preferences', body: null })
+    expect(calls[2]).toEqual({
+      method: 'POST',
+      url: '/api/ai/devils-advocate',
+      body: {
+        code: '600519',
+        action: 'buy',
+        reason: '现金流稳健',
+        falsify_condition: '',
+        mode: 'auto',
+      },
+    })
+    expect(calls[3]).toEqual({
+      method: 'POST',
+      url: '/api/ai/mda-diff',
+      body: {
+        code: '600519',
+        previous_period_label: '2024年报',
+        current_period_label: '2025年报',
+        previous_text: '营收稳健增长',
+        current_text: '毛利率承压',
+        mode: 'rule_only',
+      },
+    })
+  })
+
+  it('increments getAuthEpoch on setAccessToken, register, login, logout, and notifyAuthExpired but not on 200 refresh', async () => {
+    const tokenResponse: TokenResponse = {
+      access_token: 'session-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+    let refreshStatus = 200
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/register') {
+        return Promise.resolve(jsonResponse(tokenResponse, 201))
+      }
+      if (pathname === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/auth/logout') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(
+          refreshStatus === 200
+            ? jsonResponse(tokenResponse, 200)
+            : jsonResponse({ detail: '会话过期' }, 401),
+        )
+      }
+      if (pathname === '/api/watchlist') {
+        return Promise.resolve(jsonResponse({ detail: '登录凭证已过期' }, 401))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    const e0 = getAuthEpoch()
+    setAccessToken('manual-token')
+    const e1 = getAuthEpoch()
+    expect(e1).toBeGreaterThan(e0)
+
+    await api.register({
+      email: 'investor@example.com',
+      password: 'password123',
+      display_name: '价值猎手',
+    })
+    const e2 = getAuthEpoch()
+    expect(e2).toBeGreaterThan(e1)
+
+    await api.login({ email: 'investor@example.com', password: 'password123' })
+    const e3 = getAuthEpoch()
+    expect(e3).toBeGreaterThan(e2)
+
+    await api.refreshSession()
+    expect(getAuthEpoch()).toBe(e3)
+
+    await api.logout()
+    const e4 = getAuthEpoch()
+    expect(e4).toBeGreaterThan(e3)
+
+    setAccessToken('expired-token')
+    const e5 = getAuthEpoch()
+    expect(e5).toBeGreaterThan(e4)
+
+    refreshStatus = 401
+    await expect(api.listWatchlist()).rejects.toMatchObject({ status: 401 })
+    expect(getAuthEpoch()).toBeGreaterThan(e5)
   })
 })

@@ -10,6 +10,7 @@ import { useJournal, useRemoveJournal } from '../../lib/useJournal'
 import { parseOptionalNumber } from '../../lib/validation'
 import type { JournalAction, PlanTier, WatchlistItem, WatchlistUpsert } from '../../types/api'
 import { useRemoveWatchlist, useUpsertWatchlist, useWatchlist } from '../../lib/useWatchlist'
+import { AiPrefsPanel } from './AiPrefsPanel'
 import { DecisionLedgerPanel } from './DecisionLedgerPanel'
 import { SentinelAlertsPanel } from './SentinelAlertsPanel'
 
@@ -246,6 +247,8 @@ export function MePage() {
           <span className="small muted">多租户隔离 · 击球区哨兵已就绪</span>
         </div>
       </Card>
+
+      <AiPrefsPanel key={user.id} enabled={Boolean(user)} />
 
       <Card
         title={editingCode ? `编辑自选 · ${editingCode}` : '添加自选与击球区哨兵'}

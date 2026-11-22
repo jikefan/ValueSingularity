@@ -13,7 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-from app.domain.url_safety import validate_public_webhook_url
+from app.domain.url_safety import validate_public_http_url, validate_public_webhook_url
 
 FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 StockExchange = Literal["SH", "SZ", "BJ"]
@@ -866,3 +866,188 @@ class StockSyncSummary(BaseModel):
     ct_red_count: int = Field(ge=0)
     ct_yellow_count: int = Field(ge=0)
     implied_fcf_cagr_pct: FiniteFloat | None = None
+
+
+AiExecutionMode = Literal["deterministic", "llm", "byok", "deterministic_fallback"]
+
+
+class CitedMetricFact(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    value_text: str = Field(min_length=1, max_length=80)
+    source_section: str = Field(min_length=1, max_length=64)
+
+
+class DevilsAdvocateChallenge(BaseModel):
+    index: int = Field(ge=1)
+    title: str = Field(min_length=1, max_length=120)
+    thesis: str = Field(min_length=1, max_length=2000)
+    cited_facts: list[CitedMetricFact] = Field(default_factory=list)
+    suggested_falsify_rule: FalsifyRule | None = None
+
+
+class DevilsAdvocateRequest(BaseModel):
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
+    action: JournalAction = JournalAction.BUY
+    reason: str = Field(min_length=1, max_length=5000)
+    falsify_condition: str = Field(default="", max_length=5000)
+    mode: Literal["auto", "rule_only"] = "auto"
+
+    @field_validator("reason", "falsify_condition", mode="before")
+    @classmethod
+    def _strip_ai_reason_texts(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("reason", "falsify_condition")
+    @classmethod
+    def _validate_ai_reason_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "决策内容")
+
+
+class AiQuotaStatus(BaseModel):
+    plan_tier: PlanTier
+    daily_limit: int = Field(ge=0)
+    used_today: int = Field(ge=0)
+    remaining_today: int = Field(ge=0)
+    byok_active: bool
+    resets_at_shanghai: str
+
+
+class DevilsAdvocateResponse(BaseModel):
+    code: str
+    stock_name: str
+    as_of: date | None = None
+    mode: AiExecutionMode
+    fallback_reason: str | None = None
+    challenges: list[DevilsAdvocateChallenge]
+    quota: AiQuotaStatus
+    compliance_notice: str
+
+
+class MdaDiffRequest(BaseModel):
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
+    previous_period_label: str = Field(default="上期年报", min_length=1, max_length=40)
+    current_period_label: str = Field(default="本期年报", min_length=1, max_length=40)
+    previous_text: str = Field(default="", max_length=30000)
+    current_text: str = Field(default="", max_length=30000)
+    mode: Literal["auto", "rule_only"] = "auto"
+
+    @field_validator(
+        "previous_period_label",
+        "current_period_label",
+        "previous_text",
+        "current_text",
+        mode="before",
+    )
+    @classmethod
+    def _strip_mda_texts(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator(
+        "previous_period_label",
+        "current_period_label",
+        "previous_text",
+        "current_text",
+    )
+    @classmethod
+    def _validate_mda_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "年报对比文本")
+
+
+class MdaMetricShift(BaseModel):
+    metric_label: str
+    previous_text: str
+    current_text: str
+    delta_text: str
+    severity: SignalLight
+    interpretation: str
+
+
+class MdaDiffHighlight(BaseModel):
+    change_type: Literal["added", "removed", "modified"]
+    category: str
+    previous_excerpt: str | None = None
+    current_excerpt: str | None = None
+    signal_tags: list[str]
+    severity: SignalLight
+
+
+class MdaDiffResponse(BaseModel):
+    code: str
+    stock_name: str
+    previous_period_label: str
+    current_period_label: str
+    mode: AiExecutionMode
+    fallback_reason: str | None = None
+    summary: str
+    metric_shifts: list[MdaMetricShift]
+    text_highlights: list[MdaDiffHighlight]
+    quota: AiQuotaStatus
+    compliance_notice: str
+
+
+class AiPreferences(BaseModel):
+    prefer_rule_only: bool = False
+    byok_enabled: bool = False
+    byok_base_url_masked: str | None = None
+    byok_api_key_configured: bool = False
+    byok_api_key_masked: str | None = None
+    byok_model: str = "gpt-4o-mini"
+    quota: AiQuotaStatus
+
+
+class StoredAiConfig(BaseModel):
+    prefer_rule_only: bool = False
+    byok_enabled: bool = False
+    byok_base_url: str | None = None
+    byok_api_key: str | None = None
+    byok_model: str = "gpt-4o-mini"
+
+
+class AiPreferencesUpdate(BaseModel):
+    prefer_rule_only: bool | None = None
+    byok_enabled: bool | None = None
+    byok_base_url: str | None = Field(default=None, max_length=500)
+    byok_api_key: str | None = Field(default=None, max_length=300)
+    byok_model: str | None = Field(default=None, min_length=1, max_length=64)
+
+    @field_validator("byok_base_url", mode="before")
+    @classmethod
+    def _clean_byok_base_url(cls, value: object) -> object:
+        if value is None or not isinstance(value, str):
+            return value
+        if any(ch == "\x00" or ord(ch) < 32 or ord(ch) == 127 for ch in value):
+            raise ValueError("BYOK Base URL 不能包含空字符或控制字符")
+        return value.strip()
+
+    @field_validator("byok_base_url")
+    @classmethod
+    def _validate_byok_base_url(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return value
+        return validate_public_http_url(value, label="BYOK Base URL")
+
+    @field_validator("byok_api_key", mode="before")
+    @classmethod
+    def _clean_byok_api_key(cls, value: object) -> object:
+        if value is None or not isinstance(value, str):
+            return value
+        if any(ch == "\x00" or ord(ch) < 32 or ord(ch) == 127 for ch in value):
+            raise ValueError("BYOK API Key 不能包含空字符或控制字符")
+        return value.strip()
+
+    @field_validator("byok_model", mode="before")
+    @classmethod
+    def _clean_byok_model(cls, value: object) -> object:
+        if value is None or not isinstance(value, str):
+            return value
+        if any(ch == "\x00" or ord(ch) < 32 or ord(ch) == 127 for ch in value):
+            raise ValueError("BYOK 模型名称不能包含空字符或控制字符")
+        return value.strip()
+
+    @model_validator(mode="after")
+    def _reject_clearing_byok_fields_when_enabled(self) -> Self:
+        if self.byok_enabled and self.byok_base_url == "":
+            raise ValueError("启用 BYOK 时不能同时清空 Base URL")
+        if self.byok_enabled and self.byok_api_key == "":
+            raise ValueError("启用 BYOK 时不能同时清空 API Key")
+        return self

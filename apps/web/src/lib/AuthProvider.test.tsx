@@ -6,7 +6,14 @@ import { ApiError, api, getAccessToken, setAccessToken } from './api'
 import { useAuth } from './authContext'
 import { createQueryClient } from './queryClient'
 import { queryKeys } from './queryKeys'
-import type { TokenResponse, UserProfile } from '../types/api'
+import { useDevilsAdvocate, useMdaDiff, useUpdateAiPreferences } from './useAi'
+import type {
+  AiPreferences,
+  DevilsAdvocateResponse,
+  MdaDiffResponse,
+  TokenResponse,
+  UserProfile,
+} from '../types/api'
 
 const USER_A: UserProfile = {
   id: 'aaaa1111-1111-1111-1111-111111111111',
@@ -132,6 +139,22 @@ describe('AuthProvider tenant cache isolation', () => {
       webhook_url_configured: true,
       webhook_url_masked: 'https://open.feishu.cn/****A123',
     })
+    client.setQueryData(queryKeys.ai.preferences(), {
+      prefer_rule_only: false,
+      byok_enabled: true,
+      byok_base_url_masked: 'https://api.openai.com/****A111',
+      byok_api_key_configured: true,
+      byok_api_key_masked: 'sk-****A111',
+      byok_model: 'gpt-4o-mini',
+      quota: {
+        plan_tier: 'pro',
+        daily_limit: 30,
+        used_today: 2,
+        remaining_today: 28,
+        byok_active: true,
+        resets_at_shanghai: '2026-11-23 24:00 CST',
+      },
+    })
     client.setQueryData(queryKeys.events.list(), [{ id: 10, type: 'journal_create' }])
 
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
@@ -143,6 +166,7 @@ describe('AuthProvider tenant cache isolation', () => {
     expect(client.getQueryData(queryKeys.journal.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.alerts.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
+    expect(client.getQueryData(queryKeys.ai.preferences())).toBeUndefined()
     expect(client.getQueryData(queryKeys.events.list())).toBeUndefined()
 
     client.setQueryData(queryKeys.watchlist.list(), [{ code: '000001', name: '残留' }])
@@ -155,6 +179,22 @@ describe('AuthProvider tenant cache isolation', () => {
       webhook_url_configured: true,
       webhook_url_masked: 'https://qyapi.weixin.qq.com/****9999',
     })
+    client.setQueryData(queryKeys.ai.preferences(), {
+      prefer_rule_only: true,
+      byok_enabled: true,
+      byok_base_url_masked: 'https://api.example.com/****9999',
+      byok_api_key_configured: true,
+      byok_api_key_masked: 'sk-****9999',
+      byok_model: 'gpt-4o',
+      quota: {
+        plan_tier: 'pro',
+        daily_limit: 30,
+        used_today: 5,
+        remaining_today: 25,
+        byok_active: true,
+        resets_at_shanghai: '2026-11-23 24:00 CST',
+      },
+    })
     client.setQueryData(queryKeys.events.list(), [{ id: 20, type: 'stale' }])
 
     fireEvent.click(screen.getByRole('button', { name: '登录B' }))
@@ -166,6 +206,7 @@ describe('AuthProvider tenant cache isolation', () => {
     expect(client.getQueryData(queryKeys.journal.list('600519'))).toBeUndefined()
     expect(client.getQueryData(queryKeys.alerts.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
+    expect(client.getQueryData(queryKeys.ai.preferences())).toBeUndefined()
     expect(client.getQueryData(queryKeys.events.list())).toBeUndefined()
   })
 
@@ -220,6 +261,10 @@ describe('AuthProvider tenant cache isolation', () => {
     client.setQueryData(queryKeys.journal.list(), [{ id: 1 }])
     client.setQueryData(queryKeys.alerts.list(), [{ id: 301 }])
     client.setQueryData(queryKeys.alerts.preferences(), { in_app_enabled: true })
+    client.setQueryData(queryKeys.ai.preferences(), {
+      byok_enabled: true,
+      byok_api_key_masked: 'sk-****1234',
+    })
     client.setQueryData(queryKeys.events.list(), [{ id: 2 }])
 
     await expect(api.listEvents()).rejects.toMatchObject({ status: 401 })
@@ -231,6 +276,7 @@ describe('AuthProvider tenant cache isolation', () => {
     expect(client.getQueryData(queryKeys.journal.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.alerts.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
+    expect(client.getQueryData(queryKeys.ai.preferences())).toBeUndefined()
     expect(client.getQueryData(queryKeys.events.list())).toBeUndefined()
   })
 
@@ -501,5 +547,210 @@ describe('AuthProvider tenant cache isolation', () => {
     })
     expect(client.getQueryData(queryKeys.alerts.list(50))).toBeUndefined()
     expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
+  })
+
+  it('evicts per-stock AI caches, cancels in-flight user queries, and drops stale in-flight AI mutation writes across user switch', async () => {
+    const tokenA: TokenResponse = {
+      access_token: 'token-a',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: USER_A,
+    }
+    const tokenB: TokenResponse = {
+      access_token: 'token-b',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: USER_B,
+    }
+    const userBPrefs: AiPreferences = {
+      prefer_rule_only: false,
+      byok_enabled: false,
+      byok_base_url_masked: null,
+      byok_api_key_configured: false,
+      byok_api_key_masked: null,
+      byok_model: 'gpt-4o-mini',
+      quota: {
+        plan_tier: 'free',
+        daily_limit: 5,
+        used_today: 0,
+        remaining_today: 5,
+        byok_active: false,
+        resets_at_shanghai: '2026-11-23 24:00 CST',
+      },
+    }
+    const userADaResponse: DevilsAdvocateResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      as_of: '2026-11-22',
+      mode: 'llm',
+      fallback_reason: null,
+      challenges: [],
+      quota: {
+        plan_tier: 'pro',
+        daily_limit: 30,
+        used_today: 29,
+        remaining_today: 1,
+        byok_active: false,
+        resets_at_shanghai: '2026-11-23 24:00 CST',
+      },
+      compliance_notice: 'A的合规提示',
+    }
+    const userAMdaResponse: MdaDiffResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      previous_period_label: '2024',
+      current_period_label: '2025',
+      mode: 'llm',
+      fallback_reason: null,
+      summary: 'A的MD&A摘要',
+      metric_shifts: [],
+      text_highlights: [],
+      quota: userADaResponse.quota,
+      compliance_notice: 'A的合规提示',
+    }
+
+    let resolveDa!: (res: Response) => void
+    let resolveMda!: (res: Response) => void
+    let resolvePrefsUpdate!: (res: Response) => void
+    const daDeferred = new Promise<Response>((resolve) => {
+      resolveDa = resolve
+    })
+    const mdaDeferred = new Promise<Response>((resolve) => {
+      resolveMda = resolve
+    })
+    const prefsUpdateDeferred = new Promise<Response>((resolve) => {
+      resolvePrefsUpdate = resolve
+    })
+    let userBPrefsFetchCount = 0
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse(tokenA, 200))
+      }
+      if (pathname === '/api/auth/logout') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (pathname === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(tokenB, 200))
+      }
+      if (pathname === '/api/ai/preferences' && request.method === 'GET') {
+        userBPrefsFetchCount += 1
+        return Promise.resolve(jsonResponse(userBPrefs, 200))
+      }
+      if (pathname === '/api/ai/preferences' && request.method === 'PUT') {
+        return prefsUpdateDeferred
+      }
+      if (pathname === '/api/ai/devils-advocate') {
+        return daDeferred
+      }
+      if (pathname === '/api/ai/mda-diff') {
+        return mdaDeferred
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const client = createQueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const cancelSpy = vi.spyOn(client, 'cancelQueries')
+
+    function Probe() {
+      const { user, login, logout } = useAuth()
+      const daMutation = useDevilsAdvocate()
+      const mdaMutation = useMdaDiff()
+      const prefsMutation = useUpdateAiPreferences()
+      return (
+        <div>
+          <span data-testid="current-user">{user ? user.email : 'guest'}</span>
+          <button
+            type="button"
+            onClick={() => {
+              daMutation.mutate({
+                code: '600519',
+                action: 'buy',
+                reason: 'A的质询',
+                falsify_condition: '',
+                mode: 'auto',
+              })
+              mdaMutation.mutate({
+                code: '600519',
+                previous_period_label: '2024',
+                current_period_label: '2025',
+                previous_text: 'prev',
+                current_text: 'curr',
+                mode: 'auto',
+              })
+              prefsMutation.mutate({ prefer_rule_only: true })
+            }}
+          >
+            触发A并发AI调用
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void logout()
+            }}
+          >
+            退出登录
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void login({ email: 'user-b@example.com', password: 'password123' })
+            }}
+          >
+            登录B
+          </button>
+        </div>
+      )
+    }
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('user-a@example.com')
+    })
+
+    client.setQueryData(queryKeys.ai.devilsAdvocate(USER_A.id, '600519'), userADaResponse)
+    client.setQueryData(queryKeys.ai.mdaDiff(USER_A.id, '600519'), userAMdaResponse)
+    client.setQueryData(queryKeys.ai.preferences(), { ...userBPrefs, prefer_rule_only: true })
+
+    fireEvent.click(screen.getByRole('button', { name: '触发A并发AI调用' }))
+
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('guest')
+    })
+    expect(cancelSpy).toHaveBeenCalledWith({ queryKey: queryKeys.ai.all })
+    expect(client.getQueryData(queryKeys.ai.devilsAdvocate(USER_A.id, '600519'))).toBeUndefined()
+    expect(client.getQueryData(queryKeys.ai.mdaDiff(USER_A.id, '600519'))).toBeUndefined()
+
+    fireEvent.click(screen.getByRole('button', { name: '登录B' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('user-b@example.com')
+    })
+    client.setQueryData(queryKeys.ai.preferences(), userBPrefs)
+
+    // User A's stale in-flight mutations settle AFTER User B logged in (one 200, one 429, one PUT 200).
+    resolveDa(jsonResponse(userADaResponse, 200))
+    resolveMda(jsonResponse({ detail: '今日平台 AI 额度已用完（30/30）' }, 429))
+    resolvePrefsUpdate(jsonResponse({ ...userBPrefs, prefer_rule_only: true }, 200))
+
+    await waitFor(() => {
+      expect(client.getQueryData(queryKeys.ai.preferences())).toEqual(userBPrefs)
+    })
+    expect(client.getQueryData(queryKeys.ai.devilsAdvocate(USER_A.id, '600519'))).toBeUndefined()
+    expect(client.getQueryData(queryKeys.ai.devilsAdvocate(USER_B.id, '600519'))).toBeUndefined()
+    expect(client.getQueryData(queryKeys.ai.mdaDiff(USER_A.id, '600519'))).toBeUndefined()
+    expect(userBPrefsFetchCount).toBe(0)
   })
 })

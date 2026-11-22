@@ -1,20 +1,36 @@
-import { useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { AiCompanionControls } from '../../components/ui/AiCompanionControls'
 import { Card } from '../../components/ui/Card'
 import { JournalEntryCard } from '../../components/ui/JournalEntryCard'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
+import {
+  AI_EXECUTION_MODE_META,
+  formatFalsifyRuleLine,
+  type AiRequestMode,
+} from '../../lib/aiLabels'
+import { getAuthEpoch } from '../../lib/api'
 import { useAuth } from '../../lib/authContext'
 import { formatNum, formatPct, formatSignedPct } from '../../lib/format'
 import {
+  canonicalizeFalsifyMetric,
   FALSIFY_METRIC_OPTIONS,
   FALSIFY_OP_OPTIONS,
   FALSIFY_RULE_PRESETS,
+  getFalsifyMetricLabel,
   isMultiPeriodFalsifyMetric,
   JOURNAL_ACTION_META,
   JOURNAL_EMOTION_PRESETS,
   type FalsifyOp,
 } from '../../lib/journalLabels'
+import {
+  clearCachedDevilsAdvocate,
+  useAiPreferences,
+  useCachedDevilsAdvocate,
+  useDevilsAdvocate,
+} from '../../lib/useAi'
 import { useCreateJournal, useJournal, useRemoveJournal } from '../../lib/useJournal'
 import { parseOptionalNumber } from '../../lib/validation'
 import type {
@@ -23,10 +39,12 @@ import type {
   JournalCreate,
   StockDetail,
   StockSnapshotPayload,
+  UserProfile,
 } from '../../types/api'
 
 const ACTION_OPTIONS: JournalAction[] = ['buy', 'add', 'trim', 'sell', 'pass']
 const MAX_FALSIFY_RULES = 5
+const MAX_FALSIFY_PERIODS = 40
 
 type FalsifyRuleDraft = {
   id: number
@@ -46,19 +64,75 @@ function isFalsifyOp(value: string): value is FalsifyOp {
   return value === 'lt' || value === 'lte' || value === 'gt' || value === 'gte' || value === 'eq'
 }
 
-export function StockDecisionTab({
+function normalizeSuggestedFalsifyRule(rule: FalsifyRule): FalsifyRule {
+  const canonicalMetric = canonicalizeFalsifyMetric(rule.metric) || rule.metric.trim()
+  const normalizedPeriods = isMultiPeriodFalsifyMetric(canonicalMetric)
+    ? Math.min(MAX_FALSIFY_PERIODS, Math.max(1, Math.trunc(rule.periods) || 1))
+    : 1
+  return {
+    metric: canonicalMetric,
+    op: rule.op,
+    value: rule.value,
+    periods: normalizedPeriods,
+  }
+}
+
+function isRuleMatchingDraft(draft: FalsifyRuleDraft, rule: FalsifyRule): boolean {
+  const trimmedValue = draft.value.trim()
+  if (!trimmedValue) {
+    return false
+  }
+  const canonicalDraftMetric = canonicalizeFalsifyMetric(draft.metric)
+  const canonicalRuleMetric = canonicalizeFalsifyMetric(rule.metric)
+  const expectedPeriods = isMultiPeriodFalsifyMetric(canonicalRuleMetric)
+    ? Math.min(MAX_FALSIFY_PERIODS, Math.max(1, Math.trunc(rule.periods) || 1))
+    : 1
+  return (
+    canonicalDraftMetric === canonicalRuleMetric &&
+    draft.op === rule.op &&
+    Number(trimmedValue) === rule.value &&
+    Number(draft.periods) === expectedPeriods
+  )
+}
+
+function buildValuationAnchorStrip(snapshot: StockSnapshotPayload | null) {
+  if (!snapshot) {
+    return null
+  }
+  return (
+    <div className="decision-anchor-bar">
+      <span className="small muted">实时估值参考锚点：</span>
+      <Tag color="blue">{`最新价 ${formatNum(snapshot.valuation.close, 2)}`}</Tag>
+      <Tag color="gray">{`PE(TTM) ${formatNum(snapshot.valuation.pe_ttm, 2)} · 10Y 分位 ${formatPct(snapshot.valuation.pe_percentile_10y, 1)}`}</Tag>
+      <Tag color="green">
+        {snapshot.reverse_dcf.solvable
+          ? `隐含 FCF 增速 ${formatSignedPct(snapshot.reverse_dcf.implied_fcf_cagr_pct, 2)}`
+          : '隐含 FCF 增速不可求解'}
+      </Tag>
+      <Tag color="amber">{`雷达评分 ${snapshot.radar.total_score}/100`}</Tag>
+    </div>
+  )
+}
+
+function StockDecisionTabContent({
   stock,
-  snapshot = null,
+  snapshot,
+  user,
 }: {
   stock: StockDetail
-  snapshot?: StockSnapshotPayload | null
+  snapshot: StockSnapshotPayload | null
+  user: UserProfile
 }) {
-  const { user, isAuthLoading } = useAuth()
-  const journalQuery = useJournal(stock.code, Boolean(user))
+  const queryClient = useQueryClient()
+  const journalQuery = useJournal(stock.code, true)
+  const aiPrefsQuery = useAiPreferences(true)
+  const cachedDaQuery = useCachedDevilsAdvocate(user.id, stock.code)
+  const devilsAdvocate = useDevilsAdvocate()
   const createJournal = useCreateJournal()
   const removeJournal = useRemoveJournal()
 
   const nextRuleIdRef = useRef(1)
+  const gateRunDaButtonRef = useRef<HTMLButtonElement | null>(null)
   const [action, setAction] = useState<JournalAction>('buy')
   const [reason, setReason] = useState('')
   const [falsifyCondition, setFalsifyCondition] = useState('')
@@ -67,16 +141,59 @@ export function StockDecisionTab({
   const [emotion, setEmotion] = useState('')
   const [ruleDrafts, setRuleDrafts] = useState<FalsifyRuleDraft[]>([])
   const [formError, setFormError] = useState<string | null>(null)
+  const [daModeOverride, setDaModeOverride] = useState<AiRequestMode | null>(null)
+  const [lastReviewedDraftKey, setLastReviewedDraftKey] = useState<string | null>(null)
+  const [daValidationError, setDaValidationError] = useState<string | null>(null)
+  const [showBuyGate, setShowBuyGate] = useState(false)
+
+  const isBuyOrAddAction = action === 'buy' || action === 'add'
+  const isBusy = createJournal.isPending || devilsAdvocate.isPending
+  const effectiveDaMode: AiRequestMode =
+    daModeOverride ?? (aiPrefsQuery.data?.prefer_rule_only ? 'rule_only' : 'auto')
+  const currentDraftKey = `${stock.code}:${action}:${reason.trim()}`
+  const rawDaResult =
+    cachedDaQuery.data ??
+    (devilsAdvocate.data && devilsAdvocate.data.code === stock.code ? devilsAdvocate.data : null)
+  const daResult = rawDaResult && rawDaResult.code === stock.code ? rawDaResult : null
+  const hasReviewedCurrentDraft =
+    lastReviewedDraftKey !== null && lastReviewedDraftKey === currentDraftKey && daResult !== null
+  const activeQuota = aiPrefsQuery.data?.quota ?? daResult?.quota ?? null
+  const isRuleLimitReached = ruleDrafts.length >= MAX_FALSIFY_RULES
+
+  useEffect(() => {
+    if (showBuyGate && isBuyOrAddAction) {
+      gateRunDaButtonRef.current?.focus()
+    }
+  }, [showBuyGate, isBuyOrAddAction])
+
+  function clearCreateErrorOnEdit() {
+    setFormError(null)
+    if (createJournal.isError) {
+      createJournal.reset()
+    }
+  }
+
+  function clearDaErrorOnEdit() {
+    setDaValidationError(null)
+    if (devilsAdvocate.isError) {
+      devilsAdvocate.reset()
+    }
+  }
 
   function addRuleDraft(initial?: FalsifyRule) {
+    clearCreateErrorOnEdit()
     setRuleDrafts((prev) => {
       if (prev.length >= MAX_FALSIFY_RULES) {
         return prev
       }
       const id = nextRuleIdRef.current
       nextRuleIdRef.current += 1
-      const metric = initial?.metric ?? 'pe_ttm'
+      const metric = canonicalizeFalsifyMetric(initial?.metric ?? 'pe_ttm') || 'pe_ttm'
       const supportsMultiPeriod = isMultiPeriodFalsifyMetric(metric)
+      const clampedPeriods =
+        supportsMultiPeriod && initial !== undefined
+          ? String(Math.min(MAX_FALSIFY_PERIODS, Math.max(1, Math.trunc(initial.periods) || 1)))
+          : '1'
       return [
         ...prev,
         {
@@ -84,44 +201,118 @@ export function StockDecisionTab({
           metric,
           op: initial?.op ?? 'gte',
           value: initial !== undefined ? String(initial.value) : '',
-          periods: supportsMultiPeriod && initial !== undefined ? String(initial.periods) : '1',
+          periods: clampedPeriods,
         },
       ]
     })
   }
 
   function updateRuleDraft(id: number, patch: Partial<Omit<FalsifyRuleDraft, 'id'>>) {
+    clearCreateErrorOnEdit()
     setRuleDrafts((prev) => prev.map((draft) => (draft.id === id ? { ...draft, ...patch } : draft)))
   }
 
   function removeRuleDraft(id: number) {
+    clearCreateErrorOnEdit()
     setRuleDrafts((prev) => prev.filter((draft) => draft.id !== id))
   }
 
-  function handleSubmit() {
+  function handleRunDevilsAdvocate(requestedModeOverride?: AiRequestMode) {
+    if (isBusy) {
+      return
+    }
+    const trimmedReason = reason.trim()
+    const trimmedFalsify = falsifyCondition.trim()
+
+    if (!trimmedReason) {
+      setDaValidationError('请先填写投资理由，再运行买入前反方质询')
+      return
+    }
+    if (trimmedReason.length > 5000) {
+      setDaValidationError('投资理由不能超过 5000 个字符')
+      return
+    }
+    if (trimmedFalsify.length > 5000) {
+      setDaValidationError('否证条件不能超过 5000 个字符')
+      return
+    }
+
+    setDaValidationError(null)
+    const draftKey = `${stock.code}:${action}:${trimmedReason}`
+    const startEpoch = getAuthEpoch()
+    const requestMode = requestedModeOverride ?? effectiveDaMode
+
+    devilsAdvocate.mutate(
+      {
+        code: stock.code,
+        action,
+        reason: trimmedReason,
+        falsify_condition: trimmedFalsify,
+        mode: requestMode,
+      },
+      {
+        onSuccess: () => {
+          if (getAuthEpoch() !== startEpoch) {
+            return
+          }
+          setLastReviewedDraftKey(draftKey)
+          setShowBuyGate(false)
+        },
+      },
+    )
+  }
+
+  function handleSwitchRuleOnlyAndRetry() {
+    if (isBusy) {
+      return
+    }
+    setDaModeOverride('rule_only')
+    devilsAdvocate.reset()
+    handleRunDevilsAdvocate('rule_only')
+  }
+
+  function handleAdoptSuggestedRule(rule: FalsifyRule) {
+    const normalizedRule = normalizeSuggestedFalsifyRule(rule)
+
+    const alreadyAdopted = ruleDrafts.some((draft) => isRuleMatchingDraft(draft, normalizedRule))
+    if (!alreadyAdopted) {
+      if (ruleDrafts.length >= MAX_FALSIFY_RULES) {
+        setFormError(`最多添加 ${MAX_FALSIFY_RULES} 条量化否证规则，请先移除已有规则再采纳`)
+        return
+      }
+      addRuleDraft(normalizedRule)
+    }
+
+    if (!falsifyCondition.trim()) {
+      setFalsifyCondition(formatFalsifyRuleLine(normalizedRule))
+    }
+    setFormError(null)
+  }
+
+  function validateAndBuildPayload(): JournalCreate | null {
     const trimmedReason = reason.trim()
     const trimmedFalsify = falsifyCondition.trim()
     const trimmedEmotion = emotion.trim()
 
     if (!trimmedReason) {
       setFormError('请填写投资理由')
-      return
+      return null
     }
     if (trimmedReason.length > 5000) {
       setFormError('投资理由不能超过 5000 个字符')
-      return
+      return null
     }
     if (!trimmedFalsify) {
       setFormError('请填写否证条件')
-      return
+      return null
     }
     if (trimmedFalsify.length > 5000) {
       setFormError('否证条件不能超过 5000 个字符')
-      return
+      return null
     }
     if (trimmedEmotion.length > 32) {
       setFormError('当前情绪不能超过 32 个字符')
-      return
+      return null
     }
 
     const parsedPrice = parseOptionalNumber(price, '参考价格', {
@@ -130,7 +321,7 @@ export function StockDecisionTab({
     })
     if (!parsedPrice.ok) {
       setFormError(parsedPrice.error)
-      return
+      return null
     }
 
     const parsedDrawdown = parseOptionalNumber(maxDrawdown, '最大可承受回撤', {
@@ -139,7 +330,7 @@ export function StockDecisionTab({
     })
     if (!parsedDrawdown.ok) {
       setFormError(parsedDrawdown.error)
-      return
+      return null
     }
 
     const parsedRules: FalsifyRule[] = []
@@ -148,33 +339,30 @@ export function StockDecisionTab({
       if (!draft) {
         continue
       }
-      const metric = draft.metric.trim()
+      const metric = canonicalizeFalsifyMetric(draft.metric) || draft.metric.trim()
       if (!metric || metric.length > 64) {
         setFormError(`第 ${idx + 1} 条否证规则指标无效`)
-        return
+        return null
       }
       if (!draft.value.trim()) {
         setFormError(`请填写第 ${idx + 1} 条否证规则的阈值`)
-        return
+        return null
       }
-      const parsedValue = parseOptionalNumber(draft.value, `第 ${idx + 1} 条规则阈值`, {
-        min: -1e12,
-        max: 1e12,
-      })
+      const parsedValue = parseOptionalNumber(draft.value, `第 ${idx + 1} 条规则阈值`, {})
       if (!parsedValue.ok || parsedValue.value === null) {
         setFormError(parsedValue.ok ? `请填写第 ${idx + 1} 条否证规则的阈值` : parsedValue.error)
-        return
+        return null
       }
       const supportsMultiPeriod = isMultiPeriodFalsifyMetric(metric)
       let periodsValue = 1
       if (supportsMultiPeriod) {
         if (!draft.periods.trim()) {
           setFormError(`请填写第 ${idx + 1} 条否证规则的连续期数`)
-          return
+          return null
         }
         const parsedPeriods = parseOptionalNumber(draft.periods, `第 ${idx + 1} 条规则连续期数`, {
           min: 1,
-          max: 10,
+          max: MAX_FALSIFY_PERIODS,
         })
         if (
           !parsedPeriods.ok ||
@@ -182,9 +370,11 @@ export function StockDecisionTab({
           !Number.isInteger(parsedPeriods.value)
         ) {
           setFormError(
-            parsedPeriods.ok ? `第 ${idx + 1} 条规则连续期数须为 1–10 的整数` : parsedPeriods.error,
+            parsedPeriods.ok
+              ? `第 ${idx + 1} 条规则连续期数须为 1–${MAX_FALSIFY_PERIODS} 的整数`
+              : parsedPeriods.error,
           )
-          return
+          return null
         }
         periodsValue = parsedPeriods.value
       }
@@ -197,7 +387,7 @@ export function StockDecisionTab({
     }
 
     setFormError(null)
-    const payload: JournalCreate = {
+    return {
       code: stock.code,
       name: stock.name,
       action,
@@ -209,7 +399,9 @@ export function StockDecisionTab({
       benchmark_code: '000300',
       ...(parsedRules.length > 0 ? { falsify_rules: parsedRules } : {}),
     }
+  }
 
+  function submitJournalPayload(payload: JournalCreate) {
     createJournal.mutate(payload, {
       onSuccess: () => {
         setReason('')
@@ -218,59 +410,48 @@ export function StockDecisionTab({
         setMaxDrawdown('')
         setEmotion('')
         setRuleDrafts([])
+        setShowBuyGate(false)
+        setLastReviewedDraftKey(null)
+        setDaValidationError(null)
+        devilsAdvocate.reset()
+        clearCachedDevilsAdvocate(queryClient, user.id, stock.code)
       },
     })
   }
 
-  const valuationAnchorStrip = snapshot ? (
-    <div className="decision-anchor-bar">
-      <span className="small muted">实时估值参考锚点：</span>
-      <Tag color="blue">{`最新价 ${formatNum(snapshot.valuation.close, 2)}`}</Tag>
-      <Tag color="gray">{`PE(TTM) ${formatNum(snapshot.valuation.pe_ttm, 2)} · 10Y 分位 ${formatPct(snapshot.valuation.pe_percentile_10y, 1)}`}</Tag>
-      <Tag color="green">
-        {snapshot.reverse_dcf.solvable
-          ? `隐含 FCF 增速 ${formatSignedPct(snapshot.reverse_dcf.implied_fcf_cagr_pct, 2)}`
-          : '隐含 FCF 增速不可求解'}
-      </Tag>
-      <Tag color="amber">{`雷达评分 ${snapshot.radar.total_score}/100`}</Tag>
-    </div>
-  ) : null
+  function handleSubmit() {
+    if (isBusy) {
+      return
+    }
+    const payload = validateAndBuildPayload()
+    if (!payload) {
+      return
+    }
+    if (isBuyOrAddAction && !hasReviewedCurrentDraft) {
+      setShowBuyGate(true)
+      return
+    }
+    submitJournalPayload(payload)
+  }
 
+  function handleSkipGateAndSubmit() {
+    if (isBusy) {
+      return
+    }
+    const payload = validateAndBuildPayload()
+    if (!payload) {
+      setShowBuyGate(false)
+      return
+    }
+    setShowBuyGate(false)
+    submitJournalPayload(payload)
+  }
+
+  const valuationAnchorStrip = buildValuationAnchorStrip(snapshot)
   const dividendYieldPct = snapshot
     ? (snapshot.valuation.dividend_yield_pct ??
       snapshot.shareholder_return.current_dividend_yield_pct)
     : null
-
-  if (isAuthLoading) {
-    return (
-      <Card title="投资决策日记">
-        {valuationAnchorStrip}
-        <LoadingBlock lines={3} />
-      </Card>
-    )
-  }
-
-  if (!user) {
-    return (
-      <Card title="投资决策日记" extra={<Tag color="gray">未登录</Tag>}>
-        <div className="stack" style={{ gap: 12 }}>
-          {valuationAnchorStrip}
-          <EmptyBlock
-            title="登录后记录你的投资决策与否证红线"
-            hint={
-              <Link
-                className="btn-primary mt-16"
-                to="/login"
-                state={{ from: `/stock/${stock.code}` }}
-              >
-                前往登录 / 注册
-              </Link>
-            }
-          />
-        </div>
-      </Card>
-    )
-  }
 
   const mutationError = createJournal.isError
     ? createJournal.error instanceof Error
@@ -278,6 +459,13 @@ export function StockDecisionTab({
       : '记录保存失败，请稍后重试'
     : null
   const activeError = formError ?? mutationError
+  const daMutationError = devilsAdvocate.isError
+    ? devilsAdvocate.error instanceof Error
+      ? devilsAdvocate.error.message
+      : '反方质询运行失败，请稍后重试'
+    : null
+  const activeDaError = daValidationError ?? daMutationError
+  const daModeMeta = daResult ? AI_EXECUTION_MODE_META[daResult.mode] : null
 
   const removeError = removeJournal.isError
     ? removeJournal.error instanceof Error
@@ -318,6 +506,9 @@ export function StockDecisionTab({
                   const next = event.target.value
                   if (isJournalAction(next)) {
                     setAction(next)
+                    setShowBuyGate(false)
+                    clearDaErrorOnEdit()
+                    clearCreateErrorOnEdit()
                   }
                 }}
               >
@@ -338,7 +529,10 @@ export function StockDecisionTab({
                 maxLength={32}
                 placeholder="例如 冷静 / 贪婪 / 谨慎（可选）"
                 value={emotion}
-                onChange={(event) => setEmotion(event.target.value)}
+                onChange={(event) => {
+                  setEmotion(event.target.value)
+                  clearCreateErrorOnEdit()
+                }}
               />
               <div className="emotion-chips" role="group" aria-label="快捷情绪标签">
                 {JOURNAL_EMOTION_PRESETS.map((preset) => {
@@ -349,7 +543,10 @@ export function StockDecisionTab({
                       type="button"
                       aria-pressed={active}
                       className={active ? 'filter-pill active' : 'filter-pill'}
-                      onClick={() => setEmotion(active ? '' : preset)}
+                      onClick={() => {
+                        setEmotion(active ? '' : preset)
+                        clearCreateErrorOnEdit()
+                      }}
                     >
                       {preset}
                     </button>
@@ -370,6 +567,7 @@ export function StockDecisionTab({
                       const latestClose = snapshot.valuation.close
                       if (latestClose !== null && latestClose !== undefined) {
                         setPrice(String(latestClose))
+                        clearCreateErrorOnEdit()
                       }
                     }}
                   >
@@ -386,7 +584,10 @@ export function StockDecisionTab({
                 max="999999999.999"
                 placeholder="例如 1450（可选）"
                 value={price}
-                onChange={(event) => setPrice(event.target.value)}
+                onChange={(event) => {
+                  setPrice(event.target.value)
+                  clearCreateErrorOnEdit()
+                }}
               />
             </div>
 
@@ -401,7 +602,10 @@ export function StockDecisionTab({
                 max="100"
                 placeholder="0 – 100（可选）"
                 value={maxDrawdown}
-                onChange={(event) => setMaxDrawdown(event.target.value)}
+                onChange={(event) => {
+                  setMaxDrawdown(event.target.value)
+                  clearCreateErrorOnEdit()
+                }}
               />
             </div>
 
@@ -413,7 +617,12 @@ export function StockDecisionTab({
                 maxLength={5000}
                 placeholder="写下估值锚点、护城河变化或放弃买入的原因（必填）"
                 value={reason}
-                onChange={(event) => setReason(event.target.value)}
+                onChange={(event) => {
+                  setReason(event.target.value)
+                  setShowBuyGate(false)
+                  clearDaErrorOnEdit()
+                  clearCreateErrorOnEdit()
+                }}
               />
             </div>
 
@@ -425,7 +634,11 @@ export function StockDecisionTab({
                 maxLength={5000}
                 placeholder="明确什么变化会证伪当前判断，例如：连续两季现金流转负（必填）"
                 value={falsifyCondition}
-                onChange={(event) => setFalsifyCondition(event.target.value)}
+                onChange={(event) => {
+                  setFalsifyCondition(event.target.value)
+                  clearDaErrorOnEdit()
+                  clearCreateErrorOnEdit()
+                }}
               />
             </div>
 
@@ -441,7 +654,7 @@ export function StockDecisionTab({
                         key={preset.label}
                         type="button"
                         className="btn-ghost"
-                        disabled={ruleDrafts.length >= MAX_FALSIFY_RULES}
+                        disabled={isRuleLimitReached}
                         onClick={() => addRuleDraft(preset.rule)}
                       >
                         + {preset.label}
@@ -450,7 +663,7 @@ export function StockDecisionTab({
                     <button
                       type="button"
                       className="btn-ghost"
-                      disabled={ruleDrafts.length >= MAX_FALSIFY_RULES}
+                      disabled={isRuleLimitReached}
                       onClick={() => addRuleDraft()}
                     >
                       + 自定义规则
@@ -462,13 +675,17 @@ export function StockDecisionTab({
                   <div className="falsify-rule-list">
                     {ruleDrafts.map((draft, index) => {
                       const supportsMultiPeriod = isMultiPeriodFalsifyMetric(draft.metric)
+                      const canonicalMetric = canonicalizeFalsifyMetric(draft.metric)
+                      const hasCanonicalOption = FALSIFY_METRIC_OPTIONS.some(
+                        (opt) => opt.value === canonicalMetric,
+                      )
                       return (
                         <div key={draft.id} className="stack" style={{ gap: 4 }}>
                           <div className="falsify-rule-row">
                             <select
                               aria-label={`规则 ${index + 1} 指标`}
                               className="input"
-                              value={draft.metric}
+                              value={hasCanonicalOption ? canonicalMetric : draft.metric}
                               onChange={(event) => {
                                 const nextMetric = event.target.value
                                 updateRuleDraft(draft.id, {
@@ -479,6 +696,11 @@ export function StockDecisionTab({
                                 })
                               }}
                             >
+                              {hasCanonicalOption ? null : (
+                                <option value={draft.metric}>
+                                  {getFalsifyMetricLabel(draft.metric)}
+                                </option>
+                              )}
                               {FALSIFY_METRIC_OPTIONS.map((opt) => (
                                 <option key={opt.value} value={opt.value}>
                                   {opt.unit ? `${opt.label} (${opt.unit})` : opt.label}
@@ -522,7 +744,7 @@ export function StockDecisionTab({
                                 className="input mono"
                                 type="number"
                                 min={1}
-                                max={10}
+                                max={MAX_FALSIFY_PERIODS}
                                 step={1}
                                 disabled={!supportsMultiPeriod}
                                 title={
@@ -561,9 +783,216 @@ export function StockDecisionTab({
             </div>
           </div>
 
+          {isBuyOrAddAction ? (
+            <section
+              className="da-panel"
+              aria-label="买入前反方质询 · 理性安检门"
+              aria-busy={devilsAdvocate.isPending}
+            >
+              <div className="da-header">
+                <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                  <strong className="small">买入前反方质询 · 理性安检门</strong>
+                  {daModeMeta ? <Tag color={daModeMeta.color}>{daModeMeta.label}</Tag> : null}
+                  {daResult?.as_of ? (
+                    <span className="small muted mono">{`快照基准 ${daResult.as_of}`}</span>
+                  ) : null}
+                </div>
+
+                <div className="ai-controls">
+                  <AiCompanionControls
+                    mode={effectiveDaMode}
+                    onModeChange={(nextMode) => {
+                      setDaModeOverride(nextMode)
+                      clearDaErrorOnEdit()
+                    }}
+                    quota={activeQuota}
+                    ariaLabel="反方质询执行模式"
+                    disabled={isBusy}
+                  />
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    disabled={isBusy}
+                    onClick={() => handleRunDevilsAdvocate()}
+                  >
+                    {devilsAdvocate.isPending ? '质询生成中...' : '运行反方质询'}
+                  </button>
+                </div>
+              </div>
+
+              <p className="small muted">
+                强制基于确定性排雷指标、逆向估值与历史财务数据挑出 3 条反面质疑，辅助确认否证红线。
+              </p>
+
+              {aiPrefsQuery.data?.prefer_rule_only ? (
+                <div className="notice-box small" role="status">
+                  全局偏好已设为仅纯规则，当前免费零消耗运行
+                </div>
+              ) : null}
+
+              {activeDaError ? (
+                <div className="inline-error stack" style={{ gap: 8 }} role="alert">
+                  <span>{activeDaError}</span>
+                  {!daValidationError && devilsAdvocate.isError ? (
+                    <div
+                      className="row"
+                      style={{ justifyContent: 'flex-start', gap: 8, flexWrap: 'wrap' }}
+                    >
+                      {effectiveDaMode !== 'rule_only' ? (
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          disabled={isBusy}
+                          onClick={handleSwitchRuleOnlyAndRetry}
+                        >
+                          切换纯规则引擎并重试
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn-ghost"
+                          disabled={isBusy}
+                          onClick={() => handleRunDevilsAdvocate('rule_only')}
+                        >
+                          重试纯规则引擎
+                        </button>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {devilsAdvocate.isPending ? (
+                <div className="stack" style={{ gap: 8 }} role="status">
+                  <span className="small muted">正在生成反方质询...</span>
+                  <LoadingBlock lines={3} />
+                </div>
+              ) : daResult ? (
+                <div className="stack" style={{ gap: 10 }}>
+                  {(lastReviewedDraftKey !== null || reason.trim().length > 0) &&
+                  !hasReviewedCurrentDraft ? (
+                    <div className="notice-box notice-warn">
+                      当前买入动作或投资理由较上次质询已有调整，建议重新运行反方质询。
+                    </div>
+                  ) : null}
+
+                  {daResult.fallback_reason ? (
+                    <div className="notice-box notice-warn" role="status">
+                      {`已回退规则引擎：${daResult.fallback_reason}`}
+                    </div>
+                  ) : daResult.mode === 'deterministic_fallback' ? (
+                    <div className="notice-box notice-warn" role="status">
+                      已回退规则引擎，当前展示确定性反方质询。
+                    </div>
+                  ) : null}
+
+                  <div className="da-challenge-list">
+                    {daResult.challenges.map((challenge) => {
+                      const rawSuggestedRule = challenge.suggested_falsify_rule ?? null
+                      const normalizedSuggestedRule = rawSuggestedRule
+                        ? normalizeSuggestedFalsifyRule(rawSuggestedRule)
+                        : null
+                      const isAdopted =
+                        normalizedSuggestedRule !== null &&
+                        ruleDrafts.some((draft) =>
+                          isRuleMatchingDraft(draft, normalizedSuggestedRule),
+                        )
+
+                      return (
+                        <article key={challenge.index} className="da-challenge-card">
+                          <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                            <strong>{`#${challenge.index} ${challenge.title}`}</strong>
+                            {isAdopted ? <Tag color="green">已加入规则</Tag> : null}
+                          </div>
+
+                          <p className="small soft">{challenge.thesis}</p>
+
+                          {(challenge.cited_facts ?? []).length > 0 ? (
+                            <div className="da-fact-chips">
+                              {(challenge.cited_facts ?? []).map((fact, factIdx) => (
+                                <span
+                                  key={`${fact.label}-${fact.source_section}-${factIdx}`}
+                                  className="da-fact-chip mono"
+                                >
+                                  {`${fact.label}: ${fact.value_text} · ${fact.source_section}`}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          {normalizedSuggestedRule ? (
+                            <div className="da-suggest-row">
+                              <span className="small muted mono">
+                                {`建议红线：${formatFalsifyRuleLine(normalizedSuggestedRule)}`}
+                              </span>
+                              <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+                                {!isAdopted && isRuleLimitReached ? (
+                                  <span className="small muted">
+                                    {`已达 ${MAX_FALSIFY_RULES} 条红线上限`}
+                                  </span>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="btn-ghost"
+                                  disabled={isAdopted}
+                                  aria-label={`采纳第 ${challenge.index} 条建议红线`}
+                                  onClick={() => handleAdoptSuggestedRule(normalizedSuggestedRule)}
+                                >
+                                  {isAdopted ? '已采纳' : '采纳为否证红线'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </article>
+                      )
+                    })}
+                  </div>
+
+                  <div className="disclaimer-box small muted">{daResult.compliance_notice}</div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {showBuyGate && isBuyOrAddAction ? (
+            <div
+              className="da-gate-banner"
+              role="region"
+              aria-label="买入前理性安检门确认"
+              aria-live="polite"
+            >
+              <p className="small">
+                {`尚未对当前${action === 'buy' ? '买入' : '加仓'}草稿运行「反方质询」安检门。建议先检验潜在漏洞并核对否证红线，也可在离线或额度用尽时直接跳过提交。`}
+              </p>
+              <div className="da-gate-actions">
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  disabled={isBusy}
+                  onClick={handleSkipGateAndSubmit}
+                >
+                  跳过质询，直接提交
+                </button>
+                <button
+                  ref={gateRunDaButtonRef}
+                  type="button"
+                  className="btn-primary"
+                  disabled={isBusy}
+                  onClick={() => handleRunDevilsAdvocate()}
+                >
+                  先运行反方质询
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="form-actions">
-            <button type="submit" className="btn-primary" disabled={createJournal.isPending}>
-              {createJournal.isPending ? '保存中...' : '记录决策'}
+            <button type="submit" className="btn-primary" disabled={isBusy}>
+              {createJournal.isPending
+                ? '保存中...'
+                : devilsAdvocate.isPending
+                  ? '质询运行中...'
+                  : '记录决策'}
             </button>
           </div>
 
@@ -618,5 +1047,56 @@ export function StockDecisionTab({
         )}
       </Card>
     </div>
+  )
+}
+
+export function StockDecisionTab({
+  stock,
+  snapshot = null,
+}: {
+  stock: StockDetail
+  snapshot?: StockSnapshotPayload | null
+}) {
+  const { user, isAuthLoading } = useAuth()
+  const valuationAnchorStrip = buildValuationAnchorStrip(snapshot)
+
+  if (isAuthLoading) {
+    return (
+      <Card title="投资决策日记">
+        {valuationAnchorStrip}
+        <LoadingBlock lines={3} />
+      </Card>
+    )
+  }
+
+  if (!user) {
+    return (
+      <Card title="投资决策日记" extra={<Tag color="gray">未登录</Tag>}>
+        <div className="stack" style={{ gap: 12 }}>
+          {valuationAnchorStrip}
+          <EmptyBlock
+            title="登录后记录你的投资决策与否证红线"
+            hint={
+              <Link
+                className="btn-primary mt-16"
+                to="/login"
+                state={{ from: `/stock/${stock.code}` }}
+              >
+                前往登录 / 注册
+              </Link>
+            }
+          />
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <StockDecisionTabContent
+      key={`${stock.code}:${user.id}`}
+      stock={stock}
+      snapshot={snapshot}
+      user={user}
+    />
   )
 }

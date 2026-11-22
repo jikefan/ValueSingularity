@@ -7,9 +7,14 @@ import { AuthProvider } from '../../lib/AuthProvider'
 import { setAccessToken } from '../../lib/api'
 import { createQueryClient } from '../../lib/queryClient'
 import type {
+  AiPreferences,
+  DevilsAdvocateRequest,
+  DevilsAdvocateResponse,
   FalsifyRule,
   JournalCreate,
   JournalEntryItem,
+  MdaDiffRequest,
+  MdaDiffResponse,
   StockDetail,
   StockSnapshotPayload,
   TokenResponse,
@@ -332,6 +337,23 @@ const SAMPLE_TOKEN: TokenResponse = {
   user: SAMPLE_USER,
 }
 
+const SAMPLE_AI_PREFS: AiPreferences = {
+  prefer_rule_only: false,
+  byok_enabled: false,
+  byok_base_url_masked: null,
+  byok_api_key_configured: false,
+  byok_api_key_masked: null,
+  byok_model: 'gpt-4o-mini',
+  quota: {
+    plan_tier: 'pro',
+    daily_limit: 5,
+    used_today: 1,
+    remaining_today: 4,
+    byok_active: false,
+    resets_at_shanghai: '2026-11-23 24:00 CST',
+  },
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -421,6 +443,50 @@ function parseWatchlistUpsert(raw: string): WatchlistUpsert {
     name: parsed.name,
     industry: typeof parsed.industry === 'string' ? parsed.industry : null,
     alert_enabled: Boolean(parsed.alert_enabled),
+  }
+}
+
+function parseDevilsAdvocateRequest(raw: string): DevilsAdvocateRequest {
+  const parsed: unknown = JSON.parse(raw)
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.code !== 'string' ||
+    !isJournalAction(parsed.action) ||
+    typeof parsed.reason !== 'string' ||
+    typeof parsed.falsify_condition !== 'string' ||
+    (parsed.mode !== 'auto' && parsed.mode !== 'rule_only')
+  ) {
+    throw new Error('Invalid DevilsAdvocateRequest payload')
+  }
+  return {
+    code: parsed.code,
+    action: parsed.action,
+    reason: parsed.reason,
+    falsify_condition: parsed.falsify_condition,
+    mode: parsed.mode,
+  }
+}
+
+function parseMdaDiffRequest(raw: string): MdaDiffRequest {
+  const parsed: unknown = JSON.parse(raw)
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.code !== 'string' ||
+    typeof parsed.previous_period_label !== 'string' ||
+    typeof parsed.current_period_label !== 'string' ||
+    typeof parsed.previous_text !== 'string' ||
+    typeof parsed.current_text !== 'string' ||
+    (parsed.mode !== 'auto' && parsed.mode !== 'rule_only')
+  ) {
+    throw new Error('Invalid MdaDiffRequest payload')
+  }
+  return {
+    code: parsed.code,
+    previous_period_label: parsed.previous_period_label,
+    current_period_label: parsed.current_period_label,
+    previous_text: parsed.previous_text,
+    current_text: parsed.current_text,
+    mode: parsed.mode,
   }
 }
 
@@ -525,6 +591,7 @@ describe('StockPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: '风险排雷' }))
     expect(await screen.findByText('存贷双高扫描')).toBeInTheDocument()
     expect(screen.getByText('应收与存货膨胀')).toBeInTheDocument()
+    expect(screen.getByText('登录后对比连续两期年报管理层讨论与财务口径变化')).toBeInTheDocument()
     const expandButtons = screen.getAllByRole('button', { name: /展开历年证据/ })
     expect(expandButtons).toHaveLength(3)
     const firstExpandBtn = expandButtons[0]
@@ -695,6 +762,9 @@ describe('StockPage', () => {
       }
       if (url.pathname === '/api/journal' && request.method === 'GET') {
         return jsonResponse(journalState, 200)
+      }
+      if (url.pathname === '/api/ai/preferences' && request.method === 'GET') {
+        return jsonResponse(SAMPLE_AI_PREFS, 200)
       }
       if (url.pathname === '/api/journal' && request.method === 'POST') {
         postCalled = true
@@ -979,6 +1049,9 @@ describe('StockPage', () => {
       if (url.pathname === '/api/journal' && request.method === 'GET') {
         return jsonResponse(journalState, 200)
       }
+      if (url.pathname === '/api/ai/preferences' && request.method === 'GET') {
+        return jsonResponse(SAMPLE_AI_PREFS, 200)
+      }
       if (url.pathname === '/api/journal' && request.method === 'POST') {
         const body = parseJournalCreate(await request.clone().text())
         capturedCreate = body
@@ -1065,6 +1138,10 @@ describe('StockPage', () => {
     fireEvent.change(screen.getByLabelText('规则 3 连续期数'), { target: { value: '2' } })
     fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
 
+    expect(await screen.findByRole('button', { name: '跳过质询，直接提交' })).toBeInTheDocument()
+    expect(capturedCreate).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '跳过质询，直接提交' }))
+
     expect(await screen.findByText('高 ROE 现金牛折价窗口买入')).toBeInTheDocument()
     expect(capturedCreate).toEqual({
       code: '600519',
@@ -1091,5 +1168,800 @@ describe('StockPage', () => {
     expect(screen.getByText('评分 89')).toBeInTheDocument()
     expect(screen.getByText('沪深300 3,950.25 (2026-11-21)')).toBeInTheDocument()
     expect(screen.getByText(/0\/5/)).toBeInTheDocument()
+  })
+
+  it('runs pre-trade Devils Advocate gate, adopts suggested falsify rule, syncs quota, and gates edited drafts', async () => {
+    let journalState: JournalEntryItem[] = []
+    let prefsGetCount = 0
+    const daRequests: DevilsAdvocateRequest[] = []
+    const journalCreates: JournalCreate[] = []
+
+    const daResponse: DevilsAdvocateResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      as_of: '2026-11-20',
+      mode: 'deterministic_fallback',
+      fallback_reason: '外部模型超时，已自动回退规则引擎',
+      challenges: [
+        {
+          index: 1,
+          title: '估值与逆向隐含增速约束',
+          thesis: '当前 PE 仍高于绝对深度折价区间，需核查长期现金流增速。',
+          cited_facts: [
+            { label: 'PE(TTM)', value_text: '22.10', source_section: '估值截面' },
+            { label: '隐含FCF增速', value_text: '+8.42%', source_section: '逆向DCF' },
+          ],
+          suggested_falsify_rule: {
+            metric: 'roe',
+            op: 'lt',
+            value: 12,
+            periods: 2,
+          },
+        },
+        {
+          index: 2,
+          title: '渠道库存与两金增速背离',
+          thesis: '存货增速略高于营收增速，需持续跟踪批价与去库节奏。',
+          cited_facts: [{ label: '增速差', value_text: '+4.2%', source_section: '财务CT' }],
+          suggested_falsify_rule: {
+            metric: 'ocf_to_profit_5y_pct',
+            op: 'lt',
+            value: 80,
+            periods: 1,
+          },
+        },
+        {
+          index: 3,
+          title: '宏观商务消费需求扰动',
+          thesis: '高端消费对宏观景气存在滞后弹性。',
+          cited_facts: [],
+          suggested_falsify_rule: null,
+        },
+      ],
+      quota: {
+        ...SAMPLE_AI_PREFS.quota,
+        used_today: 2,
+        remaining_today: 3,
+      },
+      compliance_notice: '合规提示：反方质询基于已同步财报快照生成，仅供投资复盘，不构成买卖建议。',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return jsonResponse(SAMPLE_TOKEN, 200)
+      }
+      if (url.pathname === '/api/stocks/600519' && request.method === 'GET') {
+        return jsonResponse(SAMPLE_STOCK, 200)
+      }
+      if (url.pathname === '/api/stocks/600519/snapshot' && request.method === 'GET') {
+        return jsonResponse(SAMPLE_SNAPSHOT, 200)
+      }
+      if (url.pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (url.pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse(journalState, 200)
+      }
+      if (url.pathname === '/api/ai/preferences' && request.method === 'GET') {
+        prefsGetCount += 1
+        return jsonResponse(SAMPLE_AI_PREFS, 200)
+      }
+      if (url.pathname === '/api/ai/devils-advocate' && request.method === 'POST') {
+        daRequests.push(parseDevilsAdvocateRequest(await request.clone().text()))
+        return jsonResponse(daResponse, 200)
+      }
+      if (url.pathname === '/api/journal' && request.method === 'POST') {
+        const body = parseJournalCreate(await request.clone().text())
+        journalCreates.push(body)
+        const created: JournalEntryItem = {
+          id: 88,
+          code: body.code,
+          name: body.name ?? null,
+          action: body.action,
+          reason: body.reason,
+          falsify_condition: body.falsify_condition,
+          falsify_rules: body.falsify_rules ?? null,
+          max_drawdown: body.max_drawdown ?? null,
+          emotion: body.emotion ?? null,
+          price: body.price ?? null,
+          benchmark_code: body.benchmark_code,
+          benchmark_price: 3950,
+          created_at: '2026-11-22T12:30:00Z',
+        }
+        journalState = [created, ...journalState]
+        return jsonResponse(created, 201)
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${url.pathname}` }, 500)
+    })
+
+    renderStockPage('/stock/600519')
+    fireEvent.click(await screen.findByRole('tab', { name: '投资决策' }))
+
+    expect(await screen.findByText('买入前反方质询 · 理性安检门')).toBeInTheDocument()
+    expect(await screen.findByText('今日 AI 额度剩余 4/5')).toBeInTheDocument()
+
+    // Non-buy/add actions hide the gate; buy/add show it.
+    fireEvent.change(screen.getByLabelText('决策动作'), { target: { value: 'sell' } })
+    expect(screen.queryByText('买入前反方质询 · 理性安检门')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('决策动作'), { target: { value: 'buy' } })
+    expect(screen.getByText('买入前反方质询 · 理性安检门')).toBeInTheDocument()
+
+    // Running DA with empty reason prompts cleanly without firing API call.
+    fireEvent.click(screen.getByRole('button', { name: '运行反方质询' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '请先填写投资理由，再运行买入前反方质询',
+    )
+    expect(daRequests).toHaveLength(0)
+
+    // Populate required fields and click 记录决策 without running DA -> inline confirmation gate appears.
+    fireEvent.change(screen.getByLabelText('投资理由'), {
+      target: { value: '现金流稳健，分红率具备吸引力' },
+    })
+    fireEvent.change(screen.getByLabelText('否证条件'), {
+      target: { value: '待质询补充' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
+
+    const buyGateBanner = await screen.findByRole('region', { name: '买入前理性安检门确认' })
+    expect(buyGateBanner).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByRole('button', { name: '先运行反方质询' })).toHaveFocus()
+    expect(journalCreates).toHaveLength(0)
+
+    // Clear falsifyCondition so adopting a suggested rule fills it automatically when empty.
+    fireEvent.change(screen.getByLabelText('否证条件'), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: '纯规则引擎 (rule_only)' }))
+    fireEvent.click(screen.getByRole('button', { name: '先运行反方质询' }))
+
+    expect(await screen.findByText('#1 估值与逆向隐含增速约束')).toBeInTheDocument()
+    expect(screen.getByText('#2 渠道库存与两金增速背离')).toBeInTheDocument()
+    expect(screen.getByText('#3 宏观商务消费需求扰动')).toBeInTheDocument()
+    expect(screen.getByText('PE(TTM): 22.10 · 估值截面')).toBeInTheDocument()
+    expect(screen.getByText('隐含FCF增速: +8.42% · 逆向DCF')).toBeInTheDocument()
+    expect(screen.getByText('规则回退 · deterministic_fallback')).toBeInTheDocument()
+    expect(screen.getByText(/外部模型超时，已自动回退规则引擎/)).toBeInTheDocument()
+    expect(screen.getByText(/仅供投资复盘，不构成买卖建议/)).toBeInTheDocument()
+
+    // Quota pill synced live without a second GET /api/ai/preferences roundtrip.
+    expect(screen.getByText('今日 AI 额度剩余 3/5')).toBeInTheDocument()
+    expect(prefsGetCount).toBe(1)
+    expect(daRequests).toEqual([
+      {
+        code: '600519',
+        action: 'buy',
+        reason: '现金流稳健，分红率具备吸引力',
+        falsify_condition: '',
+        mode: 'rule_only',
+      },
+    ])
+
+    // Adopt suggested rule 1 (legacy 'roe' < 12 for 2 periods) -> canonicalizes to 'roe_pct' without duplicate options.
+    const firstAdoptBtn = screen.getByRole('button', { name: '采纳第 1 条建议红线' })
+    const secondAdoptBtn = screen.getByRole('button', { name: '采纳第 2 条建议红线' })
+    fireEvent.click(firstAdoptBtn)
+
+    expect(screen.getByLabelText('规则 1 指标')).toHaveValue('roe_pct')
+    expect(screen.getAllByRole('option', { name: 'ROE (%)' })).toHaveLength(1)
+    expect(screen.queryByRole('option', { name: 'ROE' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('规则 1 条件')).toHaveValue('lt')
+    expect(screen.getByLabelText('规则 1 阈值')).toHaveValue(12)
+    expect(screen.getByLabelText('规则 1 连续期数')).toHaveValue(2)
+    expect(screen.getByLabelText('否证条件')).toHaveValue('ROE < 12（连续 2 期）')
+    expect(firstAdoptBtn).toBeDisabled()
+    expect(firstAdoptBtn).toHaveTextContent('已采纳')
+
+    // Adopting a second rule while falsifyCondition is non-empty adds the rule without overwriting existing text.
+    fireEvent.click(secondAdoptBtn)
+    expect(screen.getByLabelText('规则 2 指标')).toHaveValue('ocf_to_profit_5y_pct')
+    expect(screen.getByLabelText('规则 2 阈值')).toHaveValue(80)
+    expect(screen.getByLabelText('否证条件')).toHaveValue('ROE < 12（连续 2 期）')
+    expect(secondAdoptBtn).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '移除规则 2' }))
+    expect(secondAdoptBtn).not.toBeDisabled()
+
+    // Editing reason re-arms the buy gate; reverting back or running again clears it.
+    fireEvent.change(screen.getByLabelText('投资理由'), {
+      target: { value: '完全不同的新买入逻辑' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
+    const rearmedGateBanner = await screen.findByRole('region', { name: '买入前理性安检门确认' })
+    expect(rearmedGateBanner).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByRole('button', { name: '先运行反方质询' })).toHaveFocus()
+    expect(journalCreates).toHaveLength(0)
+
+    // Restore reviewed draft reason -> submitting logs directly without gate.
+    fireEvent.change(screen.getByLabelText('投资理由'), {
+      target: { value: '现金流稳健，分红率具备吸引力' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
+
+    expect(await screen.findByText('现金流稳健，分红率具备吸引力')).toBeInTheDocument()
+    expect(journalCreates).toEqual([
+      {
+        code: '600519',
+        name: '贵州茅台',
+        action: 'buy',
+        reason: '现金流稳健，分红率具备吸引力',
+        falsify_condition: 'ROE < 12（连续 2 期）',
+        price: null,
+        max_drawdown: null,
+        emotion: null,
+        benchmark_code: '000300',
+        falsify_rules: [{ metric: 'roe_pct', op: 'lt', value: 12, periods: 2 }],
+      },
+    ])
+  })
+
+  it('renders MD&A Diff panel under 风险排雷 tab, fills sample snippets, clears text, and renders shifts and highlights', async () => {
+    const mdaRequests: MdaDiffRequest[] = []
+    let prefsGetCount = 0
+
+    const mdaResponse: MdaDiffResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      previous_period_label: '2024年报',
+      current_period_label: '2025年报',
+      mode: 'deterministic',
+      summary:
+        '共识别文本变更 2 处（新增 1 处、删除 0 处、修改 1 处），其中高敏感会计/风险提示 1 处。',
+      metric_shifts: [
+        {
+          metric_label: '毛利率变化',
+          previous_text: '2024年 91.80%',
+          current_text: '2025年 86.10%',
+          delta_text: '-5.70 个百分点',
+          severity: 'red',
+          interpretation: '毛利率大幅下滑，可能存在价格竞争加剧或产品结构承压。',
+        },
+      ],
+      text_highlights: [
+        {
+          change_type: 'modified',
+          category: '会计政策与审计口径变更',
+          previous_excerpt: '前五大客户营收占比为 28.5%，渠道库存周转天数保持在 35 天健康区间。',
+          current_excerpt: '渠道库存承压，本期针对部分长账龄应收款调整坏账准备计提比例并计提减值。',
+          signal_tags: ['口径:坏账准备', '风险:计提减值'],
+          severity: 'red',
+        },
+      ],
+      quota: {
+        ...SAMPLE_AI_PREFS.quota,
+        byok_active: true,
+      },
+      compliance_notice: '合规提示：MD&A 差异仅作研究辅助，不构成任何证券投资建议。',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return jsonResponse(SAMPLE_TOKEN, 200)
+      }
+      if (url.pathname === '/api/stocks/600519' && request.method === 'GET') {
+        return jsonResponse(SAMPLE_STOCK, 200)
+      }
+      if (url.pathname === '/api/stocks/600519/snapshot' && request.method === 'GET') {
+        return jsonResponse(SAMPLE_SNAPSHOT, 200)
+      }
+      if (url.pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (url.pathname === '/api/ai/preferences' && request.method === 'GET') {
+        prefsGetCount += 1
+        return jsonResponse(SAMPLE_AI_PREFS, 200)
+      }
+      if (url.pathname === '/api/ai/mda-diff' && request.method === 'POST') {
+        mdaRequests.push(parseMdaDiffRequest(await request.clone().text()))
+        return jsonResponse(mdaResponse, 200)
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${url.pathname}` }, 500)
+    })
+
+    renderStockPage('/stock/600519')
+    fireEvent.click(await screen.findByRole('tab', { name: '风险排雷' }))
+
+    expect(await screen.findByText('年报 MD&A 口径变化对比器 · 贵州茅台')).toBeInTheDocument()
+    expect(await screen.findByText('今日 AI 额度剩余 4/5')).toBeInTheDocument()
+
+    // Quick-fill sample -> clear -> quick-fill again -> toggle rule_only -> submit.
+    fireEvent.click(screen.getByRole('button', { name: '填入年报对比样例' }))
+    expect(screen.getByLabelText('上期报告标签')).toHaveValue('2024年报')
+    expect(screen.getByLabelText('本期报告标签')).toHaveValue('2025年报')
+    expect(screen.getByLabelText('上期管理层讨论与分析原文')).not.toHaveValue('')
+    expect(screen.getByLabelText('本期管理层讨论与分析原文')).not.toHaveValue('')
+
+    fireEvent.click(screen.getByRole('button', { name: '清空文本' }))
+    expect(screen.getByLabelText('上期管理层讨论与分析原文')).toHaveValue('')
+    expect(screen.getByLabelText('本期管理层讨论与分析原文')).toHaveValue('')
+
+    fireEvent.click(screen.getByRole('button', { name: '填入年报对比样例' }))
+    fireEvent.click(screen.getByRole('button', { name: '纯规则引擎 (rule_only)' }))
+    fireEvent.click(screen.getByRole('button', { name: '运行 MD&A 口径对比' }))
+
+    expect(await screen.findByText('对比结论摘要')).toBeInTheDocument()
+    expect(screen.getByText(/共识别文本变更 2 处/)).toBeInTheDocument()
+    expect(screen.getByText('规则引擎 · deterministic')).toBeInTheDocument()
+    expect(screen.getByText('毛利率变化')).toBeInTheDocument()
+    expect(screen.getByText('变化：-5.70 个百分点')).toBeInTheDocument()
+    expect(screen.getByText('会计政策与审计口径变更')).toBeInTheDocument()
+    expect(screen.getByText('修改 · modified')).toBeInTheDocument()
+    expect(screen.getByText('口径:坏账准备')).toBeInTheDocument()
+    expect(screen.getByText('风险:计提减值')).toBeInTheDocument()
+    expect(screen.getByText(/MD&A 差异仅作研究辅助/)).toBeInTheDocument()
+    expect(screen.getByText('BYOK 已启用')).toBeInTheDocument()
+    expect(prefsGetCount).toBe(1)
+    expect(mdaRequests).toHaveLength(1)
+    expect(mdaRequests[0]?.mode).toBe('rule_only')
+    expect(mdaRequests[0]?.previous_period_label).toBe('2024年报')
+    expect(mdaRequests[0]?.current_period_label).toBe('2025年报')
+  })
+
+  it('preserves DA and MD&A Diff results across tab switches while unmounting inactive tabs, and clears MD&A cache on 清空文本', async () => {
+    let daCalls = 0
+    let mdaCalls = 0
+
+    const daResponse: DevilsAdvocateResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      as_of: '2026-11-20',
+      mode: 'deterministic',
+      fallback_reason: null,
+      challenges: [
+        {
+          index: 1,
+          title: '跨Tab保留的质询项',
+          thesis: '切换 tab 后仍应保留此条质询。',
+          cited_facts: [],
+          suggested_falsify_rule: null,
+        },
+      ],
+      quota: SAMPLE_AI_PREFS.quota,
+      compliance_notice: '仅供研究复盘，不构成投资建议。',
+    }
+    const mdaResponse: MdaDiffResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      previous_period_label: '2024年报',
+      current_period_label: '2025年报',
+      mode: 'deterministic',
+      fallback_reason: null,
+      summary: '跨Tab保留的MD&A对比摘要。',
+      metric_shifts: [],
+      text_highlights: [],
+      quota: SAMPLE_AI_PREFS.quota,
+      compliance_notice: '仅供研究复盘，不构成投资建议。',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse(SAMPLE_TOKEN, 200))
+      }
+      if (url.pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (url.pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(SAMPLE_SNAPSHOT, 200))
+      }
+      if (url.pathname === '/api/watchlist') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (url.pathname === '/api/journal') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (url.pathname === '/api/ai/preferences') {
+        return Promise.resolve(jsonResponse(SAMPLE_AI_PREFS, 200))
+      }
+      if (url.pathname === '/api/ai/devils-advocate') {
+        daCalls += 1
+        return Promise.resolve(jsonResponse(daResponse, 200))
+      }
+      if (url.pathname === '/api/ai/mda-diff') {
+        mdaCalls += 1
+        return Promise.resolve(jsonResponse(mdaResponse, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600519')
+
+    fireEvent.click(await screen.findByRole('tab', { name: '投资决策' }))
+    fireEvent.change(await screen.findByLabelText('投资理由'), {
+      target: { value: '护城河深厚，分红率高' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '运行反方质询' }))
+    expect(await screen.findByText('#1 跨Tab保留的质询项')).toBeInTheDocument()
+
+    // Switch to 风险排雷 -> Decision tab unmounts cleanly, MD&A Diff runs.
+    fireEvent.click(screen.getByRole('tab', { name: '风险排雷' }))
+    expect(screen.queryByText('#1 跨Tab保留的质询项')).not.toBeInTheDocument()
+
+    fireEvent.click(await screen.findByRole('button', { name: '填入年报对比样例' }))
+    fireEvent.click(screen.getByRole('button', { name: '运行 MD&A 口径对比' }))
+    expect(await screen.findByText('跨Tab保留的MD&A对比摘要。')).toBeInTheDocument()
+
+    // Switch to 估值 -> Risks tab unmounts cleanly.
+    fireEvent.click(screen.getByRole('tab', { name: '估值' }))
+    expect(screen.queryByText('跨Tab保留的MD&A对比摘要。')).not.toBeInTheDocument()
+
+    // Switch back to 投资决策 -> cached DA result renders immediately with 0 extra POSTs.
+    fireEvent.click(screen.getByRole('tab', { name: '投资决策' }))
+    expect(await screen.findByText('#1 跨Tab保留的质询项')).toBeInTheDocument()
+    expect(daCalls).toBe(1)
+
+    // Switch back to 风险排雷 -> cached MD&A Diff renders immediately with 0 extra POSTs, then 清空文本 clears it.
+    fireEvent.click(screen.getByRole('tab', { name: '风险排雷' }))
+    expect(await screen.findByText('跨Tab保留的MD&A对比摘要。')).toBeInTheDocument()
+    expect(mdaCalls).toBe(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '清空文本' }))
+    await waitFor(() => {
+      expect(screen.queryByText('跨Tab保留的MD&A对比摘要。')).not.toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('tab', { name: '估值' }))
+    fireEvent.click(screen.getByRole('tab', { name: '风险排雷' }))
+    expect(screen.queryByText('跨Tab保留的MD&A对比摘要。')).not.toBeInTheDocument()
+  })
+
+  it('unlocks MD&A Diff for unsynced stocks with strict blank-text validation, single-text warning, and fallback_reason', async () => {
+    const unsyncedDetail: StockDetail = {
+      ...SAMPLE_STOCK,
+      code: '000999',
+      name: '*ST样本',
+      exchange: 'SZ',
+      is_st: true,
+      snapshot_available: false,
+    }
+    const mdaRequests: MdaDiffRequest[] = []
+
+    const fallbackMdaResponse: MdaDiffResponse = {
+      code: '000999',
+      stock_name: '*ST样本',
+      previous_period_label: '上期年报',
+      current_period_label: '本期年报',
+      mode: 'deterministic_fallback',
+      fallback_reason: '模型输出未通过事实校验，已自动切回纯规则差异引擎',
+      summary: '识别到 1 处风险提示变化。',
+      metric_shifts: [],
+      text_highlights: [],
+      quota: SAMPLE_AI_PREFS.quota,
+      compliance_notice: '仅供研究复盘，不构成投资建议。',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh') {
+        return jsonResponse(SAMPLE_TOKEN, 200)
+      }
+      if (url.pathname === '/api/stocks/000999') {
+        return jsonResponse(unsyncedDetail, 200)
+      }
+      if (url.pathname === '/api/watchlist') {
+        return jsonResponse([], 200)
+      }
+      if (url.pathname === '/api/ai/preferences') {
+        return jsonResponse(SAMPLE_AI_PREFS, 200)
+      }
+      if (url.pathname === '/api/ai/mda-diff' && request.method === 'POST') {
+        mdaRequests.push(parseMdaDiffRequest(await request.clone().text()))
+        return jsonResponse(fallbackMdaResponse, 200)
+      }
+      return jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500)
+    })
+
+    renderStockPage('/stock/000999')
+    fireEvent.click(await screen.findByRole('tab', { name: '风险排雷' }))
+
+    expect(await screen.findByText('风险排雷尚无深度分析快照')).toBeInTheDocument()
+    expect(screen.getByText('年报 MD&A 口径变化对比器 · *ST样本')).toBeInTheDocument()
+    expect(
+      screen.getByText(/尚未同步结构化财报快照，请粘贴两期年报原文进行对比/),
+    ).toBeInTheDocument()
+
+    // Blank submission is blocked without calling API.
+    fireEvent.click(screen.getByRole('button', { name: '运行 MD&A 口径对比' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '该标的尚未同步结构化财报快照，请粘贴两期年报原文后再运行对比',
+    )
+    expect(mdaRequests).toHaveLength(0)
+
+    // Filling only one textarea warns clearly.
+    fireEvent.change(screen.getByLabelText('上期管理层讨论与分析原文'), {
+      target: { value: '上期业务正常推进。' },
+    })
+    expect(screen.getByRole('status')).toHaveTextContent(/全部条款将被标记为“已删除”/)
+
+    // Filling current textarea clears warning and allows submission, rendering fallback_reason.
+    fireEvent.change(screen.getByLabelText('本期管理层讨论与分析原文'), {
+      target: { value: '本期应收账款坏账准备计提比例上调。' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '运行 MD&A 口径对比' }))
+
+    expect(await screen.findByText('识别到 1 处风险提示变化。')).toBeInTheDocument()
+    expect(
+      screen.getByText('已回退规则引擎：模型输出未通过事实校验，已自动切回纯规则差异引擎'),
+    ).toBeInTheDocument()
+    expect(mdaRequests).toHaveLength(1)
+  })
+
+  it('protects LLM quota on blank MD&A text for synced stocks, recovers from 429 on both AI tools, enforces rules bounds/cap, and shows prefer_rule_only notice', async () => {
+    let prefsState: AiPreferences = {
+      ...SAMPLE_AI_PREFS,
+      prefer_rule_only: true,
+    }
+    let daAttempt = 0
+    let mdaAttempt = 0
+    let resolvePendingDa!: (res: Response) => void
+    const pendingDa = new Promise<Response>((resolve) => {
+      resolvePendingDa = resolve
+    })
+    const daRequests: DevilsAdvocateRequest[] = []
+    const mdaRequests: MdaDiffRequest[] = []
+    const journalCreates: JournalCreate[] = []
+
+    const daFallbackChallengeResponse: DevilsAdvocateResponse = {
+      code: '600519',
+      stock_name: '贵州茅台',
+      as_of: '2026-11-20',
+      mode: 'deterministic',
+      fallback_reason: null,
+      challenges: [
+        {
+          index: 1,
+          title: 'PB分位过高提醒',
+          thesis: '估值高于历史均值区间。',
+          cited_facts: [],
+          suggested_falsify_rule: {
+            metric: 'pb_percentile',
+            op: 'gte',
+            value: 85,
+            periods: 3,
+          },
+        },
+        {
+          index: 2,
+          title: '现金流保障提示',
+          thesis: '关注净现比持续性。',
+          cited_facts: [],
+          suggested_falsify_rule: {
+            metric: 'ocf_to_profit_5y_pct',
+            op: 'lt',
+            value: 80,
+            periods: 1,
+          },
+        },
+      ],
+      quota: {
+        ...SAMPLE_AI_PREFS.quota,
+        used_today: 5,
+        remaining_today: 0,
+      },
+      compliance_notice: '仅供研究复盘，不构成投资建议。',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh') {
+        return jsonResponse(SAMPLE_TOKEN, 200)
+      }
+      if (url.pathname === '/api/stocks/600519') {
+        return jsonResponse(SAMPLE_STOCK, 200)
+      }
+      if (url.pathname === '/api/stocks/600519/snapshot') {
+        return jsonResponse(SAMPLE_SNAPSHOT, 200)
+      }
+      if (url.pathname === '/api/watchlist') {
+        return jsonResponse([], 200)
+      }
+      if (url.pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (url.pathname === '/api/journal' && request.method === 'POST') {
+        const body = parseJournalCreate(await request.clone().text())
+        journalCreates.push(body)
+        return jsonResponse(
+          {
+            id: 77,
+            code: body.code,
+            name: body.name ?? null,
+            action: body.action,
+            reason: body.reason,
+            falsify_condition: body.falsify_condition,
+            falsify_rules: body.falsify_rules ?? null,
+            max_drawdown: body.max_drawdown ?? null,
+            emotion: body.emotion ?? null,
+            price: body.price ?? null,
+            benchmark_code: body.benchmark_code,
+            benchmark_price: null,
+            created_at: '2026-11-22T12:00:00Z',
+          },
+          201,
+        )
+      }
+      if (url.pathname === '/api/ai/preferences') {
+        return jsonResponse(prefsState, 200)
+      }
+      if (url.pathname === '/api/ai/mda-diff' && request.method === 'POST') {
+        const body = parseMdaDiffRequest(await request.clone().text())
+        mdaRequests.push(body)
+        mdaAttempt += 1
+        if (mdaAttempt === 2) {
+          prefsState = {
+            ...prefsState,
+            quota: { ...prefsState.quota, used_today: 5, remaining_today: 0 },
+          }
+          return jsonResponse({ detail: '今日平台 AI 额度已用完（5/5）' }, 429)
+        }
+        return jsonResponse(
+          {
+            code: '600519',
+            stock_name: '贵州茅台',
+            previous_period_label: body.previous_period_label,
+            current_period_label: body.current_period_label,
+            mode: 'deterministic',
+            fallback_reason: null,
+            summary: '纯规则对比完成。',
+            metric_shifts: [],
+            text_highlights: [],
+            quota: prefsState.quota,
+            compliance_notice: '仅供研究复盘，不构成投资建议。',
+          } satisfies MdaDiffResponse,
+          200,
+        )
+      }
+      if (url.pathname === '/api/ai/devils-advocate' && request.method === 'POST') {
+        const body = parseDevilsAdvocateRequest(await request.clone().text())
+        daRequests.push(body)
+        daAttempt += 1
+        if (daAttempt <= 2) {
+          prefsState = {
+            ...prefsState,
+            quota: { ...prefsState.quota, used_today: 5, remaining_today: 0 },
+          }
+          return jsonResponse({ detail: '今日平台 AI 额度已用完（5/5）' }, 429)
+        }
+        if (daAttempt === 3) {
+          return pendingDa
+        }
+        return jsonResponse(daFallbackChallengeResponse, 200)
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${url.pathname}` }, 500)
+    })
+
+    renderStockPage('/stock/600519')
+
+    // Check prefer_rule_only notice and blank-text auto-rule_only quota protection in MD&A Diff.
+    fireEvent.click(await screen.findByRole('tab', { name: '风险排雷' }))
+    expect(
+      await screen.findByText('全局偏好已设为仅纯规则，当前免费零消耗运行'),
+    ).toBeInTheDocument()
+
+    // Override mode to auto while leaving both textareas blank -> still forces mode: 'rule_only'.
+    fireEvent.click(screen.getByRole('button', { name: '智能推演 (auto)' }))
+    fireEvent.click(screen.getByRole('button', { name: '运行 MD&A 口径对比' }))
+    expect(await screen.findByText('纯规则对比完成。')).toBeInTheDocument()
+    expect(mdaRequests[0]?.mode).toBe('rule_only')
+    expect(screen.getByText(/不消耗每日 AI 额度/)).toBeInTheDocument()
+
+    // Fill text in auto mode -> 429 triggers quota refresh + error reset on edit + 1-click switch to rule_only & retry.
+    fireEvent.change(screen.getByLabelText('上期管理层讨论与分析原文'), {
+      target: { value: '上期原文内容' },
+    })
+    fireEvent.change(screen.getByLabelText('本期管理层讨论与分析原文'), {
+      target: { value: '本期原文内容' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '运行 MD&A 口径对比' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('今日平台 AI 额度已用完（5/5）')
+    expect(await screen.findByText('今日 AI 额度剩余 0/5')).toBeInTheDocument()
+
+    // Editing input clears stale MD&A error, then re-triggering 429 and using 1-click retry recovers.
+    fireEvent.change(screen.getByLabelText('本期管理层讨论与分析原文'), {
+      target: { value: '本期原文内容补充' },
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    mdaAttempt = 1
+    fireEvent.click(screen.getByRole('button', { name: '运行 MD&A 口径对比' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('今日平台 AI 额度已用完（5/5）')
+
+    fireEvent.click(screen.getByRole('button', { name: '切换纯规则引擎并重试' }))
+    expect(await screen.findByText('纯规则对比完成。')).toBeInTheDocument()
+    expect(mdaRequests[3]?.mode).toBe('rule_only')
+
+    // Switch to 投资决策 -> check prefer_rule_only notice, buy-gate + 429 recovery + pending disable + bounds + cap hint.
+    fireEvent.click(screen.getByRole('tab', { name: '投资决策' }))
+    expect(
+      await screen.findByText('全局偏好已设为仅纯规则，当前免费零消耗运行'),
+    ).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('投资理由'), {
+      target: { value: '测试买入前理性安检门并发与429恢复' },
+    })
+    fireEvent.change(screen.getByLabelText('否证条件'), {
+      target: { value: '测试否证条件' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '智能推演 (auto)' }))
+    fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
+
+    expect(await screen.findByRole('region', { name: '买入前理性安检门确认' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '先运行反方质询' }))
+
+    // On 429: buy gate stays open; editing reason clears stale DA error cleanly.
+    expect(await screen.findByRole('alert')).toHaveTextContent('今日平台 AI 额度已用完（5/5）')
+    expect(screen.getByRole('region', { name: '买入前理性安检门确认' })).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('投资理由'), {
+      target: { value: '调整后的买入理由，验证429错误清除与1-click重试' },
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
+    expect(await screen.findByRole('region', { name: '买入前理性安检门确认' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '先运行反方质询' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('今日平台 AI 额度已用完（5/5）')
+
+    fireEvent.click(screen.getByRole('button', { name: '切换纯规则引擎并重试' }))
+
+    // While pending, submit buttons are disabled to prevent racing onto a cleared form.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '质询运行中...' })).toBeDisabled()
+    })
+    expect(screen.getByRole('button', { name: '跳过质询，直接提交' })).toBeDisabled()
+
+    resolvePendingDa(jsonResponse(daFallbackChallengeResponse, 200))
+
+    // Non-multi-period pb_percentile renders periods=1 in preview and adopts canonical pb_percentile_10y with periods=1.
+    expect(await screen.findByText('建议红线：10年PB分位 ≥ 85（连续 1 期）')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: '买入前理性安检门确认' })).not.toBeInTheDocument()
+    expect(daRequests[2]?.mode).toBe('rule_only')
+
+    const adoptPbBtn = screen.getByRole('button', { name: '采纳第 1 条建议红线' })
+    fireEvent.click(adoptPbBtn)
+    expect(screen.getByLabelText('规则 1 指标')).toHaveValue('pb_percentile_10y')
+    expect(screen.getByLabelText('规则 1 连续期数')).toHaveValue(1)
+    expect(screen.getByLabelText('规则 1 连续期数')).toBeDisabled()
+    expect(adoptPbBtn).toBeDisabled()
+
+    // Add 4 more rules to hit MAX_FALSIFY_RULES=5 and verify >1e12 revenue + periods=40 + inline cap hint!
+    fireEvent.click(screen.getByRole('button', { name: '+ 自定义规则' }))
+    fireEvent.change(screen.getByLabelText('规则 2 指标'), { target: { value: 'revenue_yuan' } })
+    fireEvent.change(screen.getByLabelText('规则 2 阈值'), { target: { value: '2500000000000' } })
+    fireEvent.change(screen.getByLabelText('规则 2 连续期数'), { target: { value: '40' } })
+    fireEvent.click(screen.getByRole('button', { name: '+ CT红灯≥1' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ PE分位≥85%' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ ROE<12%' }))
+
+    expect(screen.getByText('已达 5 条红线上限')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
+    await waitFor(() => {
+      expect(journalCreates).toHaveLength(1)
+    })
+    expect(journalCreates[0]?.falsify_rules?.[0]).toEqual({
+      metric: 'pb_percentile_10y',
+      op: 'gte',
+      value: 85,
+      periods: 1,
+    })
+    expect(journalCreates[0]?.falsify_rules?.[1]).toEqual({
+      metric: 'revenue_yuan',
+      op: 'gte',
+      value: 2.5e12,
+      periods: 40,
+    })
+
+    // Submitting journal clears cached DA results for the next decision.
+    expect(screen.queryByText('#1 PB分位过高提醒')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: '估值' }))
+    fireEvent.click(screen.getByRole('tab', { name: '投资决策' }))
+    expect(screen.queryByText('#1 PB分位过高提醒')).not.toBeInTheDocument()
   })
 })

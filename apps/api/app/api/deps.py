@@ -9,7 +9,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.llm.openai_compatible import OpenAiCompatibleLlmAdapter
 from app.adapters.notifications.webhook import HttpxWebhookNotifier
+from app.adapters.postgres.ai import PostgresAiRepository
 from app.adapters.postgres.alert import PostgresAlertRepository, PostgresSettingsRepository
 from app.adapters.postgres.event import PostgresEventRepository
 from app.adapters.postgres.journal import PostgresJournalRepository
@@ -21,7 +23,8 @@ from app.adapters.security.password import Argon2PasswordHasher
 from app.adapters.security.token import JwtTokenCodec
 from app.db.session import DatabaseUnavailableError, check_db_health, dispose_db, get_db
 from app.domain.models import AuthenticatedUser
-from app.domain.ports import WebhookNotifierPort
+from app.domain.ports import LlmCompanionPort, WebhookNotifierPort
+from app.services.ai import AiPartnerService
 from app.services.alerts import AlertScanService
 from app.services.auth import AuthService, InvalidAccessTokenError
 from app.services.event import EventService
@@ -109,6 +112,32 @@ def get_alert_service(
     )
 
 
+@lru_cache
+def get_llm_companion() -> LlmCompanionPort:
+    return OpenAiCompatibleLlmAdapter()
+
+
+LlmCompanionDep = Annotated[LlmCompanionPort, Depends(get_llm_companion)]
+
+
+def get_ai_partner_service(
+    session: DbSessionDep,
+    llm_companion: LlmCompanionDep,
+) -> AiPartnerService:
+    return AiPartnerService(
+        ai_repo=PostgresAiRepository(session),
+        stock_meta=PostgresStockMetaRepository(session),
+        snapshot_repo=PostgresStockSnapshotRepository(session),
+        event_repo=PostgresEventRepository(session),
+        llm_client=llm_companion,
+        platform_llm_base_url=settings.llm_base_url,
+        platform_llm_api_key=settings.llm_api_key,
+        platform_llm_model=settings.llm_model,
+        llm_timeout_seconds=settings.llm_timeout_seconds,
+    )
+
+
+AiPartnerServiceDep = Annotated[AiPartnerService, Depends(get_ai_partner_service)]
 AlertServiceDep = Annotated[AlertScanService, Depends(get_alert_service)]
 MarketServiceDep = Annotated[MarketService, Depends(get_market_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
@@ -150,6 +179,7 @@ async def close_db_pool() -> None:
 
 
 __all__ = [
+    "AiPartnerServiceDep",
     "AlertServiceDep",
     "AuthServiceDep",
     "CurrentUserDep",
@@ -157,17 +187,20 @@ __all__ = [
     "DbSessionDep",
     "EventServiceDep",
     "JournalServiceDep",
+    "LlmCompanionDep",
     "MarketServiceDep",
     "StockServiceDep",
     "WatchlistServiceDep",
     "bearer_scheme",
     "close_db_pool",
+    "get_ai_partner_service",
     "get_alert_service",
     "get_auth_service",
     "get_current_user",
     "get_db",
     "get_event_service",
     "get_journal_service",
+    "get_llm_companion",
     "get_market_service",
     "get_password_hasher",
     "get_stock_service",

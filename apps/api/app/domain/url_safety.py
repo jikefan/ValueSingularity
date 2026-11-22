@@ -28,52 +28,53 @@ def is_public_ip(raw_ip: str) -> bool:
         and not ip.is_private
         and not ip.is_loopback
         and not ip.is_link_local
+        and not getattr(ip, "is_site_local", False)
         and not ip.is_multicast
         and not ip.is_reserved
         and not ip.is_unspecified
     )
 
 
-def validate_public_webhook_url(raw_url: str) -> str:
-    """Validate that a webhook URL targets a public HTTP(S) endpoint without SSRF vectors."""
+def validate_public_http_url(raw_url: str, *, label: str = "URL") -> str:
+    """Validate that a URL targets a public HTTP(S) endpoint without SSRF vectors."""
     if not raw_url:
-        raise ValueError("Webhook URL 不能为空")
+        raise ValueError(f"{label} 不能为空")
 
     if any(ch == "\x00" or ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in raw_url):
-        raise ValueError("Webhook URL 不能包含空字符、空白或控制字符")
+        raise ValueError(f"{label} 不能包含空字符、空白或控制字符")
 
     try:
         parsed = urlsplit(raw_url)
         _ = parsed.port
     except ValueError as exc:
-        raise ValueError(f"Webhook URL 格式无效: {exc}") from exc
+        raise ValueError(f"{label} 格式无效: {exc}") from exc
 
     scheme = parsed.scheme.lower()
     if scheme not in {"http", "https"}:
-        raise ValueError("Webhook URL 仅支持 http 或 https 协议")
+        raise ValueError(f"{label} 仅支持 http 或 https 协议")
 
     if parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
-        raise ValueError("Webhook URL 不能包含内嵌用户名或密码")
+        raise ValueError(f"{label} 不能包含内嵌用户名或密码")
 
     raw_host = (parsed.hostname or "").lower()
     if not raw_host:
-        raise ValueError("Webhook URL 缺少主机名")
+        raise ValueError(f"{label} 缺少主机名")
 
     if "%" in raw_host:
-        raise ValueError("Webhook URL 主机名格式无效")
+        raise ValueError(f"{label} 主机名格式无效")
 
     if any(ch in _UTS46_DOT_CHARS for ch in raw_host) or not raw_host.isascii():
-        raise ValueError("Webhook URL 主机名仅支持 ASCII 域名、Punycode 或公网 IP")
+        raise ValueError(f"{label} 主机名仅支持 ASCII 域名、Punycode 或公网 IP")
 
     if raw_host.endswith(".."):
-        raise ValueError("Webhook URL 主机名格式无效")
+        raise ValueError(f"{label} 主机名格式无效")
 
     host = raw_host.rstrip(".")
     if not host:
-        raise ValueError("Webhook URL 缺少主机名")
+        raise ValueError(f"{label} 缺少主机名")
 
     if host == "localhost" or host.endswith(_FORBIDDEN_HOST_SUFFIXES):
-        raise ValueError("Webhook URL 不能指向本机或内网域名")
+        raise ValueError(f"{label} 不能指向本机或内网域名")
 
     try:
         ipaddress.ip_address(host)
@@ -83,26 +84,49 @@ def validate_public_webhook_url(raw_url: str) -> str:
 
     if is_ip_literal:
         if not is_public_ip(host):
-            raise ValueError("Webhook URL 不能指向内网、回环或保留 IP 地址")
+            raise ValueError(f"{label} 不能指向内网、回环或保留 IP 地址")
         return raw_url
 
     try:
         ascii_host = host.encode("idna").decode("ascii").lower()
         _ = ascii_host.encode("ascii").decode("idna")
     except UnicodeError as exc:
-        raise ValueError("Webhook URL 主机名格式或 Punycode 无效") from exc
+        raise ValueError(f"{label} 主机名格式或 Punycode 无效") from exc
 
     if ascii_host == "localhost" or ascii_host.endswith(_FORBIDDEN_HOST_SUFFIXES):
-        raise ValueError("Webhook URL 不能指向本机或内网域名")
+        raise ValueError(f"{label} 不能指向本机或内网域名")
 
     labels = ascii_host.split(".")
-    if len(labels) < 2 or any(not label for label in labels):
-        raise ValueError("Webhook URL 必须包含有效的公网域名或公网 IP")
+    if len(labels) < 2 or any(not label_part for label_part in labels):
+        raise ValueError(f"{label} 必须包含有效的公网域名或公网 IP")
 
-    if all(_NUMERIC_LABEL_RE.fullmatch(label) for label in labels):
-        raise ValueError("Webhook URL 不支持非标准数字 IP 主机名")
+    if all(_NUMERIC_LABEL_RE.fullmatch(label_part) for label_part in labels):
+        raise ValueError(f"{label} 不支持非标准数字 IP 主机名")
 
     return raw_url
+
+
+def validate_public_webhook_url(raw_url: str) -> str:
+    """Validate that a webhook URL targets a public HTTP(S) endpoint without SSRF vectors."""
+    return validate_public_http_url(raw_url, label="Webhook URL")
+
+
+def mask_secret(secret: str | None) -> str | None:
+    """Mask an API key or secret token while retaining at most a known prefix and last 4 chars."""
+    if secret is None:
+        return None
+    cleaned = secret.strip()
+    if not cleaned:
+        return None
+    if len(cleaned) <= 4:
+        return "****"
+    if cleaned.startswith("sk-"):
+        if len(cleaned) <= 7:
+            return "sk-****"
+        return f"sk-****{cleaned[-4:]}"
+    if len(cleaned) < 8:
+        return "****"
+    return f"****{cleaned[-4:]}"
 
 
 def mask_webhook_url(url: str | None) -> str | None:

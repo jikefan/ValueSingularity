@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     refresh_cookie_name: str = "vs_refresh_token"
     cookie_secure: bool = False
 
+    llm_base_url: str | None = None
+    llm_api_key: str | None = None
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout_seconds: float = Field(default=12.0, gt=0)
+
     @field_validator("data_dir")
     @classmethod
     def _resolve_data_dir(cls, value: Path) -> Path:

@@ -13,6 +13,7 @@ import type { StockSnapshotPayload } from '../../types/api'
 import { StockCtTab } from './StockCtTab'
 import { StockDecisionTab } from './StockDecisionTab'
 import { StockGovernanceTab } from './StockGovernanceTab'
+import { StockMdaDiffPanel } from './StockMdaDiffPanel'
 import {
   StockFinancialsTab,
   StockGrowthTab,
@@ -155,7 +156,7 @@ function StockPageContent({ code }: { code: string }) {
       return <StockDecisionTab stock={currentStock} snapshot={snapshot} />
     }
     if (isSnapshotUnsynced) {
-      return (
+      const unsyncedCard = (
         <Card title={currentTabMeta.label} extra={<Tag color="gray">未同步快照</Tag>}>
           <EmptyBlock
             title={`${currentTabMeta.label}尚无深度分析快照`}
@@ -183,6 +184,19 @@ function StockPageContent({ code }: { code: string }) {
           />
         </Card>
       )
+      if (activeTab === 'risks') {
+        return (
+          <div className="stack" style={{ gap: 16 }}>
+            {unsyncedCard}
+            <StockMdaDiffPanel
+              code={currentStock.code}
+              stockName={currentStock.name}
+              snapshotAvailable={false}
+            />
+          </div>
+        )
+      }
+      return unsyncedCard
     }
     if (snapshotQuery.isPending || (!snapshotQuery.data && snapshotQuery.isFetching)) {
       return (

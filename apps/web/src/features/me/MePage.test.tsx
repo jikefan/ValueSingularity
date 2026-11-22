@@ -6,6 +6,7 @@ import { AuthProvider } from '../../lib/AuthProvider'
 import { setAccessToken } from '../../lib/api'
 import { createQueryClient } from '../../lib/queryClient'
 import type {
+  AiPreferences,
   AlertDeliveryItem,
   AlertScanSummary,
   DecisionLedgerReport,
@@ -66,6 +67,23 @@ const DEFAULT_PREFS: NotificationPreferences = {
   webhook_url_masked: null,
 }
 
+const DEFAULT_AI_PREFS: AiPreferences = {
+  prefer_rule_only: false,
+  byok_enabled: false,
+  byok_base_url_masked: null,
+  byok_api_key_configured: false,
+  byok_api_key_masked: null,
+  byok_model: 'gpt-4o-mini',
+  quota: {
+    plan_tier: 'pro',
+    daily_limit: 30,
+    used_today: 2,
+    remaining_today: 28,
+    byok_active: false,
+    resets_at_shanghai: '2026-11-23 24:00 CST',
+  },
+}
+
 function handleEmptyPhase3Get(pathname: string, method: string): Response | null {
   if (method !== 'GET') {
     return null
@@ -78,6 +96,9 @@ function handleEmptyPhase3Get(pathname: string, method: string): Response | null
   }
   if (pathname === '/api/alerts/preferences') {
     return jsonResponse(DEFAULT_PREFS, 200)
+  }
+  if (pathname === '/api/ai/preferences') {
+    return jsonResponse(DEFAULT_AI_PREFS, 200)
   }
   return null
 }
@@ -657,6 +678,9 @@ describe('MePage', () => {
       if (pathname === '/api/alerts/preferences' && request.method === 'GET') {
         return Promise.resolve(jsonResponse(DEFAULT_PREFS, 200))
       }
+      if (pathname === '/api/ai/preferences' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_AI_PREFS, 200))
+      }
       return Promise.resolve(
         jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
       )
@@ -790,6 +814,9 @@ describe('MePage', () => {
       if (pathname === '/api/alerts/preferences' && request.method === 'GET') {
         return jsonResponse(prefsState, 200)
       }
+      if (pathname === '/api/ai/preferences' && request.method === 'GET') {
+        return jsonResponse(DEFAULT_AI_PREFS, 200)
+      }
       if (pathname === '/api/alerts/preferences' && request.method === 'PUT') {
         const parsed: unknown = JSON.parse(await request.clone().text())
         savedPrefPayloads.push(parsed)
@@ -877,5 +904,318 @@ describe('MePage', () => {
       channel_type: 'wecom',
       webhook_url: '',
     })
+  })
+
+  it('displays AI quota, manages BYOK preferences with masking/SSRF 422/explicit clear, and recovers on 503 retry', async () => {
+    let aiPrefsAttempts = 0
+    let aiPrefsState: AiPreferences = {
+      prefer_rule_only: false,
+      byok_enabled: false,
+      byok_base_url_masked: null,
+      byok_api_key_configured: false,
+      byok_api_key_masked: null,
+      byok_model: 'gpt-4o-mini',
+      quota: {
+        plan_tier: 'pro',
+        daily_limit: 30,
+        used_today: 4,
+        remaining_today: 26,
+        byok_active: false,
+        resets_at_shanghai: '2026-11-23 24:00 CST',
+      },
+    }
+    const savedAiPayloads: unknown[] = []
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'active-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return jsonResponse(tokenResponse, 200)
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (pathname === '/api/journal/ledger' && request.method === 'GET') {
+        return jsonResponse(EMPTY_LEDGER, 200)
+      }
+      if (pathname === '/api/alerts' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (pathname === '/api/alerts/preferences' && request.method === 'GET') {
+        return jsonResponse(DEFAULT_PREFS, 200)
+      }
+      if (pathname === '/api/ai/preferences' && request.method === 'GET') {
+        aiPrefsAttempts += 1
+        if (aiPrefsAttempts === 1) {
+          return jsonResponse({ detail: 'AI 配置服务暂不可用' }, 503)
+        }
+        return jsonResponse(aiPrefsState, 200)
+      }
+      if (pathname === '/api/ai/preferences' && request.method === 'PUT') {
+        const parsed: unknown = JSON.parse(await request.clone().text())
+        savedAiPayloads.push(parsed)
+        if (
+          isRecord(parsed) &&
+          typeof parsed.byok_base_url === 'string' &&
+          parsed.byok_base_url.includes('127.0.0.1')
+        ) {
+          return jsonResponse({ detail: 'BYOK Base URL 不能指向内网、回环或保留 IP 地址' }, 422)
+        }
+        if (isRecord(parsed)) {
+          const clearingUrl = parsed.byok_base_url === ''
+          const clearingKey = parsed.byok_api_key === ''
+          const nextUrl =
+            typeof parsed.byok_base_url === 'string' && parsed.byok_base_url.length > 0
+              ? 'https://api.openai.com/****v1'
+              : clearingUrl
+                ? null
+                : aiPrefsState.byok_base_url_masked
+          const nextKeyConfigured = clearingKey
+            ? false
+            : typeof parsed.byok_api_key === 'string' && parsed.byok_api_key.length > 0
+              ? true
+              : aiPrefsState.byok_api_key_configured
+          const nextKeyMasked = clearingKey
+            ? null
+            : typeof parsed.byok_api_key === 'string' && parsed.byok_api_key.length > 0
+              ? 'sk-****9876'
+              : aiPrefsState.byok_api_key_masked
+          const nextByokEnabled =
+            typeof parsed.byok_enabled === 'boolean'
+              ? parsed.byok_enabled
+              : aiPrefsState.byok_enabled
+          const nextPreferRuleOnly =
+            typeof parsed.prefer_rule_only === 'boolean'
+              ? parsed.prefer_rule_only
+              : aiPrefsState.prefer_rule_only
+          const nextByokModel =
+            typeof parsed.byok_model === 'string' ? parsed.byok_model : aiPrefsState.byok_model
+
+          aiPrefsState = {
+            prefer_rule_only: nextPreferRuleOnly,
+            byok_enabled: nextByokEnabled,
+            byok_base_url_masked: nextUrl,
+            byok_api_key_configured: nextKeyConfigured,
+            byok_api_key_masked: nextKeyMasked,
+            byok_model: nextByokModel,
+            quota: {
+              ...aiPrefsState.quota,
+              byok_active: nextByokEnabled && Boolean(nextUrl) && nextKeyConfigured,
+            },
+          }
+        }
+        return jsonResponse(aiPrefsState, 200)
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500)
+    })
+
+    renderMePage()
+
+    expect(await screen.findByText('AI 额度与偏好设置加载失败')).toBeInTheDocument()
+    expect(screen.getByText('AI 配置服务暂不可用')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+
+    expect(await screen.findByText('平台托管额度')).toBeInTheDocument()
+    expect(screen.getByText('套餐 PRO')).toBeInTheDocument()
+    expect(screen.getByText('4 / 30')).toBeInTheDocument()
+    expect(screen.getByText('26')).toBeInTheDocument()
+    expect(screen.getByText('北京时间每日 00:00 清零')).toBeInTheDocument()
+    expect(screen.getByText('2026-11-23 24:00 CST')).toBeInTheDocument()
+
+    // SSRF URL rejected with 422 inline alert.
+    fireEvent.click(screen.getByLabelText('启用 BYOK 自备 OpenAI 兼容密钥'))
+    fireEvent.change(screen.getByLabelText('BYOK Base URL（可选）'), {
+      target: { value: 'http://127.0.0.1:8000/v1' },
+    })
+    fireEvent.change(screen.getByLabelText('BYOK API Key（可选）'), {
+      target: { value: 'sk-live-secret-9876' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 设置' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'BYOK Base URL 不能指向内网、回环或保留 IP 地址',
+    )
+
+    // Save valid BYOK config.
+    fireEvent.change(screen.getByLabelText('BYOK Base URL（可选）'), {
+      target: { value: 'https://api.openai.com/v1' },
+    })
+    fireEvent.change(screen.getByLabelText('BYOK 模型名称'), {
+      target: { value: 'gpt-4.1-mini' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 设置' }))
+
+    expect(await screen.findByText('AI 偏好与 BYOK 设置已保存')).toBeInTheDocument()
+    expect(screen.getByText('BYOK 已接管')).toBeInTheDocument()
+    expect(screen.getByText('Base URL · https://api.openai.com/****v1')).toBeInTheDocument()
+    expect(screen.getByText('API Key · sk-****9876')).toBeInTheDocument()
+
+    // Blank URL & Key preserves existing values when toggling prefer_rule_only.
+    fireEvent.click(screen.getByLabelText('默认仅用纯规则引擎（不消耗额度）'))
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 设置' }))
+    expect(await screen.findByText('AI 偏好与 BYOK 设置已保存')).toBeInTheDocument()
+    expect(savedAiPayloads[2]).toEqual({
+      prefer_rule_only: true,
+      byok_enabled: true,
+      byok_model: 'gpt-4.1-mini',
+    })
+
+    // Cannot clear Base URL while BYOK is enabled.
+    fireEvent.click(screen.getByLabelText('清空 Base URL'))
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 设置' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('启用 BYOK 时不能同时清空 Base URL')
+
+    // Unchecking BYOK allows clearing Base URL with "".
+    fireEvent.click(screen.getByLabelText('启用 BYOK 自备 OpenAI 兼容密钥'))
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 设置' }))
+    expect(await screen.findByText('AI 偏好与 BYOK 设置已保存')).toBeInTheDocument()
+    expect(savedAiPayloads[3]).toEqual({
+      prefer_rule_only: true,
+      byok_enabled: false,
+      byok_model: 'gpt-4.1-mini',
+      byok_base_url: '',
+    })
+    expect(screen.getByText('Base URL 未配置')).toBeInTheDocument()
+    expect(screen.getByText('平台托管额度')).toBeInTheDocument()
+
+    // Explicit clear API Key sends partial PUT and preserves prefer_rule_only + model.
+    fireEvent.click(screen.getByRole('button', { name: '清除已存 Key' }))
+    expect(
+      await screen.findByText('已清除已存 BYOK API Key 并关闭自备密钥接管'),
+    ).toBeInTheDocument()
+    expect(savedAiPayloads[4]).toEqual({
+      byok_enabled: false,
+      byok_api_key: '',
+    })
+    expect(screen.getByText('API Key 未配置')).toBeInTheDocument()
+    expect(screen.getByLabelText('默认仅用纯规则引擎（不消耗额度）')).toBeChecked()
+    expect(screen.getByLabelText('BYOK 模型名称')).toHaveValue('gpt-4.1-mini')
+  })
+
+  it('validates BYOK prerequisites, clears errors on edit, supports discard dirty changes, disables inputs while saving, and avoids clearBaseUrl deadlock', async () => {
+    let aiPrefsState: AiPreferences = {
+      prefer_rule_only: false,
+      byok_enabled: false,
+      byok_base_url_masked: 'https://api.openai.com/****v1',
+      byok_api_key_configured: true,
+      byok_api_key_masked: 'sk-****1234',
+      byok_model: 'gpt-4o-mini',
+      quota: {
+        plan_tier: 'pro',
+        daily_limit: 30,
+        used_today: 0,
+        remaining_today: 30,
+        byok_active: false,
+        resets_at_shanghai: '2026-11-23 24:00 CST',
+      },
+    }
+    let putCount = 0
+    let resolvePendingPut!: (res: Response) => void
+    const pendingPut = new Promise<Response>((resolve) => {
+      resolvePendingPut = resolve
+    })
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'active-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/ai/preferences' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(aiPrefsState, 200))
+      }
+      if (pathname === '/api/ai/preferences' && request.method === 'PUT') {
+        putCount += 1
+        if (putCount === 1) {
+          return Promise.resolve(jsonResponse({ detail: '服务端保存失败' }, 422))
+        }
+        return pendingPut
+      }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return Promise.resolve(emptyPhase3)
+      }
+      return Promise.resolve(
+        jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
+      )
+    })
+
+    renderMePage()
+
+    expect(await screen.findByText('Base URL · https://api.openai.com/****v1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重置未保存修改' })).not.toBeInTheDocument()
+
+    // Editing shows dirty discard button and resets cleanly.
+    fireEvent.click(screen.getByLabelText('默认仅用纯规则引擎（不消耗额度）'))
+    expect(screen.getByRole('button', { name: '重置未保存修改' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重置未保存修改' }))
+    expect(screen.getByLabelText('默认仅用纯规则引擎（不消耗额度）')).not.toBeChecked()
+    expect(screen.queryByRole('button', { name: '重置未保存修改' })).not.toBeInTheDocument()
+
+    // Server 422 error clears immediately when editing any field.
+    fireEvent.click(screen.getByLabelText('默认仅用纯规则引擎（不消耗额度）'))
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 设置' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('服务端保存失败')
+    fireEvent.change(screen.getByLabelText('BYOK 模型名称'), { target: { value: 'gpt-4.1' } })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    // Clear Base URL -> pending disables all controls -> once saved with masked=null, #ai-byok-base-url is NOT deadlocked disabled.
+    fireEvent.click(screen.getByLabelText('清空 Base URL'))
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 设置' }))
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('默认仅用纯规则引擎（不消耗额度）')).toBeDisabled()
+    })
+    expect(screen.getByLabelText('启用 BYOK 自备 OpenAI 兼容密钥')).toBeDisabled()
+    expect(screen.getByLabelText('BYOK 模型名称')).toBeDisabled()
+    expect(screen.getByLabelText('BYOK Base URL（可选）')).toBeDisabled()
+    expect(screen.getByLabelText('BYOK API Key（可选）')).toBeDisabled()
+    expect(screen.getByRole('button', { name: '保存中...' })).toBeDisabled()
+
+    aiPrefsState = {
+      ...aiPrefsState,
+      prefer_rule_only: true,
+      byok_base_url_masked: null,
+      byok_model: 'gpt-4.1',
+    }
+    resolvePendingPut(jsonResponse(aiPrefsState, 200))
+
+    expect(await screen.findByText('AI 偏好与 BYOK 设置已保存')).toBeInTheDocument()
+    expect(screen.getByLabelText('BYOK Base URL（可选）')).not.toBeDisabled()
+    expect(screen.getByLabelText('清空 Base URL')).toBeDisabled()
+
+    // Enabling BYOK when Base URL is absent from both server and input is blocked client-side.
+    const callsBeforeClientCheck = putCount
+    fireEvent.click(screen.getByLabelText('启用 BYOK 自备 OpenAI 兼容密钥'))
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 设置' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '启用 BYOK 自备密钥前，请先填写公网 Base URL',
+    )
+    expect(putCount).toBe(callsBeforeClientCheck)
   })
 })

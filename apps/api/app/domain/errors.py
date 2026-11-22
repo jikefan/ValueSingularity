@@ -50,3 +50,19 @@ class JournalEntryNotFoundError(Exception):
 class NotificationConfigError(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class AiQuotaExceededError(Exception):
+    def __init__(self, used: int, limit: int, tier: str) -> None:
+        super().__init__(
+            f"今日 AI 平台调用额度已达上限 ({used}/{limit}，当前套餐 {tier})，"
+            "可切换纯规则模式或配置 BYOK 自带密钥"
+        )
+        self.used = used
+        self.limit = limit
+        self.tier = tier
+
+
+class AiConfigError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)

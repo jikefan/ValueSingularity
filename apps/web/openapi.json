@@ -64,6 +64,165 @@
         "title": "ActionLedgerRow",
         "type": "object"
       },
+      "AiPreferences": {
+        "properties": {
+          "byok_api_key_configured": {
+            "default": false,
+            "title": "Byok Api Key Configured",
+            "type": "boolean"
+          },
+          "byok_api_key_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byok Api Key Masked"
+          },
+          "byok_base_url_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byok Base Url Masked"
+          },
+          "byok_enabled": {
+            "default": false,
+            "title": "Byok Enabled",
+            "type": "boolean"
+          },
+          "byok_model": {
+            "default": "gpt-4o-mini",
+            "title": "Byok Model",
+            "type": "string"
+          },
+          "prefer_rule_only": {
+            "default": false,
+            "title": "Prefer Rule Only",
+            "type": "boolean"
+          },
+          "quota": {
+            "$ref": "#/components/schemas/AiQuotaStatus"
+          }
+        },
+        "required": [
+          "quota"
+        ],
+        "title": "AiPreferences",
+        "type": "object"
+      },
+      "AiPreferencesUpdate": {
+        "properties": {
+          "byok_api_key": {
+            "anyOf": [
+              {
+                "maxLength": 300,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byok Api Key"
+          },
+          "byok_base_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byok Base Url"
+          },
+          "byok_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byok Enabled"
+          },
+          "byok_model": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Byok Model"
+          },
+          "prefer_rule_only": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prefer Rule Only"
+          }
+        },
+        "title": "AiPreferencesUpdate",
+        "type": "object"
+      },
+      "AiQuotaStatus": {
+        "properties": {
+          "byok_active": {
+            "title": "Byok Active",
+            "type": "boolean"
+          },
+          "daily_limit": {
+            "minimum": 0.0,
+            "title": "Daily Limit",
+            "type": "integer"
+          },
+          "plan_tier": {
+            "$ref": "#/components/schemas/PlanTier"
+          },
+          "remaining_today": {
+            "minimum": 0.0,
+            "title": "Remaining Today",
+            "type": "integer"
+          },
+          "resets_at_shanghai": {
+            "title": "Resets At Shanghai",
+            "type": "string"
+          },
+          "used_today": {
+            "minimum": 0.0,
+            "title": "Used Today",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "plan_tier",
+          "daily_limit",
+          "used_today",
+          "remaining_today",
+          "byok_active",
+          "resets_at_shanghai"
+        ],
+        "title": "AiQuotaStatus",
+        "type": "object"
+      },
       "AlertDeliveryItem": {
         "properties": {
           "channel": {
@@ -403,6 +562,35 @@
         "title": "AnnualReturnPoint",
         "type": "object"
       },
+      "CitedMetricFact": {
+        "properties": {
+          "label": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "source_section": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Source Section",
+            "type": "string"
+          },
+          "value_text": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Value Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value_text",
+          "source_section"
+        ],
+        "title": "CitedMetricFact",
+        "type": "object"
+      },
       "CtCheckItem": {
         "properties": {
           "evidences": {
@@ -612,6 +800,160 @@
           "items"
         ],
         "title": "DecisionLedgerReport",
+        "type": "object"
+      },
+      "DevilsAdvocateChallenge": {
+        "properties": {
+          "cited_facts": {
+            "items": {
+              "$ref": "#/components/schemas/CitedMetricFact"
+            },
+            "title": "Cited Facts",
+            "type": "array"
+          },
+          "index": {
+            "minimum": 1.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "suggested_falsify_rule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FalsifyRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thesis": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Thesis",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "title",
+          "thesis"
+        ],
+        "title": "DevilsAdvocateChallenge",
+        "type": "object"
+      },
+      "DevilsAdvocateRequest": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/JournalAction",
+            "default": "buy"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "falsify_condition": {
+            "default": "",
+            "maxLength": 5000,
+            "title": "Falsify Condition",
+            "type": "string"
+          },
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "rule_only"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "reason"
+        ],
+        "title": "DevilsAdvocateRequest",
+        "type": "object"
+      },
+      "DevilsAdvocateResponse": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "challenges": {
+            "items": {
+              "$ref": "#/components/schemas/DevilsAdvocateChallenge"
+            },
+            "title": "Challenges",
+            "type": "array"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "compliance_notice": {
+            "title": "Compliance Notice",
+            "type": "string"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "mode": {
+            "enum": [
+              "deterministic",
+              "llm",
+              "byok",
+              "deterministic_fallback"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "quota": {
+            "$ref": "#/components/schemas/AiQuotaStatus"
+          },
+          "stock_name": {
+            "title": "Stock Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "stock_name",
+          "mode",
+          "challenges",
+          "quota",
+          "compliance_notice"
+        ],
+        "title": "DevilsAdvocateResponse",
         "type": "object"
       },
       "EmotionLedgerRow": {
@@ -1652,6 +1994,243 @@
           "comment"
         ],
         "title": "MarketTemperature",
+        "type": "object"
+      },
+      "MdaDiffHighlight": {
+        "properties": {
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "change_type": {
+            "enum": [
+              "added",
+              "removed",
+              "modified"
+            ],
+            "title": "Change Type",
+            "type": "string"
+          },
+          "current_excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Excerpt"
+          },
+          "previous_excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Excerpt"
+          },
+          "severity": {
+            "enum": [
+              "green",
+              "yellow",
+              "red",
+              "na"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "signal_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Signal Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "change_type",
+          "category",
+          "signal_tags",
+          "severity"
+        ],
+        "title": "MdaDiffHighlight",
+        "type": "object"
+      },
+      "MdaDiffRequest": {
+        "properties": {
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "current_period_label": {
+            "default": "本期年报",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Current Period Label",
+            "type": "string"
+          },
+          "current_text": {
+            "default": "",
+            "maxLength": 30000,
+            "title": "Current Text",
+            "type": "string"
+          },
+          "mode": {
+            "default": "auto",
+            "enum": [
+              "auto",
+              "rule_only"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "previous_period_label": {
+            "default": "上期年报",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Previous Period Label",
+            "type": "string"
+          },
+          "previous_text": {
+            "default": "",
+            "maxLength": 30000,
+            "title": "Previous Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "MdaDiffRequest",
+        "type": "object"
+      },
+      "MdaDiffResponse": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "compliance_notice": {
+            "title": "Compliance Notice",
+            "type": "string"
+          },
+          "current_period_label": {
+            "title": "Current Period Label",
+            "type": "string"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallback Reason"
+          },
+          "metric_shifts": {
+            "items": {
+              "$ref": "#/components/schemas/MdaMetricShift"
+            },
+            "title": "Metric Shifts",
+            "type": "array"
+          },
+          "mode": {
+            "enum": [
+              "deterministic",
+              "llm",
+              "byok",
+              "deterministic_fallback"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "previous_period_label": {
+            "title": "Previous Period Label",
+            "type": "string"
+          },
+          "quota": {
+            "$ref": "#/components/schemas/AiQuotaStatus"
+          },
+          "stock_name": {
+            "title": "Stock Name",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "text_highlights": {
+            "items": {
+              "$ref": "#/components/schemas/MdaDiffHighlight"
+            },
+            "title": "Text Highlights",
+            "type": "array"
+          }
+        },
+        "required": [
+          "code",
+          "stock_name",
+          "previous_period_label",
+          "current_period_label",
+          "mode",
+          "summary",
+          "metric_shifts",
+          "text_highlights",
+          "quota",
+          "compliance_notice"
+        ],
+        "title": "MdaDiffResponse",
+        "type": "object"
+      },
+      "MdaMetricShift": {
+        "properties": {
+          "current_text": {
+            "title": "Current Text",
+            "type": "string"
+          },
+          "delta_text": {
+            "title": "Delta Text",
+            "type": "string"
+          },
+          "interpretation": {
+            "title": "Interpretation",
+            "type": "string"
+          },
+          "metric_label": {
+            "title": "Metric Label",
+            "type": "string"
+          },
+          "previous_text": {
+            "title": "Previous Text",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "green",
+              "yellow",
+              "red",
+              "na"
+            ],
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "metric_label",
+          "previous_text",
+          "current_text",
+          "delta_text",
+          "severity",
+          "interpretation"
+        ],
+        "title": "MdaMetricShift",
         "type": "object"
       },
       "MoatDimensionItem": {
@@ -3379,6 +3958,168 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/ai/devils-advocate": {
+      "post": {
+        "operationId": "ai_run_devils_advocate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DevilsAdvocateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DevilsAdvocateResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Devils Advocate",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/ai/mda-diff": {
+      "post": {
+        "operationId": "ai_run_mda_diff",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MdaDiffRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MdaDiffResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Run Mda Diff",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/ai/preferences": {
+      "get": {
+        "operationId": "ai_get_ai_preferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Ai Preferences",
+        "tags": [
+          "ai"
+        ]
+      },
+      "put": {
+        "operationId": "ai_update_ai_preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiPreferencesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Ai Preferences",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/api/alerts": {
       "get": {
         "operationId": "alerts_list_alerts",

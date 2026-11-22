@@ -86,86 +86,117 @@ def _extract_gross_margin_latest(snap: StockSnapshotPayload) -> float | None:
     return None
 
 
-_SCALAR_EXTRACTORS: dict[str, Callable[[StockSnapshotPayload], float | int | None]] = {
+_SCALAR_CANONICAL_ALIASES: dict[str, tuple[str, ...]] = {
+    "ct_red_count": (
+        "ct_red_count",
+        "ct_red",
+        "red_count",
+        "financial_ct.red_count",
+        "排雷红灯",
+        "红灯数",
+        "ct红灯",
+    ),
+    "ct_yellow_count": (
+        "ct_yellow_count",
+        "ct_yellow",
+        "yellow_count",
+        "financial_ct.yellow_count",
+        "排雷黄灯",
+        "黄灯数",
+        "ct黄灯",
+    ),
+    "pe_ttm": ("pe_ttm", "pe", "valuation.pe_ttm", "市盈率", "动态市盈率"),
+    "pe_percentile_10y": (
+        "pe_percentile_10y",
+        "pe_percentile",
+        "valuation.pe_percentile_10y",
+        "pe分位",
+        "市盈率分位",
+    ),
+    "pe_percentile_5y": ("pe_percentile_5y",),
+    "pb": ("pb", "valuation.pb", "市净率"),
+    "pb_percentile_10y": ("pb_percentile_10y", "pb_percentile", "市净率分位"),
+    "close": ("close", "price", "valuation.close", "收盘价", "现价", "股价"),
+    "dividend_yield_pct": (
+        "dividend_yield_pct",
+        "dividend_yield",
+        "valuation.dividend_yield_pct",
+        "股息率",
+    ),
+    "implied_fcf_cagr_pct": (
+        "implied_fcf_cagr_pct",
+        "implied_fcf_cagr",
+        "reverse_dcf.implied_fcf_cagr_pct",
+        "隐含增速",
+        "隐含fcf增速",
+    ),
+    "roe_5y_avg_pct": (
+        "roe_5y_avg_pct",
+        "roe_5y_avg",
+        "moat.roe_5y_avg_pct",
+        "roe5年均值",
+        "5年平均roe",
+    ),
+    "gross_margin_latest_pct": ("gross_margin_latest_pct", "moat.gross_margin_latest_pct"),
+    "net_cash_to_mv_pct": (
+        "net_cash_to_mv_pct",
+        "net_cash_to_mv",
+        "peer_metrics.net_cash_to_mv_pct",
+        "净现金市值比",
+    ),
+    "ocf_to_profit_5y_pct": (
+        "ocf_to_profit_5y_pct",
+        "ocf_to_profit",
+        "peer_metrics.ocf_to_profit_5y_pct",
+        "净现比",
+        "现金流利润比",
+    ),
+    "pledge_ratio_pct": ("pledge_ratio_pct", "pledge_ratio", "质押率", "股权质押率"),
+    "total_score": ("total_score", "score", "radar.total_score", "综合评分", "雷达评分"),
+    "shareholder_yield_pct": ("shareholder_yield_pct", "shareholder_yield", "股东回报率"),
+    "fcf_coverage_ratio": ("fcf_coverage_ratio", "自由现金流覆盖倍数"),
+    "revenue_cagr_3y_pct": ("revenue_cagr_3y_pct",),
+    "revenue_cagr_5y_pct": ("revenue_cagr_5y_pct",),
+    "profit_cagr_5y_pct": ("profit_cagr_5y_pct",),
+}
+
+_SCALAR_CANONICAL_MAP: dict[str, str] = {
+    alias: canonical
+    for canonical, aliases in _SCALAR_CANONICAL_ALIASES.items()
+    for alias in aliases
+}
+
+SUPPORTED_CANONICAL_METRICS: frozenset[str] = frozenset(
+    {*_ANNUAL_TREND_FIELDS.values(), *_SCALAR_CANONICAL_ALIASES.keys()}
+)
+
+_CANONICAL_SCALAR_EXTRACTORS: dict[str, Callable[[StockSnapshotPayload], float | int | None]] = {
     "ct_red_count": lambda s: s.financial_ct.red_count,
-    "ct_red": lambda s: s.financial_ct.red_count,
-    "red_count": lambda s: s.financial_ct.red_count,
-    "financial_ct.red_count": lambda s: s.financial_ct.red_count,
-    "排雷红灯": lambda s: s.financial_ct.red_count,
-    "红灯数": lambda s: s.financial_ct.red_count,
-    "ct红灯": lambda s: s.financial_ct.red_count,
     "ct_yellow_count": lambda s: s.financial_ct.yellow_count,
-    "ct_yellow": lambda s: s.financial_ct.yellow_count,
-    "yellow_count": lambda s: s.financial_ct.yellow_count,
-    "financial_ct.yellow_count": lambda s: s.financial_ct.yellow_count,
-    "排雷黄灯": lambda s: s.financial_ct.yellow_count,
-    "黄灯数": lambda s: s.financial_ct.yellow_count,
-    "ct黄灯": lambda s: s.financial_ct.yellow_count,
     "pe_ttm": lambda s: s.valuation.pe_ttm,
-    "pe": lambda s: s.valuation.pe_ttm,
-    "valuation.pe_ttm": lambda s: s.valuation.pe_ttm,
-    "市盈率": lambda s: s.valuation.pe_ttm,
-    "动态市盈率": lambda s: s.valuation.pe_ttm,
     "pe_percentile_10y": _extract_pe_percentile,
-    "pe_percentile": _extract_pe_percentile,
-    "valuation.pe_percentile_10y": _extract_pe_percentile,
-    "pe分位": _extract_pe_percentile,
-    "市盈率分位": _extract_pe_percentile,
     "pe_percentile_5y": lambda s: s.valuation.pe_percentile_5y,
     "pb": lambda s: s.valuation.pb,
-    "valuation.pb": lambda s: s.valuation.pb,
-    "市净率": lambda s: s.valuation.pb,
     "pb_percentile_10y": lambda s: s.valuation.pb_percentile_10y,
-    "pb_percentile": lambda s: s.valuation.pb_percentile_10y,
-    "市净率分位": lambda s: s.valuation.pb_percentile_10y,
     "close": lambda s: s.valuation.close,
-    "price": lambda s: s.valuation.close,
-    "valuation.close": lambda s: s.valuation.close,
-    "收盘价": lambda s: s.valuation.close,
-    "现价": lambda s: s.valuation.close,
-    "股价": lambda s: s.valuation.close,
     "dividend_yield_pct": _extract_dividend_yield,
-    "dividend_yield": _extract_dividend_yield,
-    "valuation.dividend_yield_pct": _extract_dividend_yield,
-    "股息率": _extract_dividend_yield,
     "implied_fcf_cagr_pct": lambda s: s.reverse_dcf.implied_fcf_cagr_pct,
-    "implied_fcf_cagr": lambda s: s.reverse_dcf.implied_fcf_cagr_pct,
-    "reverse_dcf.implied_fcf_cagr_pct": lambda s: s.reverse_dcf.implied_fcf_cagr_pct,
-    "隐含增速": lambda s: s.reverse_dcf.implied_fcf_cagr_pct,
-    "隐含fcf增速": lambda s: s.reverse_dcf.implied_fcf_cagr_pct,
     "roe_5y_avg_pct": lambda s: s.moat.roe_5y_avg_pct,
-    "roe_5y_avg": lambda s: s.moat.roe_5y_avg_pct,
-    "moat.roe_5y_avg_pct": lambda s: s.moat.roe_5y_avg_pct,
-    "roe5年均值": lambda s: s.moat.roe_5y_avg_pct,
-    "5年平均roe": lambda s: s.moat.roe_5y_avg_pct,
     "gross_margin_latest_pct": _extract_gross_margin_latest,
-    "moat.gross_margin_latest_pct": _extract_gross_margin_latest,
     "net_cash_to_mv_pct": lambda s: s.peer_metrics.net_cash_to_mv_pct,
-    "net_cash_to_mv": lambda s: s.peer_metrics.net_cash_to_mv_pct,
-    "peer_metrics.net_cash_to_mv_pct": lambda s: s.peer_metrics.net_cash_to_mv_pct,
-    "净现金市值比": lambda s: s.peer_metrics.net_cash_to_mv_pct,
     "ocf_to_profit_5y_pct": lambda s: s.peer_metrics.ocf_to_profit_5y_pct,
-    "ocf_to_profit": lambda s: s.peer_metrics.ocf_to_profit_5y_pct,
-    "peer_metrics.ocf_to_profit_5y_pct": lambda s: s.peer_metrics.ocf_to_profit_5y_pct,
-    "净现比": lambda s: s.peer_metrics.ocf_to_profit_5y_pct,
-    "现金流利润比": lambda s: s.peer_metrics.ocf_to_profit_5y_pct,
     "pledge_ratio_pct": lambda s: s.pledge_ratio_pct,
-    "pledge_ratio": lambda s: s.pledge_ratio_pct,
-    "质押率": lambda s: s.pledge_ratio_pct,
-    "股权质押率": lambda s: s.pledge_ratio_pct,
     "total_score": lambda s: s.radar.total_score,
-    "score": lambda s: s.radar.total_score,
-    "radar.total_score": lambda s: s.radar.total_score,
-    "综合评分": lambda s: s.radar.total_score,
-    "雷达评分": lambda s: s.radar.total_score,
     "shareholder_yield_pct": lambda s: s.peer_metrics.shareholder_yield_pct,
-    "shareholder_yield": lambda s: s.peer_metrics.shareholder_yield_pct,
-    "股东回报率": lambda s: s.peer_metrics.shareholder_yield_pct,
     "fcf_coverage_ratio": lambda s: s.shareholder_return.fcf_coverage_ratio,
-    "自由现金流覆盖倍数": lambda s: s.shareholder_return.fcf_coverage_ratio,
     "revenue_cagr_3y_pct": lambda s: s.growth.revenue_cagr_3y_pct,
     "revenue_cagr_5y_pct": lambda s: s.growth.revenue_cagr_5y_pct,
     "profit_cagr_5y_pct": lambda s: s.growth.profit_cagr_5y_pct,
+}
+
+_SCALAR_EXTRACTORS: dict[str, Callable[[StockSnapshotPayload], float | int | None]] = {
+    alias: _CANONICAL_SCALAR_EXTRACTORS[canonical]
+    for alias, canonical in _SCALAR_CANONICAL_MAP.items()
 }
 
 _ANNUAL_FALLBACK_SCALAR: dict[str, Callable[[StockSnapshotPayload], float | None]] = {
@@ -182,6 +213,20 @@ class SentinelEvaluationResult:
 
 def _normalize_metric_key(metric: str) -> str:
     return metric.strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def canonicalize_metric(metric: str) -> str | None:
+    """Resolve a falsify rule metric or alias to its canonical Sentinel metric key."""
+    raw_key = metric.strip().lower()
+    if not raw_key:
+        return None
+    norm_key = _normalize_metric_key(metric)
+    return (
+        _ANNUAL_TREND_FIELDS.get(raw_key)
+        or _ANNUAL_TREND_FIELDS.get(norm_key)
+        or _SCALAR_CANONICAL_MAP.get(raw_key)
+        or _SCALAR_CANONICAL_MAP.get(norm_key)
+    )
 
 
 def _compare(actual: float, op: Literal["lt", "lte", "gt", "gte", "eq"], target: float) -> bool:
