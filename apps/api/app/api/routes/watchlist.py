@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
 
-from app.api.deps import CurrentUserDep, WatchlistServiceDep
+from fastapi import APIRouter, HTTPException, Path, status
+
+from app.api.deps import CurrentUserDep, DatabaseUnavailableError, WatchlistServiceDep
 from app.domain.models import WatchlistItem, WatchlistUpsert
 from app.services.watchlist import WatchlistNotFoundError
 
@@ -23,9 +25,24 @@ async def upsert_watchlist(
     return await service.upsert(user.id, payload)
 
 
+@router.post("", response_model=WatchlistItem)
+async def add_watchlist(
+    payload: WatchlistUpsert,
+    user: CurrentUserDep,
+    service: WatchlistServiceDep,
+) -> WatchlistItem:
+    try:
+        return await service.add_if_absent(user.id, payload)
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"数据库不可用: {exc}",
+        ) from exc
+
+
 @router.delete("/{code}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_watchlist(
-    code: str,
+    code: Annotated[str, Path(pattern=r"^[0-9]{6}$")],
     user: CurrentUserDep,
     service: WatchlistServiceDep,
 ) -> None:

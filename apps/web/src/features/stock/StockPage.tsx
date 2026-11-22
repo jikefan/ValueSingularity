@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
@@ -10,8 +10,9 @@ import { useAuth } from '../../lib/authContext'
 import { JOURNAL_ACTION_META } from '../../lib/journalLabels'
 import { queryKeys } from '../../lib/queryKeys'
 import { useCreateJournal, useJournal, useRemoveJournal } from '../../lib/useJournal'
+import { useAddWatchlist, useWatchlist } from '../../lib/useWatchlist'
 import { parseOptionalNumber } from '../../lib/validation'
-import type { JournalAction, JournalCreate, StockDetail, WatchlistUpsert } from '../../types/api'
+import type { JournalAction, JournalCreate, StockDetail } from '../../types/api'
 
 const TABS = [
   {
@@ -356,7 +357,6 @@ function StockDecisionTab({ stock }: { stock: StockDetail }) {
 
 function StockPageContent({ code }: { code: string }) {
   const { user, isAuthLoading } = useAuth()
-  const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<TabKey>('decision')
 
   const stockQuery = useQuery({
@@ -364,10 +364,8 @@ function StockPageContent({ code }: { code: string }) {
     queryFn: ({ signal }) => api.getStock(code, signal),
   })
 
-  const addWatchlistMutation = useMutation({
-    mutationFn: (body: WatchlistUpsert) => api.upsertWatchlist(body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.watchlist.all }),
-  })
+  const watchlistQuery = useWatchlist(Boolean(user))
+  const addWatchlistMutation = useAddWatchlist()
 
   if (stockQuery.isPending || (!stockQuery.data && stockQuery.isFetching)) {
     return (
@@ -425,6 +423,8 @@ function StockPageContent({ code }: { code: string }) {
 
   const currentTabMeta = TABS.find((tab) => tab.key === activeTab) ?? TABS[0]
   const industryText = [stock.industry_sw1, stock.industry_sw2].filter(Boolean).join(' / ') || '—'
+  const isWatchlistChecking = Boolean(user) && watchlistQuery.isPending
+  const isInWatchlist = Boolean(watchlistQuery.data?.some((item) => item.code === stock.code))
   const watchlistError = addWatchlistMutation.isError
     ? addWatchlistMutation.error instanceof Error
       ? addWatchlistMutation.error.message
@@ -451,31 +451,34 @@ function StockPageContent({ code }: { code: string }) {
 
           <div className="stack" style={{ gap: 8, alignItems: 'flex-end' }}>
             {user ? (
-              <div className="row" style={{ gap: 8 }}>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  disabled={addWatchlistMutation.isPending}
-                  onClick={() =>
-                    addWatchlistMutation.mutate({
-                      code: stock.code,
-                      name: stock.name,
-                      industry: stock.industry_sw1 ?? null,
-                      alert_enabled: false,
-                    })
-                  }
-                >
-                  {addWatchlistMutation.isPending ? '加入中...' : '加入自选愿望单'}
-                </button>
-                {addWatchlistMutation.isSuccess ? (
-                  <>
-                    <Tag color="green">已加入自选</Tag>
-                    <Link className="link-accent small" to="/me">
-                      前往自选
-                    </Link>
-                  </>
-                ) : null}
-              </div>
+              isWatchlistChecking ? (
+                <span className="small muted">加载自选状态...</span>
+              ) : isInWatchlist ? (
+                <div className="row" style={{ gap: 8 }}>
+                  <Tag color="green">已在自选</Tag>
+                  <Link className="link-accent small" to="/me">
+                    前往配置哨兵
+                  </Link>
+                </div>
+              ) : (
+                <div className="row" style={{ gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    disabled={addWatchlistMutation.isPending}
+                    onClick={() =>
+                      addWatchlistMutation.mutate({
+                        code: stock.code,
+                        name: stock.name,
+                        industry: stock.industry_sw1 ?? null,
+                        alert_enabled: false,
+                      })
+                    }
+                  >
+                    {addWatchlistMutation.isPending ? '加入中...' : '加入自选愿望单'}
+                  </button>
+                </div>
+              )
             ) : !isAuthLoading ? (
               <Link className="btn-ghost" to="/login" state={{ from: `/stock/${stock.code}` }}>
                 登录后加入自选
@@ -547,7 +550,7 @@ function StockPageContent({ code }: { code: string }) {
 export function StockPage() {
   const { code = '' } = useParams<{ code: string }>()
   const normalizedCode = code.trim()
-  const isValidCode = /^\d{6}$/.test(normalizedCode)
+  const isValidCode = /^[0-9]{6}$/.test(normalizedCode)
 
   if (!isValidCode) {
     return (

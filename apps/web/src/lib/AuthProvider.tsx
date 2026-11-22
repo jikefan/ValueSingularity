@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import type { LoginRequest, RegisterRequest, UserProfile } from '../types/api'
 import { api, getAccessToken, subscribeAuthExpired } from './api'
 import { AuthContext, type AuthContextValue } from './authContext'
@@ -21,17 +21,12 @@ async function bootstrapSession(signal?: AbortSignal): Promise<UserProfile | nul
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
+  const transitionSeqRef = useRef(0)
 
   const clearUserCaches = useCallback(() => {
     for (const queryKey of USER_SCOPED_QUERY_KEYS) {
       queryClient.removeQueries({ queryKey })
     }
-  }, [queryClient])
-
-  const resetUserCaches = useCallback(async () => {
-    await Promise.all(
-      USER_SCOPED_QUERY_KEYS.map((queryKey) => queryClient.resetQueries({ queryKey })),
-    )
   }, [queryClient])
 
   const { data, isPending } = useQuery({
@@ -44,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return subscribeAuthExpired(() => {
+      transitionSeqRef.current += 1
       queryClient.setQueryData(queryKeys.auth.me(), null)
       clearUserCaches()
     })
@@ -51,33 +47,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (body: LoginRequest): Promise<UserProfile> => {
+      const seq = ++transitionSeqRef.current
       const res = await api.login(body)
+      if (seq !== transitionSeqRef.current) {
+        return res.user
+      }
       await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
+      if (seq !== transitionSeqRef.current) {
+        return res.user
+      }
+      clearUserCaches()
       queryClient.setQueryData(queryKeys.auth.me(), res.user)
-      await resetUserCaches()
       return res.user
     },
-    [queryClient, resetUserCaches],
+    [clearUserCaches, queryClient],
   )
 
   const register = useCallback(
     async (body: RegisterRequest): Promise<UserProfile> => {
+      const seq = ++transitionSeqRef.current
       const res = await api.register(body)
+      if (seq !== transitionSeqRef.current) {
+        return res.user
+      }
       await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
+      if (seq !== transitionSeqRef.current) {
+        return res.user
+      }
+      clearUserCaches()
       queryClient.setQueryData(queryKeys.auth.me(), res.user)
-      await resetUserCaches()
       return res.user
     },
-    [queryClient, resetUserCaches],
+    [clearUserCaches, queryClient],
   )
 
   const logout = useCallback(async (): Promise<void> => {
-    try {
-      await api.logout()
-    } catch {
+    const seq = ++transitionSeqRef.current
+    queryClient.setQueryData(queryKeys.auth.me(), null)
+    clearUserCaches()
+    const logoutPromise = api.logout().catch(() => {
       // Clear local session state even if the remote logout call fails.
-    } finally {
-      await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
+    })
+    await Promise.all([
+      queryClient.cancelQueries({ queryKey: queryKeys.auth.me() }),
+      ...USER_SCOPED_QUERY_KEYS.map((queryKey) => queryClient.cancelQueries({ queryKey })),
+      logoutPromise,
+    ])
+    if (seq === transitionSeqRef.current) {
       queryClient.setQueryData(queryKeys.auth.me(), null)
       clearUserCaches()
     }

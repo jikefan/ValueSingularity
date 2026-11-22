@@ -244,7 +244,8 @@ export interface paths {
         get: operations["watchlist_list_watchlist"];
         /** Upsert Watchlist */
         put: operations["watchlist_upsert_watchlist"];
-        post?: never;
+        /** Add Watchlist */
+        post: operations["watchlist_add_watchlist"];
         delete?: never;
         options?: never;
         head?: never;
@@ -919,6 +920,7 @@ export interface operations {
         parameters: {
             query?: {
                 code?: string | null;
+                action?: components["schemas"]["JournalAction"][] | null;
                 limit?: number;
             };
             header?: never;
@@ -1113,6 +1115,39 @@ export interface operations {
         };
     };
     watchlist_upsert_watchlist: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchlistUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    watchlist_add_watchlist: {
         parameters: {
             query?: never;
             header?: never;

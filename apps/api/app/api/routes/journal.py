@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from app.api.deps import CurrentUserDep, DatabaseUnavailableError, JournalServiceDep
-from app.domain.models import JournalCreate, JournalEntryItem
+from app.domain.models import JournalAction, JournalCreate, JournalEntryItem
 from app.services.journal import JournalEntryNotFoundError
 
 router = APIRouter(prefix="/journal", tags=["journal"])
@@ -15,11 +15,12 @@ router = APIRouter(prefix="/journal", tags=["journal"])
 async def list_journal(
     user: CurrentUserDep,
     service: JournalServiceDep,
-    code: Annotated[str | None, Query(pattern=r"^\d{6}$")] = None,
+    code: Annotated[str | None, Query(pattern=r"^[0-9]{6}$")] = None,
+    action: Annotated[list[JournalAction] | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[JournalEntryItem]:
     try:
-        return await service.list(user.id, code=code, limit=limit)
+        return await service.list(user.id, code=code, actions=action, limit=limit)
     except DatabaseUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -44,7 +45,7 @@ async def create_journal(
 
 @router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_journal(
-    entry_id: Annotated[int, Path(ge=1)],
+    entry_id: Annotated[int, Path(ge=1, le=9_223_372_036_854_775_807)],
     user: CurrentUserDep,
     service: JournalServiceDep,
 ) -> None:

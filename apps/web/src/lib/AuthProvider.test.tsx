@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from './AuthProvider'
-import { api, setAccessToken } from './api'
+import { ApiError, api, getAccessToken, setAccessToken } from './api'
 import { useAuth } from './authContext'
 import { createQueryClient } from './queryClient'
 import { queryKeys } from './queryKeys'
@@ -208,5 +208,179 @@ describe('AuthProvider tenant cache isolation', () => {
     expect(client.getQueryData(queryKeys.watchlist.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.journal.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.events.list())).toBeUndefined()
+  })
+
+  it('does not re-mint accessToken via /refresh when refetch runs right after logout starts', async () => {
+    const tokenA: TokenResponse = {
+      access_token: 'token-a',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: USER_A,
+    }
+    let refreshCalls = 0
+    let resolveLogout!: (response: Response) => void
+    const logoutDeferred = new Promise<Response>((resolve) => {
+      resolveLogout = resolve
+    })
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh') {
+        refreshCalls += 1
+        return Promise.resolve(jsonResponse(tokenA, 200))
+      }
+      if (pathname === '/api/auth/logout') {
+        return logoutDeferred
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const client = createQueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    function Probe() {
+      const { user, logout } = useAuth()
+      return (
+        <div>
+          <span data-testid="current-user">{user ? user.email : 'guest'}</span>
+          <button
+            type="button"
+            onClick={() => {
+              void logout()
+            }}
+          >
+            退出登录
+          </button>
+        </div>
+      )
+    }
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('user-a@example.com')
+    })
+    expect(getAccessToken()).toBe('token-a')
+
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+    expect(getAccessToken()).toBeNull()
+    expect(client.getQueryData(queryKeys.auth.me())).toBeNull()
+
+    await client.refetchQueries({ queryKey: queryKeys.auth.me() })
+
+    expect(refreshCalls).toBe(1)
+    expect(getAccessToken()).toBeNull()
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('guest')
+    })
+
+    resolveLogout(new Response(null, { status: 204 }))
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('guest')
+    })
+    expect(getAccessToken()).toBeNull()
+  })
+
+  it('keeps user logged out when logout runs during slow in-flight login', async () => {
+    const tokenB: TokenResponse = {
+      access_token: 'token-b',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: USER_B,
+    }
+    let resolveLogin!: (response: Response) => void
+    const loginDeferred = new Promise<Response>((resolve) => {
+      resolveLogin = resolve
+    })
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/auth/login') {
+        return loginDeferred
+      }
+      if (pathname === '/api/auth/logout') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const client = createQueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    let loginError: unknown = null
+    let loginDone = false
+
+    function Probe() {
+      const { user, isAuthLoading, login, logout } = useAuth()
+      return (
+        <div>
+          <span data-testid="auth-loading">{isAuthLoading ? 'loading' : 'ready'}</span>
+          <span data-testid="current-user">{user ? user.email : 'guest'}</span>
+          <button
+            type="button"
+            onClick={() => {
+              void login({ email: 'user-b@example.com', password: 'password123' })
+                .catch((err: unknown) => {
+                  loginError = err
+                })
+                .finally(() => {
+                  loginDone = true
+                })
+            }}
+          >
+            登录B
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void logout()
+            }}
+          >
+            退出登录
+          </button>
+        </div>
+      )
+    }
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-loading')).toHaveTextContent('ready')
+    })
+    expect(screen.getByTestId('current-user')).toHaveTextContent('guest')
+
+    fireEvent.click(screen.getByRole('button', { name: '登录B' }))
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+
+    resolveLogin(jsonResponse(tokenB, 200))
+
+    await waitFor(() => {
+      expect(loginDone).toBe(true)
+    })
+    expect(loginError).toBeInstanceOf(ApiError)
+    expect(screen.getByTestId('current-user')).toHaveTextContent('guest')
+    expect(getAccessToken()).toBeNull()
+    expect(client.getQueryData(queryKeys.auth.me())).toBeNull()
   })
 })

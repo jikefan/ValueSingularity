@@ -15,6 +15,15 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 StockExchange = Literal["SH", "SZ", "BJ"]
+_ASCII_STOCK_CODE_PATTERN = r"^[0-9]{6}$"
+_INT64_MIN = -9_223_372_036_854_775_808
+_INT64_MAX = 9_223_372_036_854_775_807
+
+
+def _reject_nul(value: str, label: str = "文本") -> str:
+    if "\x00" in value:
+        raise ValueError(f"{label}不能包含空字符")
+    return value
 
 
 class TemperatureLevel(StrEnum):
@@ -70,7 +79,7 @@ class MarketOverview(BaseModel):
 
 
 class StockMetaRecord(BaseModel):
-    code: str = Field(pattern=r"^\d{6}$")
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
     name: str = Field(min_length=1, max_length=64)
     exchange: StockExchange
     industry_sw1: str | None = None
@@ -90,7 +99,7 @@ class TradeCalendarEntry(BaseModel):
 
 
 class IndexDailyRow(BaseModel):
-    code: str = Field(pattern=r"^\d{6}$")
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
     trade_date: date
     close: FiniteFloat
     change_pct: FiniteFloat
@@ -163,7 +172,7 @@ class RegisterRequest(BaseModel):
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("昵称不能为空")
-        return cleaned
+        return _reject_nul(cleaned, "昵称")
 
 
 class LoginRequest(BaseModel):
@@ -205,7 +214,7 @@ class RefreshRotationResult(BaseModel):
 
 
 class WatchlistItem(BaseModel):
-    code: str = Field(pattern=r"^\d{6}$")
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
     name: str
     industry: str | None = None
     note: str | None = None
@@ -218,7 +227,7 @@ class WatchlistItem(BaseModel):
 
 
 class WatchlistUpsert(BaseModel):
-    code: str = Field(pattern=r"^\d{6}$")
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
     name: str = Field(min_length=1, max_length=64)
     industry: str | None = Field(default=None, max_length=64)
     note: str | None = None
@@ -240,6 +249,11 @@ class WatchlistUpsert(BaseModel):
         if isinstance(value, str):
             return value.strip() or None
         return value
+
+    @field_validator("name", "industry", "note")
+    @classmethod
+    def _validate_no_nul(cls, value: str | None) -> str | None:
+        return _reject_nul(value) if value is not None else None
 
 
 class JournalAction(StrEnum):
@@ -263,18 +277,23 @@ class FalsifyRule(BaseModel):
     def _strip_metric(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
+    @field_validator("metric")
+    @classmethod
+    def _validate_metric_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "指标名称")
+
 
 class JournalCreate(BaseModel):
-    code: str = Field(pattern=r"^\d{6}$")
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
     name: str | None = Field(default=None, max_length=64)
     action: JournalAction
     reason: str = Field(min_length=1, max_length=5000)
     falsify_condition: str = Field(min_length=1, max_length=5000)
-    falsify_rules: list[FalsifyRule] | None = None
+    falsify_rules: list[FalsifyRule] | None = Field(default=None, max_length=20)
     max_drawdown: FiniteFloat | None = Field(default=None, ge=0, le=100)
     emotion: str | None = Field(default=None, max_length=32)
     price: FiniteFloat | None = Field(default=None, ge=0.001, le=999_999_999.999)
-    benchmark_code: str = Field(default="000300", pattern=r"^\d{6}$")
+    benchmark_code: str = Field(default="000300", pattern=_ASCII_STOCK_CODE_PATTERN)
     benchmark_price: FiniteFloat | None = Field(default=None, ge=0.001, le=999_999_999.999)
 
     @field_validator("name", "emotion", mode="before")
@@ -288,6 +307,11 @@ class JournalCreate(BaseModel):
     @classmethod
     def _strip_required_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+    @field_validator("name", "reason", "falsify_condition", "emotion")
+    @classmethod
+    def _validate_no_nul(cls, value: str | None) -> str | None:
+        return _reject_nul(value) if value is not None else None
 
 
 class JournalEntryItem(BaseModel):
@@ -311,13 +335,38 @@ EventMetaValue = str | int | FiniteFloat | bool | None
 
 class UserEventCreate(BaseModel):
     type: str = Field(min_length=1, max_length=32)
-    code: str | None = Field(default=None, pattern=r"^\d{6}$")
-    meta: dict[str, EventMetaValue] | None = None
+    code: str | None = Field(default=None, pattern=_ASCII_STOCK_CODE_PATTERN)
+    meta: dict[str, EventMetaValue] | None = Field(default=None, max_length=20)
 
     @field_validator("type", mode="before")
     @classmethod
     def _strip_type(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
+
+    @field_validator("type")
+    @classmethod
+    def _validate_type_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "事件类型")
+
+    @field_validator("meta")
+    @classmethod
+    def _validate_meta(
+        cls, value: dict[str, EventMetaValue] | None
+    ) -> dict[str, EventMetaValue] | None:
+        if value is None:
+            return None
+        if len(value) > 20:
+            raise ValueError("meta 最多包含 20 个字段")
+        for key, item in value.items():
+            if not key.strip() or len(key) > 64 or "\x00" in key:
+                raise ValueError("meta 键名须为 1–64 个非空字符且不能包含空字符")
+            if isinstance(item, bool):
+                continue
+            if isinstance(item, int) and (item < _INT64_MIN or item > _INT64_MAX):
+                raise ValueError("meta 整数值超出 64 位范围")
+            if isinstance(item, str) and (len(item) > 500 or "\x00" in item):
+                raise ValueError("meta 字符串值不能超过 500 个字符且不能包含空字符")
+        return value
 
 
 class UserEventItem(BaseModel):

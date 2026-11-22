@@ -9,7 +9,7 @@ import { fmtNum } from '../../lib/format'
 import { useJournal, useRemoveJournal } from '../../lib/useJournal'
 import { parseOptionalNumber } from '../../lib/validation'
 import type { JournalAction, PlanTier, WatchlistItem, WatchlistUpsert } from '../../types/api'
-import { useRemoveWatchlist, useUpsertWatchlist, useWatchlist } from './useWatchlist'
+import { useRemoveWatchlist, useUpsertWatchlist, useWatchlist } from '../../lib/useWatchlist'
 
 const PLAN_COLOR: Record<PlanTier, 'gray' | 'blue' | 'green'> = {
   free: 'gray',
@@ -19,25 +19,16 @@ const PLAN_COLOR: Record<PlanTier, 'gray' | 'blue' | 'green'> = {
 
 type JournalFilter = 'all' | 'buy_add' | 'trim_sell' | 'pass'
 
-const JOURNAL_FILTERS: ReadonlyArray<{ key: JournalFilter; label: string }> = [
+const JOURNAL_FILTERS: ReadonlyArray<{
+  key: JournalFilter
+  label: string
+  actions?: readonly JournalAction[]
+}> = [
   { key: 'all', label: '全部' },
-  { key: 'buy_add', label: '买入 / 加仓' },
-  { key: 'trim_sell', label: '减仓 / 卖出' },
-  { key: 'pass', label: 'Pass 观察池' },
+  { key: 'buy_add', label: '买入 / 加仓', actions: ['buy', 'add'] },
+  { key: 'trim_sell', label: '减仓 / 卖出', actions: ['trim', 'sell'] },
+  { key: 'pass', label: 'Pass 观察池', actions: ['pass'] },
 ]
-
-function matchesJournalFilter(action: JournalAction, filter: JournalFilter): boolean {
-  switch (filter) {
-    case 'all':
-      return true
-    case 'buy_add':
-      return action === 'buy' || action === 'add'
-    case 'trim_sell':
-      return action === 'trim' || action === 'sell'
-    case 'pass':
-      return action === 'pass'
-  }
-}
 
 function renderThresholdBadges(item: WatchlistItem) {
   const items: string[] = []
@@ -74,9 +65,10 @@ export function MePage() {
   const watchlistQuery = useWatchlist(Boolean(user))
   const upsertMutation = useUpsertWatchlist()
   const removeMutation = useRemoveWatchlist()
-  const journalQuery = useJournal(undefined, Boolean(user))
-  const removeJournalMutation = useRemoveJournal()
   const [journalFilter, setJournalFilter] = useState<JournalFilter>('all')
+  const selectedActions = JOURNAL_FILTERS.find((option) => option.key === journalFilter)?.actions
+  const journalQuery = useJournal(undefined, Boolean(user), selectedActions)
+  const removeJournalMutation = useRemoveJournal()
 
   const [editingCode, setEditingCode] = useState<string | null>(null)
   const [code, setCode] = useState('')
@@ -134,7 +126,7 @@ export function MePage() {
     const trimmedName = name.trim()
     const trimmedIndustry = industry.trim()
 
-    if (!/^\d{6}$/.test(trimmedCode)) {
+    if (!/^[0-9]{6}$/.test(trimmedCode)) {
       setFormError('股票代码须为 6 位数字')
       return
     }
@@ -237,9 +229,6 @@ export function MePage() {
     : null
 
   const journalEntries = journalQuery.data ?? []
-  const filteredJournal = journalEntries.filter((entry) =>
-    matchesJournalFilter(entry.action, journalFilter),
-  )
 
   return (
     <div className="container stack" style={{ gap: 16 }}>
@@ -492,7 +481,11 @@ export function MePage() {
         title="决策日记与 Pass 观察池"
         extra={
           journalQuery.data ? (
-            <span className="small muted mono">{journalQuery.data.length} 条记录</span>
+            <span className="small muted mono">
+              {journalFilter === 'all'
+                ? `${journalQuery.data.length} 条记录`
+                : `当前筛选 ${journalQuery.data.length} 条`}
+            </span>
           ) : null
         }
       >
@@ -532,18 +525,20 @@ export function MePage() {
               }}
             />
           ) : journalEntries.length === 0 ? (
-            <EmptyBlock
-              title="还没有决策日记"
-              hint="前往个股分析页记录买入、卖出或 Pass 观察决策。"
-            />
-          ) : filteredJournal.length === 0 ? (
-            <EmptyBlock
-              title="当前筛选下暂无记录"
-              hint="切换上方筛选条件查看全部决策或 Pass 观察池。"
-            />
+            journalFilter === 'all' ? (
+              <EmptyBlock
+                title="还没有决策日记"
+                hint="前往个股分析页记录买入、卖出或 Pass 观察决策。"
+              />
+            ) : (
+              <EmptyBlock
+                title="当前筛选下暂无记录"
+                hint="切换上方筛选条件查看全部决策或 Pass 观察池。"
+              />
+            )
           ) : (
             <div className="journal-list">
-              {filteredJournal.map((entry) => (
+              {journalEntries.map((entry) => (
                 <JournalEntryCard
                   key={entry.id}
                   entry={entry}

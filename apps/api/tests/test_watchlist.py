@@ -37,6 +37,12 @@ async def test_watchlist_requires_auth(db_client: AsyncClient) -> None:
             json={"code": "600519", "name": "贵州茅台"},
         )
     ).status_code == 401
+    assert (
+        await db_client.post(
+            "/api/watchlist",
+            json={"code": "600519", "name": "贵州茅台"},
+        )
+    ).status_code == 401
     assert (await db_client.delete("/api/watchlist/600519")).status_code == 401
 
 
@@ -99,14 +105,89 @@ async def test_watchlist_crud_with_sentinel(db_client: AsyncClient) -> None:
     assert (await db_client.get("/api/watchlist", headers=headers)).json() == []
 
 
-async def test_watchlist_rejects_bad_code(db_client: AsyncClient) -> None:
-    headers = await _auth_headers(db_client, "badcode@example.com", "BadCode")
-    response = await db_client.put(
+async def test_watchlist_post_idempotent_preserves_configured_sentinel(
+    db_client: AsyncClient,
+) -> None:
+    headers = await _auth_headers(db_client, "quick-add@example.com", "QuickAdd")
+
+    first = await db_client.post(
         "/api/watchlist",
         headers=headers,
-        json={"code": "60051", "name": "贵州茅台"},
+        json={
+            "code": "000858",
+            "name": "五粮液",
+            "industry": "白酒",
+            "alert_enabled": False,
+        },
     )
-    assert response.status_code == 422
+    assert first.status_code == 200
+    assert first.json()["code"] == "000858"
+    assert first.json()["alert_enabled"] is False
+
+    configured = await db_client.put(
+        "/api/watchlist",
+        headers=headers,
+        json={
+            "code": "600519",
+            "name": "贵州茅台",
+            "industry": "白酒",
+            "note": "长期跟踪",
+            "target_price": 1450.5,
+            "target_pe_percentile": 25.0,
+            "target_dividend_yield": 3.8,
+            "alert_enabled": True,
+        },
+    )
+    assert configured.status_code == 200
+
+    quick_add_existing = await db_client.post(
+        "/api/watchlist",
+        headers=headers,
+        json={
+            "code": "600519",
+            "name": "贵州茅台别名",
+            "industry": "食品饮料",
+            "note": None,
+            "alert_enabled": False,
+        },
+    )
+    assert quick_add_existing.status_code == 200
+    body = quick_add_existing.json()
+    assert body["name"] == "贵州茅台"
+    assert body["industry"] == "白酒"
+    assert body["note"] == "长期跟踪"
+    assert body["target_price"] == 1450.5
+    assert body["target_pe_percentile"] == 25.0
+    assert body["target_dividend_yield"] == 3.8
+    assert body["alert_enabled"] is True
+
+    items = (await db_client.get("/api/watchlist", headers=headers)).json()
+    assert len(items) == 2
+    maotai = next(item for item in items if item["code"] == "600519")
+    assert maotai["note"] == "长期跟踪"
+    assert maotai["target_price"] == 1450.5
+    assert maotai["target_pe_percentile"] == 25.0
+    assert maotai["target_dividend_yield"] == 3.8
+    assert maotai["alert_enabled"] is True
+
+
+async def test_watchlist_rejects_bad_code(db_client: AsyncClient) -> None:
+    headers = await _auth_headers(db_client, "badcode@example.com", "BadCode")
+    for bad_code in ("60051", "６００５１９"):
+        put_resp = await db_client.put(
+            "/api/watchlist",
+            headers=headers,
+            json={"code": bad_code, "name": "贵州茅台"},
+        )
+        assert put_resp.status_code == 422
+        post_resp = await db_client.post(
+            "/api/watchlist",
+            headers=headers,
+            json={"code": bad_code, "name": "贵州茅台"},
+        )
+        assert post_resp.status_code == 422
+        del_resp = await db_client.delete(f"/api/watchlist/{bad_code}", headers=headers)
+        assert del_resp.status_code == 422
 
 
 async def test_watchlist_tenant_isolation(db_client: AsyncClient) -> None:
@@ -150,10 +231,23 @@ async def test_watchlist_validation_boundaries(db_client: AsyncClient) -> None:
         {"code": "600519", "name": "贵州茅台", "target_pe_percentile": 100.1},
         {"code": "600519", "name": "贵州茅台", "target_dividend_yield": -0.1},
         {"code": "600519", "name": "贵州茅台", "target_dividend_yield": 100.1},
+        {"code": "600519", "name": "贵州\x00茅台"},
+        {"code": "600519", "name": "贵州茅台", "industry": "白\x00酒"},
+        {"code": "600519", "name": "贵州茅台", "note": "备\x00注"},
     ]
     for payload in invalid_payloads:
         resp = await db_client.put("/api/watchlist", headers=headers, json=payload)
         assert resp.status_code == 422, f"Expected 422 for {payload}, got {resp.status_code}"
+
+    nul_register = await db_client.post(
+        "/api/auth/register",
+        json={
+            "email": "nul-name@example.com",
+            "password": "strong-password-123",
+            "display_name": "Bad\x00Name",
+        },
+    )
+    assert nul_register.status_code == 422
 
     max_valid = await db_client.put(
         "/api/watchlist",

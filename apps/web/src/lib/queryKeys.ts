@@ -1,3 +1,5 @@
+import type { JournalAction } from '../types/api'
+
 export const queryKeys = {
   health: ['health'] as const,
   auth: {
@@ -19,7 +21,13 @@ export const queryKeys = {
   },
   journal: {
     all: ['journal'] as const,
-    list: (code?: string) => ['journal', 'list', code ?? 'all'] as const,
+    list: (code?: string, actions?: readonly JournalAction[]) =>
+      [
+        'journal',
+        'list',
+        code ?? 'all',
+        actions && actions.length > 0 ? [...actions].sort().join(',') : 'all',
+      ] as const,
   },
   events: {
     all: ['events'] as const,

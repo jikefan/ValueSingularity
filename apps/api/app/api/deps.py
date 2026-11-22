@@ -70,7 +70,6 @@ def get_journal_service(session: DbSessionDep) -> JournalService:
     return JournalService(
         repository=PostgresJournalRepository(session),
         stock_meta=PostgresStockMetaRepository(session),
-        events=PostgresEventRepository(session),
     )
 
 

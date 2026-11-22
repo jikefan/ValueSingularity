@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { JournalCreate } from '../types/api'
+import type { JournalAction, JournalCreate } from '../types/api'
 import { api } from './api'
 import { queryKeys } from './queryKeys'
 
-export function useJournal(code?: string, enabled = true) {
+export function useJournal(code?: string, enabled = true, actions?: readonly JournalAction[]) {
   return useQuery({
-    queryKey: queryKeys.journal.list(code),
-    queryFn: ({ signal }) => api.listJournal(code, 50, signal),
+    queryKey: queryKeys.journal.list(code, actions),
+    queryFn: ({ signal }) => api.listJournal({ code, actions, limit: 50, signal }),
     enabled,
   })
 }

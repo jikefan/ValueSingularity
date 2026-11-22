@@ -17,6 +17,11 @@ async def search_stocks(
     service: StockServiceDep,
     limit: Annotated[int, Query(ge=1, le=20)] = 10,
 ) -> list[StockMetaRecord]:
+    if "\x00" in q:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="搜索关键词不能包含空字符",
+        )
     try:
         return await service.search(q, limit=limit)
     except DatabaseUnavailableError as exc:
@@ -28,7 +33,7 @@ async def search_stocks(
 
 @router.get("/{code}", response_model=StockDetail)
 async def get_stock(
-    code: Annotated[str, Path(pattern=r"^\d{6}$")],
+    code: Annotated[str, Path(pattern=r"^[0-9]{6}$")],
     service: StockServiceDep,
 ) -> StockDetail:
     try:

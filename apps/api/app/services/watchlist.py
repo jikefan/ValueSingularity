@@ -24,6 +24,9 @@ class WatchlistService:
     async def upsert(self, user_id: UUID, payload: WatchlistUpsert) -> WatchlistItem:
         return await self._repository.upsert(user_id, payload)
 
+    async def add_if_absent(self, user_id: UUID, payload: WatchlistUpsert) -> WatchlistItem:
+        return await self._repository.add_if_absent(user_id, payload)
+
     async def remove(self, user_id: UUID, code: str) -> None:
         if not await self._repository.remove(user_id, code):
             raise WatchlistNotFoundError(code)

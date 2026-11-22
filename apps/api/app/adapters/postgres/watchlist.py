@@ -9,9 +9,11 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import WatchlistItem as WatchlistRow
+from app.db.session import DatabaseUnavailableError
 from app.domain.models import WatchlistItem, WatchlistUpsert
 
 
@@ -97,6 +99,46 @@ class PostgresWatchlistRepository:
         item = _to_domain(row)
         await self._session.commit()
         return item
+
+    async def add_if_absent(self, user_id: UUID, payload: WatchlistUpsert) -> WatchlistItem:
+        stmt = (
+            pg_insert(WatchlistRow)
+            .values(
+                user_id=user_id,
+                code=payload.code,
+                name=payload.name,
+                industry=payload.industry,
+                note=payload.note,
+                target_price=_to_decimal(payload.target_price),
+                target_pe_percentile=_to_decimal(payload.target_pe_percentile),
+                target_dividend_yield=_to_decimal(payload.target_dividend_yield),
+                alert_enabled=payload.alert_enabled,
+            )
+            .on_conflict_do_nothing(index_elements=["user_id", "code"])
+            .returning(WatchlistRow)
+        )
+        try:
+            for _ in range(2):
+                inserted = (await self._session.scalars(stmt)).first()
+                if inserted is not None:
+                    item = _to_domain(inserted)
+                    await self._session.commit()
+                    return item
+
+                existing = await self._session.scalar(
+                    select(WatchlistRow)
+                    .where(WatchlistRow.user_id == user_id, WatchlistRow.code == payload.code)
+                    .execution_options(populate_existing=True)
+                )
+                if existing is not None:
+                    item = _to_domain(existing)
+                    await self._session.commit()
+                    return item
+        except SQLAlchemyError as exc:
+            await self._session.rollback()
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+
+        raise DatabaseUnavailableError("WatchlistInsertConflict")
 
     async def remove(self, user_id: UUID, code: str) -> bool:
         result = await self._session.execute(

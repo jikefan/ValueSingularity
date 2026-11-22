@@ -155,7 +155,7 @@
           },
           "benchmark_code": {
             "default": "000300",
-            "pattern": "^\\d{6}$",
+            "pattern": "^[0-9]{6}$",
             "title": "Benchmark Code",
             "type": "string"
           },
@@ -173,7 +173,7 @@
             "title": "Benchmark Price"
           },
           "code": {
-            "pattern": "^\\d{6}$",
+            "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
           },
@@ -201,6 +201,7 @@
                 "items": {
                   "$ref": "#/components/schemas/FalsifyRule"
                 },
+                "maxItems": 20,
                 "type": "array"
               },
               {
@@ -538,7 +539,7 @@
       "StockDetail": {
         "properties": {
           "code": {
-            "pattern": "^\\d{6}$",
+            "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
           },
@@ -618,7 +619,7 @@
       "StockMetaRecord": {
         "properties": {
           "code": {
-            "pattern": "^\\d{6}$",
+            "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
           },
@@ -734,7 +735,7 @@
           "code": {
             "anyOf": [
               {
-                "pattern": "^\\d{6}$",
+                "pattern": "^[0-9]{6}$",
                 "type": "string"
               },
               {
@@ -765,6 +766,7 @@
                     }
                   ]
                 },
+                "maxProperties": 20,
                 "type": "object"
               },
               {
@@ -969,7 +971,7 @@
             "type": "boolean"
           },
           "code": {
-            "pattern": "^\\d{6}$",
+            "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
           },
@@ -1055,7 +1057,7 @@
             "type": "boolean"
           },
           "code": {
-            "pattern": "^\\d{6}$",
+            "pattern": "^[0-9]{6}$",
             "title": "Code",
             "type": "string"
           },
@@ -1446,7 +1448,7 @@
             "schema": {
               "anyOf": [
                 {
-                  "pattern": "^\\d{6}$",
+                  "pattern": "^[0-9]{6}$",
                   "type": "string"
                 },
                 {
@@ -1454,6 +1456,25 @@
                 }
               ],
               "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/JournalAction"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
             }
           },
           {
@@ -1559,6 +1580,7 @@
             "name": "entry_id",
             "required": true,
             "schema": {
+              "maximum": 9223372036854775807,
               "minimum": 1,
               "title": "Entry Id",
               "type": "integer"
@@ -1681,7 +1703,7 @@
             "name": "code",
             "required": true,
             "schema": {
-              "pattern": "^\\d{6}$",
+              "pattern": "^[0-9]{6}$",
               "title": "Code",
               "type": "string"
             }
@@ -1744,6 +1766,50 @@
           "watchlist"
         ]
       },
+      "post": {
+        "operationId": "watchlist_add_watchlist",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Watchlist",
+        "tags": [
+          "watchlist"
+        ]
+      },
       "put": {
         "operationId": "watchlist_upsert_watchlist",
         "requestBody": {
@@ -1798,6 +1864,7 @@
             "name": "code",
             "required": true,
             "schema": {
+              "pattern": "^[0-9]{6}$",
               "title": "Code",
               "type": "string"
             }

@@ -152,6 +152,7 @@ async def test_stock_search_validation_and_detail(db_client: AsyncClient) -> Non
     assert (await db_client.get("/api/stocks/search")).status_code == 422
     assert (await db_client.get("/api/stocks/search", params={"q": ""})).status_code == 422
     assert (await db_client.get("/api/stocks/search", params={"q": "a" * 65})).status_code == 422
+    assert (await db_client.get("/api/stocks/search", params={"q": "茅\x00台"})).status_code == 422
     assert (
         await db_client.get("/api/stocks/search", params={"q": "600519", "limit": 0})
     ).status_code == 422
@@ -181,6 +182,7 @@ async def test_stock_search_validation_and_detail(db_client: AsyncClient) -> Non
     assert (await db_client.get("/api/stocks/999999")).status_code == 404
     assert (await db_client.get("/api/stocks/abc")).status_code == 422
     assert (await db_client.get("/api/stocks/60051")).status_code == 422
+    assert (await db_client.get("/api/stocks/６００５１９")).status_code == 422
 
     # Ensure repository search clamps out-of-range limit safely even outside FastAPI Query.
     assert settings.test_database_url is not None
@@ -204,6 +206,9 @@ async def test_stocks_return_503_when_db_unavailable() -> None:
             raise DatabaseUnavailableError("OperationalError")
 
         async def get_detail(self, code: str) -> StockDetail | None:
+            raise DatabaseUnavailableError("OperationalError")
+
+        async def get_name(self, code: str) -> str | None:
             raise DatabaseUnavailableError("OperationalError")
 
     app = create_app()

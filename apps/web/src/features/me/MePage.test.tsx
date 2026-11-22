@@ -297,7 +297,7 @@ describe('MePage', () => {
     expect(putCalled).toBe(false)
   })
 
-  it('renders journal entries, filters Pass pool, and deletes via DELETE /api/journal/{id}', async () => {
+  it('renders journal entries, filters Pass pool via server query, and deletes via DELETE /api/journal/{id}', async () => {
     let journalState: JournalEntryItem[] = [
       {
         id: 101,
@@ -330,6 +330,22 @@ describe('MePage', () => {
         created_at: '2026-11-22T10:00:00Z',
       },
     ]
+    const buriedPassEntry: JournalEntryItem = {
+      id: 99,
+      code: '600809',
+      name: '山西汾酒',
+      action: 'pass',
+      reason: '早期高估放入观察池',
+      falsify_condition: '估值回到 18 倍 PE',
+      falsify_rules: null,
+      max_drawdown: null,
+      emotion: '克制',
+      price: null,
+      benchmark_code: '000300',
+      benchmark_price: null,
+      created_at: '2026-11-01T10:00:00Z',
+    }
+    const requestedJournalActions: string[][] = []
     let deletedJournalId: number | null = null
 
     const tokenResponse: TokenResponse = {
@@ -341,7 +357,8 @@ describe('MePage', () => {
 
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const request = asRequest(input)
-      const pathname = new URL(request.url).pathname
+      const url = new URL(request.url)
+      const pathname = url.pathname
 
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return Promise.resolve(jsonResponse(tokenResponse, 200))
@@ -350,7 +367,15 @@ describe('MePage', () => {
         return Promise.resolve(jsonResponse([INITIAL_ITEM], 200))
       }
       if (pathname === '/api/journal' && request.method === 'GET') {
-        return Promise.resolve(jsonResponse(journalState, 200))
+        const actions = url.searchParams.getAll('action')
+        requestedJournalActions.push(actions)
+        if (actions.length === 0) {
+          return Promise.resolve(jsonResponse(journalState, 200))
+        }
+        const pool = [...journalState, buriedPassEntry].filter((entry) =>
+          actions.includes(entry.action),
+        )
+        return Promise.resolve(jsonResponse(pool, 200))
       }
       if (pathname.startsWith('/api/journal/') && request.method === 'DELETE') {
         deletedJournalId = Number(pathname.slice('/api/journal/'.length))
@@ -369,16 +394,22 @@ describe('MePage', () => {
     expect(screen.getByRole('link', { name: '000858' })).toHaveAttribute('href', '/stock/000858')
 
     fireEvent.click(screen.getByRole('button', { name: 'Pass 观察池' }))
-    expect(screen.queryByText('批价企稳回升，分红率具备吸引力')).not.toBeInTheDocument()
+    expect(await screen.findByText('早期高估放入观察池')).toBeInTheDocument()
     expect(screen.getByText('短期渠道库存偏高，暂放入观察池')).toBeInTheDocument()
+    expect(screen.queryByText('批价企稳回升，分红率具备吸引力')).not.toBeInTheDocument()
+    expect(screen.getByText('当前筛选 2 条')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '买入 / 加仓' }))
-    expect(screen.getByText('批价企稳回升，分红率具备吸引力')).toBeInTheDocument()
+    expect(await screen.findByText('批价企稳回升，分红率具备吸引力')).toBeInTheDocument()
     expect(screen.queryByText('短期渠道库存偏高，暂放入观察池')).not.toBeInTheDocument()
 
+    expect(requestedJournalActions).toEqual([[], ['pass'], ['buy', 'add']])
+
     fireEvent.click(screen.getByRole('button', { name: '全部' }))
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: '删除日记' })).toHaveLength(2)
+    })
     const journalDeleteButtons = screen.getAllByRole('button', { name: '删除日记' })
-    expect(journalDeleteButtons).toHaveLength(2)
     expect(screen.getAllByRole('button', { name: '删除' })).toHaveLength(1)
 
     const secondJournalDelete = journalDeleteButtons[1]

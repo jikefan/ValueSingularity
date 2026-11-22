@@ -25,6 +25,7 @@ type TopNavProps = {
   searchResults?: StockMetaRecord[]
   isSearching?: boolean
   onSelectStock?: (code: string) => void
+  onSubmitQuery?: (query: string) => void
   searchError?: boolean
 }
 
@@ -37,6 +38,7 @@ export function TopNav({
   searchResults = EMPTY_RESULTS,
   isSearching = false,
   onSelectStock,
+  onSubmitQuery,
   searchError = false,
 }: TopNavProps) {
   const [isOpen, setIsOpen] = useState(false)
@@ -45,6 +47,8 @@ export function TopNav({
 
   const trimmedQuery = searchQuery.trim()
   const showDropdown = isOpen && trimmedQuery.length > 0
+  const effectiveActiveIndex =
+    !isSearching && activeIndex >= 0 && activeIndex < searchResults.length ? activeIndex : -1
 
   useEffect(() => {
     function handleOutsideMouseDown(event: MouseEvent) {
@@ -54,6 +58,7 @@ export function TopNav({
         !searchRef.current.contains(event.target)
       ) {
         setIsOpen(false)
+        setActiveIndex(-1)
       }
     }
     document.addEventListener('mousedown', handleOutsideMouseDown)
@@ -72,19 +77,23 @@ export function TopNav({
     if (!trimmedQuery) {
       return
     }
-    const highlighted = activeIndex >= 0 ? searchResults[activeIndex] : undefined
+    const highlighted = effectiveActiveIndex >= 0 ? searchResults[effectiveActiveIndex] : undefined
     if (highlighted) {
       selectCode(highlighted.code)
       return
     }
-    if (/^\d{6}$/.test(trimmedQuery)) {
+    if (/^[0-9]{6}$/.test(trimmedQuery)) {
       selectCode(trimmedQuery)
       return
     }
-    const first = searchResults[0]
-    if (first) {
-      selectCode(first.code)
+    if (!isSearching) {
+      const first = searchResults[0]
+      if (first) {
+        selectCode(first.code)
+        return
+      }
     }
+    onSubmitQuery?.(trimmedQuery)
   }
 
   return (
@@ -115,6 +124,13 @@ export function TopNav({
           ref={searchRef}
           className="nav-search"
           role="search"
+          onBlur={(event) => {
+            const related = event.relatedTarget
+            if (!(related instanceof Node) || !searchRef.current?.contains(related)) {
+              setIsOpen(false)
+              setActiveIndex(-1)
+            }
+          }}
           onSubmit={(event) => {
             event.preventDefault()
             submitSearch()
@@ -141,21 +157,34 @@ export function TopNav({
               setIsOpen(nextValue.trim().length > 0)
             }}
             onKeyDown={(event) => {
+              if (
+                event.nativeEvent.isComposing ||
+                event.key === 'Process' ||
+                event.keyCode === 229
+              ) {
+                return
+              }
               if (event.key === 'Escape') {
                 setIsOpen(false)
                 setActiveIndex(-1)
                 return
               }
-              if (event.key === 'ArrowDown' && searchResults.length > 0) {
+              if (event.key === 'ArrowDown' && !isSearching && searchResults.length > 0) {
                 event.preventDefault()
                 setIsOpen(true)
-                setActiveIndex((prev) => (prev + 1) % searchResults.length)
+                setActiveIndex((prev) => {
+                  const current = prev >= 0 && prev < searchResults.length ? prev : -1
+                  return (current + 1) % searchResults.length
+                })
                 return
               }
-              if (event.key === 'ArrowUp' && searchResults.length > 0) {
+              if (event.key === 'ArrowUp' && !isSearching && searchResults.length > 0) {
                 event.preventDefault()
                 setIsOpen(true)
-                setActiveIndex((prev) => (prev <= 0 ? searchResults.length - 1 : prev - 1))
+                setActiveIndex((prev) => {
+                  const current = prev >= 0 && prev < searchResults.length ? prev : -1
+                  return current <= 0 ? searchResults.length - 1 : current - 1
+                })
                 return
               }
               if (event.key === 'Enter') {
@@ -179,8 +208,11 @@ export function TopNav({
                     key={stock.code}
                     type="button"
                     role="option"
-                    aria-selected={index === activeIndex}
-                    className={index === activeIndex ? 'nav-search-item active' : 'nav-search-item'}
+                    aria-selected={index === effectiveActiveIndex}
+                    className={
+                      index === effectiveActiveIndex ? 'nav-search-item active' : 'nav-search-item'
+                    }
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => selectCode(stock.code)}
                   >
                     <span className="nav-search-item-main">

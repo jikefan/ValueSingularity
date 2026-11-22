@@ -218,3 +218,9 @@ class PostgresStockMetaRepository:
             is_active=meta.is_active,
             snapshot_available=snapshot_exists is not None,
         )
+
+    async def get_name(self, code: str) -> str | None:
+        try:
+            return await self._session.scalar(select(StockMeta.name).where(StockMeta.code == code))
+        except SQLAlchemyError as exc:
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc

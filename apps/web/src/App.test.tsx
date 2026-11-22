@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -7,6 +7,7 @@ import { TopNav } from './components/layout/TopNav'
 import { AuthProvider } from './lib/AuthProvider'
 import { setAccessToken } from './lib/api'
 import { createQueryClient } from './lib/queryClient'
+import { queryKeys } from './lib/queryKeys'
 import type { MarketOverview, StockDetail, StockMetaRecord } from './types/api'
 
 vi.mock('./lib/charts', () => ({
@@ -79,15 +80,18 @@ function renderApp(initialEntry = '/') {
     },
   })
 
-  return render(
-    <QueryClientProvider client={client}>
-      <AuthProvider>
-        <MemoryRouter initialEntries={[initialEntry]}>
-          <App />
-        </MemoryRouter>
-      </AuthProvider>
-    </QueryClientProvider>,
-  )
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={[initialEntry]}>
+            <App />
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    ),
+  }
 }
 
 describe('App global stock search', () => {
@@ -230,5 +234,111 @@ describe('App global stock search', () => {
 
     fireEvent.keyDown(searchInput, { key: 'Enter' })
     expect(await screen.findByRole('heading', { name: '贵州茅台' })).toBeInTheDocument()
+  })
+
+  it('resolves Enter pressed during 180ms debounce for non-6-digit queries and ignores IME composing keys', async () => {
+    const searchCalls: string[] = []
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (url.pathname === '/api/market/overview') {
+        return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
+      }
+      if (url.pathname === '/api/stocks/search') {
+        searchCalls.push(url.searchParams.get('q') ?? '')
+        return Promise.resolve(jsonResponse([MAOTAI_META], 200))
+      }
+      if (url.pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(MAOTAI_DETAIL, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    renderApp('/')
+
+    const searchInput = screen.getByLabelText('搜索股票')
+    fireEvent.change(searchInput, { target: { value: '茅台' } })
+
+    // IME composition Enter/ArrowDown must not hijack composition or navigate.
+    fireEvent.keyDown(searchInput, { key: 'Enter', isComposing: true })
+    expect(searchCalls).toEqual([])
+    expect(screen.queryByRole('heading', { name: '贵州茅台' })).not.toBeInTheDocument()
+
+    // Pressing Enter inside the 180ms debounce window triggers an immediate lookup and navigates.
+    fireEvent.keyDown(searchInput, { key: 'Enter' })
+    expect(await screen.findByRole('heading', { name: '贵州茅台' })).toBeInTheDocument()
+    expect(searchCalls).toEqual(['茅台'])
+  })
+
+  it('prevents selecting stale cached results while refetching, clamps activeIndex when results shrink, and closes on blur', async () => {
+    let searchStage: 'initial' | 'refetch_pending' = 'initial'
+    let resolveRefetch!: (response: Response) => void
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (url.pathname === '/api/market/overview') {
+        return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
+      }
+      if (url.pathname === '/api/stocks/search') {
+        const q = url.searchParams.get('q') ?? ''
+        if (q === '茅台') {
+          if (searchStage === 'refetch_pending') {
+            return new Promise<Response>((resolve) => {
+              resolveRefetch = resolve
+            })
+          }
+          return Promise.resolve(jsonResponse([MAOTAI_META, ST_DELISTED_META], 200))
+        }
+        return Promise.resolve(jsonResponse([MAOTAI_META], 200))
+      }
+      if (url.pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(MAOTAI_DETAIL, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    const { client } = renderApp('/')
+    const searchInput = screen.getByLabelText('搜索股票')
+
+    fireEvent.change(searchInput, { target: { value: '茅台' } })
+    expect(await screen.findByRole('option', { name: /000002.*\*ST示例/ })).toBeInTheDocument()
+
+    fireEvent.keyDown(searchInput, { key: 'ArrowDown' })
+    fireEvent.keyDown(searchInput, { key: 'ArrowDown' })
+    expect(screen.getByRole('option', { name: /000002.*\*ST示例/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+
+    searchStage = 'refetch_pending'
+    void client.invalidateQueries({ queryKey: queryKeys.stocks.search('茅台') })
+    expect(await screen.findByText('搜索中...')).toBeInTheDocument()
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+
+    fireEvent.keyDown(searchInput, { key: 'ArrowDown' })
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+
+    resolveRefetch(jsonResponse([MAOTAI_META], 200))
+    const singleOption = await screen.findByRole('option', { name: /600519.*贵州茅台/ })
+    expect(screen.queryByRole('option', { name: /000002/ })).not.toBeInTheDocument()
+    expect(singleOption).toHaveAttribute('aria-selected', 'false')
+
+    fireEvent.keyDown(searchInput, { key: 'ArrowDown' })
+    expect(singleOption).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.blur(searchInput, { relatedTarget: document.body })
+    await waitFor(() => {
+      expect(screen.queryByRole('listbox', { name: '搜索结果' })).not.toBeInTheDocument()
+    })
   })
 })

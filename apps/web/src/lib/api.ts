@@ -1,6 +1,7 @@
 import createClient from 'openapi-fetch'
 import type {
   Health,
+  JournalAction,
   JournalCreate,
   JournalEntryItem,
   LoginRequest,
@@ -36,6 +37,7 @@ const PUBLIC_AUTH_PATHS = new Set([
 let accessToken: string | null = null
 let authEpoch = 0
 let inflightRefresh: Promise<TokenResponse | null> | null = null
+let inflightLogout: Promise<void> | null = null
 const authExpiredListeners = new Set<() => void>()
 
 export function getAccessToken(): string | null {
@@ -139,6 +141,9 @@ async function executeRefresh(epoch: number): Promise<TokenResponse | null> {
 }
 
 function refreshSingleFlight(): Promise<TokenResponse | null> {
+  if (inflightLogout !== null) {
+    return Promise.resolve(null)
+  }
   if (inflightRefresh === null) {
     const epoch = authEpoch
     const promise = executeRefresh(epoch).finally(() => {
@@ -209,7 +214,11 @@ export const api = {
     unwrap(await client.GET('/api/health/db', { signal })),
 
   register: async (body: RegisterRequest): Promise<TokenResponse> => {
+    const startEpoch = authEpoch
     const data = unwrap(await client.POST('/api/auth/register', { body }))
+    if (authEpoch !== startEpoch) {
+      throw new ApiError('注册已取消', 0)
+    }
     authEpoch += 1
     accessToken = data.access_token
     inflightRefresh = null
@@ -217,7 +226,11 @@ export const api = {
   },
 
   login: async (body: LoginRequest): Promise<TokenResponse> => {
+    const startEpoch = authEpoch
     const data = unwrap(await client.POST('/api/auth/login', { body }))
+    if (authEpoch !== startEpoch) {
+      throw new ApiError('登录已取消', 0)
+    }
     authEpoch += 1
     accessToken = data.access_token
     inflightRefresh = null
@@ -230,10 +243,18 @@ export const api = {
     authEpoch += 1
     accessToken = null
     inflightRefresh = null
-    const { error, response } = await client.POST('/api/auth/logout')
-    if (!response.ok) {
-      throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
-    }
+    const promise = (async () => {
+      const { error, response } = await client.POST('/api/auth/logout')
+      if (!response.ok) {
+        throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
+      }
+    })().finally(() => {
+      if (inflightLogout === promise) {
+        inflightLogout = null
+      }
+    })
+    inflightLogout = promise
+    return promise
   },
 
   me: async (signal?: AbortSignal): Promise<UserProfile> =>
@@ -244,6 +265,9 @@ export const api = {
 
   listWatchlist: async (signal?: AbortSignal): Promise<WatchlistItem[]> =>
     unwrap(await client.GET('/api/watchlist', { signal })),
+
+  addWatchlist: async (body: WatchlistUpsert): Promise<WatchlistItem> =>
+    unwrap(await client.POST('/api/watchlist', { body })),
 
   upsertWatchlist: async (body: WatchlistUpsert): Promise<WatchlistItem> =>
     unwrap(await client.PUT('/api/watchlist', { body })),
@@ -274,16 +298,28 @@ export const api = {
     ),
 
   listJournal: async (
-    code?: string,
-    limit = 50,
-    signal?: AbortSignal,
-  ): Promise<JournalEntryItem[]> =>
-    unwrap(
+    options: {
+      code?: string
+      actions?: readonly JournalAction[]
+      limit?: number
+      signal?: AbortSignal
+    } = {},
+  ): Promise<JournalEntryItem[]> => {
+    const { code, actions, limit = 50, signal } = options
+    const query: { code?: string; action?: JournalAction[]; limit: number } = { limit }
+    if (code) {
+      query.code = code
+    }
+    if (actions && actions.length > 0) {
+      query.action = [...actions]
+    }
+    return unwrap(
       await client.GET('/api/journal', {
-        params: { query: code ? { code, limit } : { limit } },
+        params: { query },
         signal,
       }),
-    ),
+    )
+  },
 
   createJournal: async (body: JournalCreate): Promise<JournalEntryItem> =>
     unwrap(await client.POST('/api/journal', { body })),

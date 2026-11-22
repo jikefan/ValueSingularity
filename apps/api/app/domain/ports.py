@@ -14,6 +14,7 @@ from uuid import UUID
 from app.domain.models import (
     AuthenticatedUser,
     IndexDailyRow,
+    JournalAction,
     JournalCreate,
     JournalEntryItem,
     MacroRateRow,
@@ -56,6 +57,10 @@ class StockMetaRepository(Protocol):
         """Return stock metadata and snapshot availability for a 6-digit code."""
         ...
 
+    async def get_name(self, code: str) -> str | None:
+        """Return the stock name for a 6-digit code, or None when unknown."""
+        ...
+
 
 class MarketFactStore(Protocol):
     async def write_meta_facts(
@@ -93,6 +98,10 @@ class WatchlistRepository(Protocol):
         """Insert or update a user's watchlist item."""
         ...
 
+    async def add_if_absent(self, user_id: UUID, payload: WatchlistUpsert) -> WatchlistItem:
+        """Insert a watchlist item if absent, or return the existing row untouched."""
+        ...
+
     async def remove(self, user_id: UUID, code: str) -> bool:
         """Delete a user's watchlist item by code; return whether a row was removed."""
         ...
@@ -104,13 +113,20 @@ class JournalRepository(Protocol):
         user_id: UUID,
         *,
         code: str | None = None,
+        actions: Sequence[JournalAction] | None = None,
         limit: int = 50,
     ) -> list[JournalEntryItem]:
-        """Return a user's journal entries ordered by recency, optionally filtered by code."""
+        """Return a user's journal entries ordered by recency."""
         ...
 
-    async def create(self, user_id: UUID, payload: JournalCreate) -> JournalEntryItem:
-        """Persist a new journal entry scoped to the given user."""
+    async def create(
+        self,
+        user_id: UUID,
+        payload: JournalCreate,
+        *,
+        audit_event: UserEventCreate | None = None,
+    ) -> JournalEntryItem:
+        """Persist a new journal entry and optional audit event atomically."""
         ...
 
     async def remove(self, user_id: UUID, entry_id: int) -> bool:

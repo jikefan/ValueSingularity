@@ -226,7 +226,10 @@ describe('StockPage', () => {
 
   it('validates journal reason/falsify_condition, submits pass decision, deletes entry, and adds to watchlist', async () => {
     let journalState: JournalEntryItem[] = []
+    let watchlistState: WatchlistItem[] = []
     let postCalled = false
+    let putWatchlistCalled = false
+    let postWatchlistCalled = false
     let createdPayload: JournalCreate | null = null
     let watchlistPayload: WatchlistUpsert | null = null
     let deletedEntryId: number | null = null
@@ -240,6 +243,9 @@ describe('StockPage', () => {
       }
       if (url.pathname === '/api/stocks/600519' && request.method === 'GET') {
         return jsonResponse(SAMPLE_STOCK, 200)
+      }
+      if (url.pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse(watchlistState, 200)
       }
       if (url.pathname === '/api/journal' && request.method === 'GET') {
         return jsonResponse(journalState, 200)
@@ -272,6 +278,11 @@ describe('StockPage', () => {
         return new Response(null, { status: 204 })
       }
       if (url.pathname === '/api/watchlist' && request.method === 'PUT') {
+        putWatchlistCalled = true
+        return jsonResponse({ detail: 'PUT should not be called by quick-add' }, 500)
+      }
+      if (url.pathname === '/api/watchlist' && request.method === 'POST') {
+        postWatchlistCalled = true
         const body = parseWatchlistUpsert(await request.clone().text())
         watchlistPayload = body
         const item: WatchlistItem = {
@@ -286,6 +297,7 @@ describe('StockPage', () => {
           added_at: '2026-11-22T12:00:00Z',
           updated_at: '2026-11-22T12:00:00Z',
         }
+        watchlistState = [item]
         return jsonResponse(item, 200)
       }
       return jsonResponse({ detail: `Unhandled ${request.method} ${url.pathname}` }, 500)
@@ -296,7 +308,10 @@ describe('StockPage', () => {
     const addWatchlistBtn = await screen.findByRole('button', { name: '加入自选愿望单' })
     fireEvent.click(addWatchlistBtn)
 
-    expect(await screen.findByText('已加入自选')).toBeInTheDocument()
+    expect(await screen.findByText('已在自选')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '前往配置哨兵' })).toHaveAttribute('href', '/me')
+    expect(postWatchlistCalled).toBe(true)
+    expect(putWatchlistCalled).toBe(false)
     expect(watchlistPayload).toEqual({
       code: '600519',
       name: '贵州茅台',
@@ -349,5 +364,56 @@ describe('StockPage', () => {
       expect(screen.queryByText('估值仍略高于安全边际，先观望等待')).not.toBeInTheDocument()
     })
     expect(deletedEntryId).toBe(42)
+  })
+
+  it('shows 已在自选 badge and sentinel link without firing PUT or POST when stock is already in watchlist', async () => {
+    let writeCalled = false
+    const configuredItem: WatchlistItem = {
+      code: '600519',
+      name: '贵州茅台',
+      industry: '白酒',
+      note: '长期跟踪',
+      target_price: 1400,
+      target_pe_percentile: 20,
+      target_dividend_yield: 3.5,
+      alert_enabled: true,
+      added_at: '2026-11-22T00:00:00Z',
+      updated_at: '2026-11-22T00:00:00Z',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return Promise.resolve(jsonResponse(SAMPLE_TOKEN, 200))
+      }
+      if (url.pathname === '/api/stocks/600519' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (url.pathname === '/api/watchlist' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([configuredItem], 200))
+      }
+      if (url.pathname === '/api/journal' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (
+        url.pathname === '/api/watchlist' &&
+        (request.method === 'PUT' || request.method === 'POST')
+      ) {
+        writeCalled = true
+        return Promise.resolve(jsonResponse({ detail: 'unexpected write' }, 500))
+      }
+      return Promise.resolve(
+        jsonResponse({ detail: `Unhandled ${request.method} ${url.pathname}` }, 500),
+      )
+    })
+
+    renderStockPage('/stock/600519')
+
+    expect(await screen.findByText('已在自选')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '前往配置哨兵' })).toHaveAttribute('href', '/me')
+    expect(screen.queryByRole('button', { name: '加入自选愿望单' })).not.toBeInTheDocument()
+    expect(writeCalled).toBe(false)
   })
 })

@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useRef, useState } from 'react'
 import { Route, Routes, useNavigate } from 'react-router-dom'
 import { TopNav } from './components/layout/TopNav'
 import { AuthPage } from './features/auth/AuthPage'
@@ -12,25 +12,28 @@ import { queryKeys } from './lib/queryKeys'
 
 export function App() {
   const { user, isAuthLoading, logout } = useAuth()
+  const queryClient = useQueryClient()
   const navigate = useNavigate()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedQuery, setDebouncedQuery] = useState('')
+  const trimmedSearch = searchQuery.trim()
+  const latestQueryRef = useRef(trimmedSearch)
+  latestQueryRef.current = trimmedSearch
+  const submitSeqRef = useRef(0)
 
   useEffect(() => {
-    const trimmed = searchQuery.trim()
-    if (!trimmed) {
+    if (!trimmedSearch) {
       return
     }
     const timer = window.setTimeout(() => {
-      setDebouncedQuery(trimmed)
+      setDebouncedQuery(trimmedSearch)
     }, 180)
     return () => {
       window.clearTimeout(timer)
     }
-  }, [searchQuery])
+  }, [trimmedSearch])
 
-  const trimmedSearch = searchQuery.trim()
   const searchEnabled = debouncedQuery.length > 0
   const stockSearchQuery = useQuery({
     queryKey: queryKeys.stocks.search(debouncedQuery),
@@ -40,10 +43,11 @@ export function App() {
 
   const isDebouncing = trimmedSearch.length > 0 && debouncedQuery !== trimmedSearch
   const isSearching = isDebouncing || (searchEnabled && stockSearchQuery.isFetching)
-  const searchError = !isDebouncing && searchEnabled && stockSearchQuery.isError
-  const searchResults = !isDebouncing && searchEnabled ? (stockSearchQuery.data ?? []) : []
+  const searchError = !isSearching && searchEnabled && stockSearchQuery.isError
+  const searchResults = !isSearching && searchEnabled ? (stockSearchQuery.data ?? []) : []
 
   function handleSearchChange(next: string) {
+    submitSeqRef.current += 1
     setSearchQuery(next)
     if (!next.trim()) {
       setDebouncedQuery('')
@@ -51,9 +55,38 @@ export function App() {
   }
 
   function handleSelectStock(code: string) {
+    submitSeqRef.current += 1
     setSearchQuery('')
     setDebouncedQuery('')
     void navigate(`/stock/${code}`)
+  }
+
+  async function handleSubmitQuery(rawQuery: string) {
+    const submitted = rawQuery.trim()
+    if (!submitted) {
+      return
+    }
+    if (/^[0-9]{6}$/.test(submitted)) {
+      handleSelectStock(submitted)
+      return
+    }
+    const seq = ++submitSeqRef.current
+    setDebouncedQuery(submitted)
+    try {
+      const matches = await queryClient.fetchQuery({
+        queryKey: queryKeys.stocks.search(submitted),
+        queryFn: ({ signal }) => api.searchStocks(submitted, 10, signal),
+      })
+      if (seq !== submitSeqRef.current || latestQueryRef.current !== submitted) {
+        return
+      }
+      const first = matches[0]
+      if (first) {
+        handleSelectStock(first.code)
+      }
+    } catch {
+      // Error state is rendered by stockSearchQuery in the dropdown.
+    }
   }
 
   return (
@@ -70,6 +103,9 @@ export function App() {
         isSearching={isSearching}
         searchError={searchError}
         onSelectStock={handleSelectStock}
+        onSubmitQuery={(query) => {
+          void handleSubmitQuery(query)
+        }}
       />
       <Routes>
         <Route path="/" element={<MarketPage />} />
