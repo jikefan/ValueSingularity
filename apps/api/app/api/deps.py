@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.postgres.event import PostgresEventRepository
 from app.adapters.postgres.journal import PostgresJournalRepository
 from app.adapters.postgres.market import PostgresMarketRepository, PostgresStockMetaRepository
+from app.adapters.postgres.snapshot import PostgresStockSnapshotRepository
 from app.adapters.postgres.user import PostgresRefreshTokenRepository, PostgresUserRepository
 from app.adapters.postgres.watchlist import PostgresWatchlistRepository
 from app.adapters.security.password import Argon2PasswordHasher
@@ -63,7 +64,10 @@ def get_watchlist_service(session: DbSessionDep) -> WatchlistService:
 
 
 def get_stock_service(session: DbSessionDep) -> StockService:
-    return StockService(PostgresStockMetaRepository(session))
+    return StockService(
+        PostgresStockMetaRepository(session),
+        PostgresStockSnapshotRepository(session),
+    )
 
 
 def get_journal_service(session: DbSessionDep) -> JournalService:

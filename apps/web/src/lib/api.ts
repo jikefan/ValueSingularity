@@ -7,8 +7,10 @@ import type {
   LoginRequest,
   MarketOverview,
   RegisterRequest,
+  StockCompareItem,
   StockDetail,
   StockMetaRecord,
+  StockSnapshotPayload,
   TokenResponse,
   UserEventItem,
   UserProfile,
@@ -293,6 +295,25 @@ export const api = {
     unwrap(
       await client.GET('/api/stocks/{code}', {
         params: { path: { code } },
+        signal,
+      }),
+    ),
+
+  getStockSnapshot: async (code: string, signal?: AbortSignal): Promise<StockSnapshotPayload> =>
+    unwrap(
+      await client.GET('/api/stocks/{code}/snapshot', {
+        params: { path: { code } },
+        signal,
+      }),
+    ),
+
+  compareStocks: async (
+    codes: readonly string[],
+    signal?: AbortSignal,
+  ): Promise<StockCompareItem[]> =>
+    unwrap(
+      await client.GET('/api/stocks/compare', {
+        params: { query: { codes: codes.join(',') } },
         signal,
       }),
     ),

@@ -5,6 +5,7 @@ import { Tag } from '../ui/Tag'
 
 const links = [
   { to: '/', label: '市场', end: true },
+  { to: '/compare', label: '对比', end: false },
   { to: '/me', label: '我的', end: false },
 ]
 

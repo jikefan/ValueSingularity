@@ -2,14 +2,26 @@
 
 from __future__ import annotations
 
-from app.domain.errors import StockNotFoundError
-from app.domain.models import StockDetail, StockMetaRecord
-from app.domain.ports import StockMetaRepository
+from collections.abc import Sequence
+
+from app.domain.errors import SnapshotNotReadyError, StockNotFoundError
+from app.domain.models import (
+    StockCompareItem,
+    StockDetail,
+    StockMetaRecord,
+    StockSnapshotPayload,
+)
+from app.domain.ports import StockMetaRepository, StockSnapshotRepository
 
 
 class StockService:
-    def __init__(self, repository: StockMetaRepository) -> None:
+    def __init__(
+        self,
+        repository: StockMetaRepository,
+        snapshot_repo: StockSnapshotRepository | None = None,
+    ) -> None:
         self._repository = repository
+        self._snapshot_repo = snapshot_repo
 
     async def search(self, query: str, *, limit: int = 10) -> list[StockMetaRecord]:
         return await self._repository.search(query, limit=limit)
@@ -20,5 +32,43 @@ class StockService:
             raise StockNotFoundError(code)
         return item
 
+    async def snapshot(self, code: str) -> StockSnapshotPayload:
+        if self._snapshot_repo is not None:
+            payload = await self._snapshot_repo.get_snapshot(code)
+            if payload is not None:
+                return payload
 
-__all__ = ["StockNotFoundError", "StockService"]
+        detail = await self._repository.get_detail(code)
+        if detail is None:
+            raise StockNotFoundError(code)
+        raise SnapshotNotReadyError(code)
+
+    async def compare(self, codes: Sequence[str]) -> list[StockCompareItem]:
+        ordered_codes = list(dict.fromkeys(codes))
+        metas = await self._repository.list_by_codes(ordered_codes)
+        meta_by_code = {item.code: item for item in metas}
+        for code in ordered_codes:
+            if code not in meta_by_code:
+                raise StockNotFoundError(code)
+
+        snapshots = (
+            await self._snapshot_repo.get_snapshots_for_compare(ordered_codes)
+            if self._snapshot_repo is not None
+            else {}
+        )
+        items: list[StockCompareItem] = []
+        for code in ordered_codes:
+            snap = snapshots.get(code)
+            items.append(
+                StockCompareItem(
+                    code=code,
+                    meta=meta_by_code[code],
+                    snapshot_available=snap is not None,
+                    snapshot_as_of=snap.as_of if snap is not None else None,
+                    metrics=snap.peer_metrics if snap is not None else None,
+                )
+            )
+        return items
+
+
+__all__ = ["SnapshotNotReadyError", "StockNotFoundError", "StockService"]

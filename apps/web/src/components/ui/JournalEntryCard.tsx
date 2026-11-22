@@ -11,6 +11,14 @@ type JournalEntryCardProps = {
   onDelete: (entryId: number) => void
 }
 
+const FALSIFY_OP_LABEL: Record<string, string> = {
+  lt: '<',
+  lte: '≤',
+  gt: '>',
+  gte: '≥',
+  eq: '=',
+}
+
 export function JournalEntryCard({
   entry,
   showStockLink = false,
@@ -18,10 +26,12 @@ export function JournalEntryCard({
   onDelete,
 }: JournalEntryCardProps) {
   const meta = JOURNAL_ACTION_META[entry.action]
+  const rules = entry.falsify_rules ?? []
   const hasOptionalMeta =
     (entry.price !== null && entry.price !== undefined) ||
     (entry.max_drawdown !== null && entry.max_drawdown !== undefined) ||
-    Boolean(entry.emotion)
+    Boolean(entry.emotion) ||
+    rules.length > 0
 
   return (
     <article className="journal-item">
@@ -68,6 +78,11 @@ export function JournalEntryCard({
             <Tag color="gray">最大回撤 {fmtNum(entry.max_drawdown, 1)}%</Tag>
           ) : null}
           {entry.emotion ? <Tag color="gray">情绪：{entry.emotion}</Tag> : null}
+          {rules.map((rule, index) => (
+            <Tag key={`${rule.metric}-${rule.op}-${index}`} color="amber">
+              {`规则：${rule.metric} ${FALSIFY_OP_LABEL[rule.op] ?? rule.op} ${rule.value}（连续 ${rule.periods} 期）`}
+            </Tag>
+          ))}
         </div>
       ) : null}
     </article>

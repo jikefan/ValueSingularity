@@ -424,4 +424,28 @@ describe('api auth and single-flight refresh middleware', () => {
       unsubscribe()
     }
   })
+
+  it('requests stock snapshot and compare endpoints with expected path and query params', async () => {
+    const requestedUrls: string[] = []
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      requestedUrls.push(request.url)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse({ code: '600519' }, 200))
+      }
+      if (pathname === '/api/stocks/compare') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    await api.getStockSnapshot('600519')
+    await api.compareStocks(['600519', '000858'])
+
+    expect(requestedUrls[0]).toContain('/api/stocks/600519/snapshot')
+    expect(requestedUrls[1]).toContain('/api/stocks/compare?codes=600519%2C000858')
+  })
 })

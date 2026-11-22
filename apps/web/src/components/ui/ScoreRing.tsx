@@ -3,15 +3,33 @@ interface ScoreRingProps {
   size?: number
   stroke?: number
   label?: string
+  toneMode?: 'heat' | 'quality'
 }
 
-/** 0–100 的评分环；颜色按冷热分段，和盘面温度语义一致。 */
-export function ScoreRing({ score, size = 168, stroke = 12, label }: ScoreRingProps) {
+/** 0–100 的评分环；heat 对应盘面温度冷热，quality 对应雷达评分优劣。 */
+export function ScoreRing({
+  score,
+  size = 168,
+  stroke = 12,
+  label,
+  toneMode = 'heat',
+}: ScoreRingProps) {
   const clamped = Math.min(100, Math.max(0, score))
   const radius = (size - stroke) / 2
   const circumference = 2 * Math.PI * radius
   const offset = circumference * (1 - clamped / 100)
-  const color = clamped >= 70 ? 'var(--rose)' : clamped >= 40 ? 'var(--amber)' : 'var(--accent)'
+  const color =
+    toneMode === 'quality'
+      ? clamped >= 70
+        ? 'var(--accent)'
+        : clamped >= 45
+          ? 'var(--electric)'
+          : 'var(--amber)'
+      : clamped >= 70
+        ? 'var(--rose)'
+        : clamped >= 40
+          ? 'var(--amber)'
+          : 'var(--accent)'
 
   return (
     <svg

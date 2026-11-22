@@ -12,6 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import MarketSnapshot, StockMeta, StockSnapshot
+from app.db.models import WatchlistItem as WatchlistRow
 from app.db.session import DatabaseUnavailableError
 from app.domain.errors import MarketSnapshotUnavailableError
 from app.domain.models import MarketOverview, StockDetail, StockMetaRecord
@@ -222,5 +223,38 @@ class PostgresStockMetaRepository:
     async def get_name(self, code: str) -> str | None:
         try:
             return await self._session.scalar(select(StockMeta.name).where(StockMeta.code == code))
+        except SQLAlchemyError as exc:
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+
+    async def list_by_codes(self, codes: Sequence[str]) -> list[StockMetaRecord]:
+        unique_codes = list(dict.fromkeys(codes))
+        if not unique_codes:
+            return []
+        stmt = select(StockMeta).where(StockMeta.code.in_(unique_codes))
+        try:
+            rows = (await self._session.scalars(stmt)).all()
+        except SQLAlchemyError as exc:
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+        return [_to_stock_meta_record(row) for row in rows]
+
+    async def list_watched_codes(self, *, limit: int | None = None) -> list[str]:
+        stmt = select(WatchlistRow.code).distinct().order_by(WatchlistRow.code.asc())
+        if limit is not None:
+            stmt = stmt.limit(max(1, limit))
+        try:
+            return list((await self._session.scalars(stmt)).all())
+        except SQLAlchemyError as exc:
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+
+    async def list_active_codes(self, *, limit: int | None = None) -> list[str]:
+        stmt = (
+            select(StockMeta.code)
+            .where(StockMeta.is_active.is_(True))
+            .order_by(StockMeta.code.asc())
+        )
+        if limit is not None:
+            stmt = stmt.limit(max(1, limit))
+        try:
+            return list((await self._session.scalars(stmt)).all())
         except SQLAlchemyError as exc:
             raise DatabaseUnavailableError(exc.__class__.__name__) from exc

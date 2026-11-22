@@ -18,6 +18,13 @@ export const queryKeys = {
     all: ['stocks'] as const,
     search: (q: string) => ['stocks', 'search', q] as const,
     detail: (code: string) => ['stocks', 'detail', code] as const,
+    snapshot: (code: string) => ['stocks', 'snapshot', code] as const,
+    compare: (codes: readonly string[]) =>
+      [
+        'stocks',
+        'compare',
+        Array.from(new Set(codes.map((code) => code.trim()).filter(Boolean))).join(','),
+      ] as const,
   },
   journal: {
     all: ['journal'] as const,

@@ -4,7 +4,7 @@ interface MetricProps {
   label: ReactNode
   value: ReactNode
   sub?: ReactNode
-  tone?: 'up' | 'down' | 'flat' | ''
+  tone?: 'up' | 'down' | 'flat' | 'tone-good' | 'tone-bad' | ''
 }
 
 export function Metric({ label, value, sub, tone = '' }: MetricProps) {

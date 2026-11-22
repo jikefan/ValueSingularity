@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Route, Routes, useNavigate } from 'react-router-dom'
 import { TopNav } from './components/layout/TopNav'
 import { AuthPage } from './features/auth/AuthPage'
+import { ComparePage } from './features/compare/ComparePage'
 import { MarketPage } from './features/market/MarketPage'
 import { MePage } from './features/me/MePage'
 import { StockPage } from './features/stock/StockPage'
@@ -110,6 +111,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<MarketPage />} />
         <Route path="/stock/:code" element={<StockPage />} />
+        <Route path="/compare" element={<ComparePage />} />
         <Route path="/me" element={<MePage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/register" element={<AuthPage initialMode="register" />} />

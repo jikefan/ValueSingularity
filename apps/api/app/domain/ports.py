@@ -24,7 +24,9 @@ from app.domain.models import (
     RefreshRotationResult,
     RefreshTokenRecord,
     StockDetail,
+    StockFactBundle,
     StockMetaRecord,
+    StockSnapshotPayload,
     TradeCalendarEntry,
     UserAuthRecord,
     UserEventCreate,
@@ -59,6 +61,52 @@ class StockMetaRepository(Protocol):
 
     async def get_name(self, code: str) -> str | None:
         """Return the stock name for a 6-digit code, or None when unknown."""
+        ...
+
+    async def list_by_codes(self, codes: Sequence[str]) -> list[StockMetaRecord]:
+        """Return metadata records matching the given 6-digit stock codes."""
+        ...
+
+    async def list_watched_codes(self, *, limit: int | None = None) -> list[str]:
+        """Return distinct stock codes across user watchlists."""
+        ...
+
+    async def list_active_codes(self, *, limit: int | None = None) -> list[str]:
+        """Return active stock codes sorted deterministically."""
+        ...
+
+
+class StockFactStore(Protocol):
+    async def write_stock_facts(self, bundle: StockFactBundle) -> None:
+        """Atomically persist per-stock bars, annual statements, and corporate action facts."""
+        ...
+
+    async def load_stock_facts(
+        self, code: str, *, as_of: date | None = None
+    ) -> StockFactBundle | None:
+        """Load persisted facts for a stock up to as_of, or None when absent."""
+        ...
+
+
+class StockFactFeedPort(Protocol):
+    async def fetch_stock_bundle(self, code: str, *, as_of: date | None = None) -> StockFactBundle:
+        """Fetch raw daily bars, valuation history, annual reports, and actions for one stock."""
+        ...
+
+
+class StockSnapshotRepository(Protocol):
+    async def get_snapshot(self, code: str) -> StockSnapshotPayload | None:
+        """Return precomputed snapshot payload for a 6-digit stock code, or None."""
+        ...
+
+    async def get_snapshots_for_compare(
+        self, codes: Sequence[str]
+    ) -> dict[str, StockSnapshotPayload]:
+        """Return precomputed snapshot payloads keyed by code for comparison."""
+        ...
+
+    async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
+        """Idempotently persist a precomputed stock snapshot."""
         ...
 
 

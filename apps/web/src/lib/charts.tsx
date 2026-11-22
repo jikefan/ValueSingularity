@@ -1,20 +1,38 @@
-import { BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
+import { BarChart, LineChart, RadarChart } from 'echarts/charts'
+import {
+  GridComponent,
+  LegendComponent,
+  RadarComponent,
+  TooltipComponent,
+} from 'echarts/components'
 import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useEffect, useRef } from 'react'
+import { CHART_COLORS, CHART_FONT_FAMILY } from './chartTheme'
 
 // 按需注册，避免把整包 echarts 打进产物。
-echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
+echarts.use([
+  BarChart,
+  LineChart,
+  RadarChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  RadarComponent,
+  CanvasRenderer,
+])
 
-interface ChartProps {
-  option: echarts.EChartsCoreOption
+export type ChartOption = echarts.EChartsCoreOption
+
+export type ChartProps = {
+  option: ChartOption
   height?: number
   ariaLabel?: string
+  className?: string
 }
 
 /** Thin ECharts wrapper: owns init/resize/dispose, re-applies option on change. */
-export function Chart({ option, height = 260, ariaLabel }: ChartProps) {
+export function Chart({ option, height = 260, ariaLabel, className }: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<echarts.ECharts | null>(null)
 
@@ -36,8 +54,22 @@ export function Chart({ option, height = 260, ariaLabel }: ChartProps) {
   }, [])
 
   useEffect(() => {
-    chartRef.current?.setOption(option, true)
+    chartRef.current?.setOption(
+      {
+        textStyle: { fontFamily: CHART_FONT_FAMILY, color: CHART_COLORS.text },
+        ...option,
+      },
+      true,
+    )
   }, [option])
 
-  return <div ref={containerRef} style={{ height }} role="img" aria-label={ariaLabel} />
+  return (
+    <div
+      ref={containerRef}
+      className={className}
+      style={{ height }}
+      role="img"
+      aria-label={ariaLabel}
+    />
+  )
 }

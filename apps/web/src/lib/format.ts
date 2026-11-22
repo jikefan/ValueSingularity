@@ -1,4 +1,4 @@
-/** Formatting helpers shared by pages and cards. All take plain numbers. */
+/** Formatting helpers shared by pages and cards. All take plain numbers or nullable values. */
 
 export function fmtPct(value: number, digits = 2): string {
   const sign = value > 0 ? '+' : ''
@@ -29,4 +29,71 @@ export function fmtDateTime(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
   return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+export function formatYi(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '—'
+  }
+  return `${fmtNum(value / 1e8, digits)} 亿元`
+}
+
+export function toYi(value: number | null | undefined, digits = 2): number | null {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return null
+  }
+  return Number((value / 1e8).toFixed(digits))
+}
+
+export function formatPct(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '—'
+  }
+  return `${value.toFixed(digits)}%`
+}
+
+export function formatSignedPct(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '—'
+  }
+  return fmtPct(value, digits)
+}
+
+export function formatNum(value: number | null | undefined, digits = 2): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '—'
+  }
+  return fmtNum(value, digits)
+}
+
+export function deltaTone(
+  value: number | null | undefined,
+  invert = false,
+): 'up' | 'down' | 'flat' | '' {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return ''
+  }
+  if (value === 0) {
+    return 'flat'
+  }
+  if (invert) {
+    return value > 0 ? 'down' : 'up'
+  }
+  return value > 0 ? 'up' : 'down'
+}
+
+export function qualityTone(
+  value: number | null | undefined,
+  invert = false,
+): 'tone-good' | 'tone-bad' | 'flat' | '' {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return ''
+  }
+  if (value === 0) {
+    return 'flat'
+  }
+  if (invert) {
+    return value > 0 ? 'tone-bad' : 'tone-good'
+  }
+  return value > 0 ? 'tone-good' : 'tone-bad'
 }

@@ -199,6 +199,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stocks/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Compare Stocks */
+        get: operations["stocks_compare_stocks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stocks/search": {
         parameters: {
             query?: never;
@@ -225,6 +242,23 @@ export interface paths {
         };
         /** Get Stock */
         get: operations["stocks_get_stock"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stocks/{code}/snapshot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stock Snapshot */
+        get: operations["stocks_get_stock_snapshot"];
         put?: never;
         post?: never;
         delete?: never;
@@ -273,6 +307,77 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnnualFinancialTrendPoint */
+        AnnualFinancialTrendPoint: {
+            /** Deduct Net Profit Yuan */
+            deduct_net_profit_yuan?: number | null;
+            /** Fcf Yuan */
+            fcf_yuan?: number | null;
+            /** Gross Margin Pct */
+            gross_margin_pct?: number | null;
+            /** Net Cash Yuan */
+            net_cash_yuan?: number | null;
+            /** Net Margin Pct */
+            net_margin_pct?: number | null;
+            /** Net Profit Yuan */
+            net_profit_yuan?: number | null;
+            /** Ocf Yuan */
+            ocf_yuan?: number | null;
+            /** Rd Ratio Pct */
+            rd_ratio_pct?: number | null;
+            /** Revenue Yuan */
+            revenue_yuan?: number | null;
+            /** Roe Pct */
+            roe_pct?: number | null;
+            /** Year */
+            year: number;
+        };
+        /** AnnualReturnPoint */
+        AnnualReturnPoint: {
+            /** Dividend Yuan */
+            dividend_yuan: number;
+            /** Equity Financing Yuan */
+            equity_financing_yuan: number;
+            /** Fcf Yuan */
+            fcf_yuan?: number | null;
+            /** Net Return Yuan */
+            net_return_yuan: number;
+            /** Repurchase Yuan */
+            repurchase_yuan: number;
+            /** Year */
+            year: number;
+        };
+        /** CtCheckItem */
+        CtCheckItem: {
+            /** Evidences */
+            evidences: components["schemas"]["CtRuleEvidence"][];
+            /** Rule Id */
+            rule_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "green" | "yellow" | "red" | "na";
+            /** Summary */
+            summary: string;
+            /** Threshold */
+            threshold: string;
+            /** Title */
+            title: string;
+            /** Value Text */
+            value_text: string;
+        };
+        /** CtRuleEvidence */
+        CtRuleEvidence: {
+            /** Label */
+            label: string;
+            /** Metrics */
+            metrics: {
+                [key: string]: number | string | null;
+            };
+            /** Year */
+            year: number;
+        };
         /** FalsifyRule */
         FalsifyRule: {
             /** Metric */
@@ -289,6 +394,37 @@ export interface components {
             periods: number;
             /** Value */
             value: number;
+        };
+        /** FinancialCtSection */
+        FinancialCtSection: {
+            /** Checks */
+            checks: components["schemas"]["CtCheckItem"][];
+            /** Green Count */
+            green_count: number;
+            /**
+             * Overall Status
+             * @enum {string}
+             */
+            overall_status: "green" | "yellow" | "red" | "na";
+            /** Red Count */
+            red_count: number;
+            /** Yellow Count */
+            yellow_count: number;
+        };
+        /** GrowthSection */
+        GrowthSection: {
+            /** Capex To Ocf Latest Pct */
+            capex_to_ocf_latest_pct?: number | null;
+            /** Deduct Profit Cagr 5Y Pct */
+            deduct_profit_cagr_5y_pct?: number | null;
+            /** Profit Cagr 5Y Pct */
+            profit_cagr_5y_pct?: number | null;
+            /** Rd Ratio Latest Pct */
+            rd_ratio_latest_pct?: number | null;
+            /** Revenue Cagr 3Y Pct */
+            revenue_cagr_3y_pct?: number | null;
+            /** Revenue Cagr 5Y Pct */
+            revenue_cagr_5y_pct?: number | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -463,12 +599,99 @@ export interface components {
              */
             score: number;
         };
+        /** MoatDimensionItem */
+        MoatDimensionItem: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Score */
+            score: number;
+            /** Summary */
+            summary: string;
+        };
+        /** MoatSection */
+        MoatSection: {
+            /** Dimensions */
+            dimensions: components["schemas"]["MoatDimensionItem"][];
+            /** Gross Margin 5Y Std Pct */
+            gross_margin_5y_std_pct?: number | null;
+            /** Gross Margin Latest Pct */
+            gross_margin_latest_pct?: number | null;
+            /** Roe 10Y Min Pct */
+            roe_10y_min_pct?: number | null;
+            /** Roe 5Y Avg Pct */
+            roe_5y_avg_pct?: number | null;
+            /** Roic Approx Pct */
+            roic_approx_pct?: number | null;
+        };
+        /** PeerBenchmarkMetrics */
+        PeerBenchmarkMetrics: {
+            /** As Of */
+            as_of?: string | null;
+            /** Close */
+            close?: number | null;
+            /** Code */
+            code: string;
+            /** Ct Red Count */
+            ct_red_count: number;
+            /** Ct Yellow Count */
+            ct_yellow_count: number;
+            /**
+             * Exchange
+             * @enum {string}
+             */
+            exchange: "SH" | "SZ" | "BJ";
+            /** Gross Margin Latest Pct */
+            gross_margin_latest_pct?: number | null;
+            /** Implied Fcf Cagr Pct */
+            implied_fcf_cagr_pct?: number | null;
+            /** Industry Sw1 */
+            industry_sw1?: string | null;
+            /** Name */
+            name: string;
+            /** Net Cash To Mv Pct */
+            net_cash_to_mv_pct?: number | null;
+            /** Ocf To Profit 5Y Pct */
+            ocf_to_profit_5y_pct?: number | null;
+            /** Pb */
+            pb?: number | null;
+            /** Pe Percentile 10Y */
+            pe_percentile_10y?: number | null;
+            /** Pe Ttm */
+            pe_ttm?: number | null;
+            /** Roe 5Y Avg Pct */
+            roe_5y_avg_pct?: number | null;
+            /** Shareholder Yield Pct */
+            shareholder_yield_pct?: number | null;
+            /** Total Mv Yuan */
+            total_mv_yuan?: number | null;
+            /** Total Score */
+            total_score: number;
+        };
         /**
          * PlanTier
          * @description Subscription tier governing feature entitlements.
          * @enum {string}
          */
         PlanTier: "free" | "pro" | "ai_plus";
+        /** RadarScoreSection */
+        RadarScoreSection: {
+            /** Balance Sheet */
+            balance_sheet: number;
+            /** Bear Cases */
+            bear_cases: string[];
+            /** Cashflow Quality */
+            cashflow_quality: number;
+            /** Moat */
+            moat: number;
+            /** Profitability */
+            profitability: number;
+            /** Total Score */
+            total_score: number;
+            /** Valuation Margin */
+            valuation_margin: number;
+        };
         /** RegisterRequest */
         RegisterRequest: {
             /** Display Name */
@@ -480,6 +703,83 @@ export interface components {
             email: string;
             /** Password */
             password: string;
+        };
+        /** ReverseDcfSection */
+        ReverseDcfSection: {
+            /** Base Fcf Years */
+            base_fcf_years: number;
+            /** Base Fcf Yuan */
+            base_fcf_yuan?: number | null;
+            /** Discount Rate Pct */
+            discount_rate_pct: number;
+            /** Enterprise Value Yuan */
+            enterprise_value_yuan?: number | null;
+            /** Historical Revenue Cagr Pct */
+            historical_revenue_cagr_pct?: number | null;
+            /** Implied Fcf Cagr Pct */
+            implied_fcf_cagr_pct?: number | null;
+            /** Implied Vs History Gap Pct */
+            implied_vs_history_gap_pct?: number | null;
+            /** Market Cap Yuan */
+            market_cap_yuan?: number | null;
+            /** Net Cash Yuan */
+            net_cash_yuan?: number | null;
+            /** Note */
+            note: string;
+            /** Sensitivity */
+            sensitivity: components["schemas"]["ReverseDcfSensitivityRow"][];
+            /** Solvable */
+            solvable: boolean;
+            /** Terminal Multiple */
+            terminal_multiple: number;
+        };
+        /** ReverseDcfSensitivityRow */
+        ReverseDcfSensitivityRow: {
+            /** Discount Rate Pct */
+            discount_rate_pct: number;
+            /** Implied Fcf Cagr Pct */
+            implied_fcf_cagr_pct?: number | null;
+            /** Terminal Multiple */
+            terminal_multiple: number;
+        };
+        /** ShareholderReturnSection */
+        ShareholderReturnSection: {
+            /** Current Dividend Yield Pct */
+            current_dividend_yield_pct?: number | null;
+            /** Fcf Coverage Ratio */
+            fcf_coverage_ratio?: number | null;
+            /** Net Return Yuan */
+            net_return_yuan: number;
+            /** Series */
+            series: components["schemas"]["AnnualReturnPoint"][];
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "green" | "yellow" | "red" | "na";
+            /** Total Dividend Yuan */
+            total_dividend_yuan: number;
+            /** Total Equity Financing Yuan */
+            total_equity_financing_yuan: number;
+            /** Total Fcf Yuan */
+            total_fcf_yuan?: number | null;
+            /** Total Repurchase Yuan */
+            total_repurchase_yuan: number;
+            /** Verdict */
+            verdict: string;
+            /** Window Years */
+            window_years: number;
+        };
+        /** StockCompareItem */
+        StockCompareItem: {
+            /** Code */
+            code: string;
+            meta: components["schemas"]["StockMetaRecord"];
+            metrics?: components["schemas"]["PeerBenchmarkMetrics"] | null;
+            /** Snapshot As Of */
+            snapshot_as_of?: string | null;
+            /** Snapshot Available */
+            snapshot_available: boolean;
         };
         /** StockDetail */
         StockDetail: {
@@ -541,6 +841,62 @@ export interface components {
             list_date?: string | null;
             /** Name */
             name: string;
+        };
+        /** StockSnapshotPayload */
+        StockSnapshotPayload: {
+            /** Annual Trends */
+            annual_trends: components["schemas"]["AnnualFinancialTrendPoint"][];
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Code */
+            code: string;
+            /**
+             * Data Source
+             * @default akshare
+             */
+            data_source: string;
+            /**
+             * Exchange
+             * @enum {string}
+             */
+            exchange: "SH" | "SZ" | "BJ";
+            financial_ct: components["schemas"]["FinancialCtSection"];
+            /** Formula Notes */
+            formula_notes: {
+                [key: string]: string;
+            };
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            growth: components["schemas"]["GrowthSection"];
+            /** Industry Sw1 */
+            industry_sw1?: string | null;
+            /** Industry Sw2 */
+            industry_sw2?: string | null;
+            /** Latest Audit Opinion */
+            latest_audit_opinion?: string | null;
+            moat: components["schemas"]["MoatSection"];
+            /** Name */
+            name: string;
+            peer_metrics: components["schemas"]["PeerBenchmarkMetrics"];
+            /** Pledge Date */
+            pledge_date?: string | null;
+            /** Pledge Ratio Pct */
+            pledge_ratio_pct?: number | null;
+            radar: components["schemas"]["RadarScoreSection"];
+            reverse_dcf: components["schemas"]["ReverseDcfSection"];
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            shareholder_return: components["schemas"]["ShareholderReturnSection"];
+            valuation: components["schemas"]["ValuationSection"];
         };
         /**
          * TemperatureLevel
@@ -624,6 +980,51 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** ValuationHistoryPoint */
+        ValuationHistoryPoint: {
+            /** Close */
+            close: number;
+            /** Pb */
+            pb?: number | null;
+            /** Pe Ttm */
+            pe_ttm?: number | null;
+            /** Total Mv Yuan */
+            total_mv_yuan?: number | null;
+            /**
+             * Trade Date
+             * Format: date
+             */
+            trade_date: string;
+        };
+        /** ValuationSection */
+        ValuationSection: {
+            /** Close */
+            close?: number | null;
+            /** Dividend Yield Pct */
+            dividend_yield_pct?: number | null;
+            /** Graham Margin Pct */
+            graham_margin_pct?: number | null;
+            /** Graham Number */
+            graham_number?: number | null;
+            /** History */
+            history: components["schemas"]["ValuationHistoryPoint"][];
+            /** Latest Trade Date */
+            latest_trade_date?: string | null;
+            /** Pb */
+            pb?: number | null;
+            /** Pb Percentile 10Y */
+            pb_percentile_10y?: number | null;
+            /** Pe Percentile 10Y */
+            pe_percentile_10y?: number | null;
+            /** Pe Percentile 5Y */
+            pe_percentile_5y?: number | null;
+            /** Pe Ttm */
+            pe_ttm?: number | null;
+            /** Peg */
+            peg?: number | null;
+            /** Total Mv Yuan */
+            total_mv_yuan?: number | null;
         };
         /** WatchlistItem */
         WatchlistItem: {
@@ -1031,6 +1432,37 @@ export interface operations {
             };
         };
     };
+    stocks_compare_stocks: {
+        parameters: {
+            query: {
+                codes: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockCompareItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     stocks_search_stocks: {
         parameters: {
             query: {
@@ -1081,6 +1513,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StockDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stocks_get_stock_snapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockSnapshotPayload"];
                 };
             };
             /** @description Validation Error */
