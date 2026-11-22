@@ -19,7 +19,7 @@ from app.domain.models import (
 
 
 class MemoryMarketRepository:
-    def overview(self) -> MarketOverview:
+    async def overview(self) -> MarketOverview:
         return MarketOverview(
             generated_at=datetime.now(UTC),
             indices=[

@@ -19,11 +19,24 @@ export function EmptyBlock({ title, hint }: { title: string; hint?: ReactNode })
   )
 }
 
-export function ErrorBlock({ title, message }: { title: string; message: string }) {
+export function ErrorBlock({
+  title,
+  message,
+  onRetry,
+}: {
+  title: string
+  message: string
+  onRetry?: () => void
+}) {
   return (
     <div className="state">
       <p style={{ color: 'var(--rose)' }}>{title}</p>
       <p className="small mt-8">{message}</p>
+      {onRetry ? (
+        <button type="button" className="retry-btn mt-16" onClick={onRetry}>
+          重试
+        </button>
+      ) : null}
     </div>
   )
 }

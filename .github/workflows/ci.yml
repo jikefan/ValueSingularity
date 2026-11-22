@@ -12,6 +12,20 @@ concurrency:
 jobs:
   api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: vs
+          POSTGRES_PASSWORD: vs
+          POSTGRES_DB: vs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vs -d vs_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     defaults:
       run:
         working-directory: apps/api
@@ -24,7 +38,13 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run ruff check .
       - run: uv run mypy app
+      - run: uv run python -m app.openapi_export ../../apps/web/openapi.json --check
+      - run: uv run alembic upgrade head
+        env:
+          VS_DATABASE_URL: postgresql+psycopg://vs:vs@127.0.0.1:5432/vs_test
       - run: uv run pytest
+        env:
+          VS_TEST_DATABASE_URL: postgresql+psycopg://vs:vs@127.0.0.1:5432/vs_test
 
   web:
     runs-on: ubuntu-latest
@@ -42,6 +62,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: apps/web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm check:api
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

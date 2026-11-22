@@ -14,7 +14,13 @@ export function ScoreRing({ score, size = 168, stroke = 12, label }: ScoreRingPr
   const color = clamped >= 70 ? 'var(--rose)' : clamped >= 40 ? 'var(--amber)' : 'var(--accent)'
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={label ?? '评分'}>
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      role="img"
+      aria-label={label ?? '评分'}
+    >
       <circle
         cx={size / 2}
         cy={size / 2}

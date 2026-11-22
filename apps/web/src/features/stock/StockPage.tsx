@@ -19,17 +19,19 @@ export function StockPage() {
 
   return (
     <div className="container stack" style={{ gap: 16 }}>
-      <Card
-        title={`${code ?? '未知代码'} · 个股分析`}
-        extra={<Tag color="blue">骨架阶段</Tag>}
-      >
+      <Card title={`${code ?? '未知代码'} · 个股分析`} extra={<Tag color="blue">骨架阶段</Tag>}>
         <div className="stack">
           <p className="soft">
-            9 个分析维度已规划完成，正在把 demo 里的分析引擎迁移到端口/适配器结构。先跑通数据层，再接估值与护城河。
+            9 个分析维度已规划完成，正在把 demo
+            里的分析引擎迁移到端口/适配器结构。先跑通数据层，再接估值与护城河。
           </p>
           <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
             {TABS.map(([key, label]) => (
-              <span key={key} className="tag tag-gray" style={{ padding: '6px 12px', fontSize: 12 }}>
+              <span
+                key={key}
+                className="tag tag-gray"
+                style={{ padding: '6px 12px', fontSize: 12 }}
+              >
                 {label}
               </span>
             ))}

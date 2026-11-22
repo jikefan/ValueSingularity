@@ -1,4 +1,4 @@
-.PHONY: install dev api web test lint check format build
+.PHONY: install dev api web gen-api test lint check format build
 
 install:
 	cd apps/api && uv sync
@@ -13,13 +13,17 @@ api:
 web:
 	cd apps/web && pnpm dev
 
+gen-api:
+	cd apps/api && uv run python -m app.openapi_export ../../apps/web/openapi.json
+	cd apps/web && pnpm generate:api
+
 test:
 	cd apps/api && uv run pytest
 	cd apps/web && pnpm test
 
 lint:
-	cd apps/api && uv run ruff check . && uv run mypy app
-	cd apps/web && pnpm lint && pnpm typecheck
+	cd apps/api && uv run ruff check . && uv run mypy app && uv run python -m app.openapi_export ../../apps/web/openapi.json --check
+	cd apps/web && pnpm check:api && pnpm lint && pnpm typecheck
 
 check: lint test
 

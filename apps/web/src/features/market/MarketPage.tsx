@@ -1,22 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import type { EChartsOption } from 'echarts'
-import { CHART_COLORS } from '../../lib/chartTheme'
-import { Chart } from '../../lib/charts'
-import { api } from '../../lib/api'
-import { chgClass, fmtDateTime, fmtMoney, fmtNum, fmtPct } from '../../lib/format'
 import { Card } from '../../components/ui/Card'
-import { ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Metric } from '../../components/ui/Metric'
 import { ScoreRing } from '../../components/ui/ScoreRing'
+import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
-import type { MarketOverview, TemperatureLevel } from '../../types/api'
+import { CHART_COLORS } from '../../lib/chartTheme'
+import { Chart } from '../../lib/charts'
+import { chgClass, fmtDateTime, fmtMoney, fmtNum, fmtPct } from '../../lib/format'
+import type { TemperatureLevel } from '../../types/api'
+import { useMarketOverview } from './useMarketOverview'
 
-type LoadState =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; data: MarketOverview }
-
-const LEVEL_META: Record<TemperatureLevel, { label: string; color: 'gray' | 'green' | 'blue' | 'amber' | 'rose' }> = {
+const LEVEL_META: Record<
+  TemperatureLevel,
+  { label: string; color: 'gray' | 'green' | 'blue' | 'amber' | 'rose' }
+> = {
   cold: { label: '冰点', color: 'blue' },
   cool: { label: '偏冷', color: 'green' },
   neutral: { label: '中性', color: 'gray' },
@@ -25,32 +23,10 @@ const LEVEL_META: Record<TemperatureLevel, { label: string; color: 'gray' | 'gre
 }
 
 export function MarketPage() {
-  const [state, setState] = useState<LoadState>({ status: 'loading' })
-
-  useEffect(() => {
-    let alive = true
-    api
-      .marketOverview()
-      .then((data) => {
-        if (alive) setState({ status: 'ready', data })
-      })
-      .catch((error: unknown) => {
-        if (alive) {
-          setState({
-            status: 'error',
-            message: error instanceof Error ? error.message : '未知错误',
-          })
-        }
-      })
-    return () => {
-      alive = false
-    }
-  }, [])
-
-  const overview = state.status === 'ready' ? state.data : null
+  const { data, error, isPending, isFetching, isError, refetch } = useMarketOverview()
 
   const flowOption = useMemo<EChartsOption>(() => {
-    const flows = overview?.hot_industries ?? []
+    const flows = data?.hot_industries ?? []
     return {
       grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
       tooltip: {
@@ -84,9 +60,9 @@ export function MarketPage() {
         },
       ],
     }
-  }, [overview])
+  }, [data])
 
-  if (state.status === 'loading') {
+  if (isPending || (!data && isFetching)) {
     return (
       <div className="container">
         <Card title="市场温度">
@@ -96,17 +72,32 @@ export function MarketPage() {
     )
   }
 
-  if (state.status === 'error') {
+  if (isError) {
     return (
       <div className="container">
         <Card title="市场温度">
-          <ErrorBlock title="行情加载失败" message={state.message} />
+          <ErrorBlock
+            title="行情加载失败"
+            message={error instanceof Error ? error.message : '未知错误'}
+            onRetry={() => {
+              void refetch()
+            }}
+          />
         </Card>
       </div>
     )
   }
 
-  const { data } = state
+  if (!data) {
+    return (
+      <div className="container">
+        <Card title="市场温度">
+          <EmptyBlock title="暂无市场概览数据" hint="请稍后刷新重试。" />
+        </Card>
+      </div>
+    )
+  }
+
   const meta = LEVEL_META[data.temperature.level]
 
   return (
@@ -184,7 +175,9 @@ export function MarketPage() {
                 <tr key={flow.name}>
                   <td>{flow.name}</td>
                   <td className={`num ${chgClass(flow.change_pct)}`}>{fmtPct(flow.change_pct)}</td>
-                  <td className={`num ${chgClass(flow.net_inflow)}`}>{fmtMoney(flow.net_inflow)}</td>
+                  <td className={`num ${chgClass(flow.net_inflow)}`}>
+                    {fmtMoney(flow.net_inflow)}
+                  </td>
                   <td className="num muted">{flow.companies}</td>
                 </tr>
               ))}

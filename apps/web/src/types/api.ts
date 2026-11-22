@@ -1,42 +1,16 @@
 /**
- * API contract. Mirrors `apps/api/app/domain/models.py`.
- * When a model changes, change both — the API is the source of truth.
+ * Public API domain types derived from generated OpenAPI schemas.
+ * Never hand-write interfaces here; run `make gen-api` after changing backend models.
  */
 
-export type TemperatureLevel = 'cold' | 'cool' | 'neutral' | 'warm' | 'hot'
+import type { components } from './openapi.gen'
 
-export interface Health {
-  status: string
-  version: string
-}
-
-export interface IndexQuote {
-  code: string
-  name: string
-  price: number
-  change_pct: number
-}
-
-export interface MarketTemperature {
-  score: number
-  level: TemperatureLevel
-  pe_median: number
-  pe_percentile: number
-  bond_yield: number
-  equity_bond_spread: number
-  comment: string
-}
-
-export interface IndustryFlow {
-  name: string
-  change_pct: number
-  net_inflow: number
-  companies: number
-}
-
-export interface MarketOverview {
-  generated_at: string
-  indices: IndexQuote[]
-  temperature: MarketTemperature
-  hot_industries: IndustryFlow[]
-}
+export type Schemas = components['schemas']
+export type Health = Schemas['Health']
+export type TemperatureLevel = Schemas['TemperatureLevel']
+export type IndexQuote = Schemas['IndexQuote']
+export type MarketTemperature = Schemas['MarketTemperature']
+export type IndustryFlow = Schemas['IndustryFlow']
+export type MarketOverview = Schemas['MarketOverview']
+export type WatchlistItem = Schemas['WatchlistItem']
+export type WatchlistUpsert = Schemas['WatchlistUpsert']

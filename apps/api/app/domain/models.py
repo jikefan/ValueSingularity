@@ -56,3 +56,18 @@ class MarketOverview(BaseModel):
 class Health(BaseModel):
     status: str
     version: str
+
+
+class WatchlistItem(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+    name: str
+    industry: str | None = None
+    note: str | None = None
+    added_at: datetime
+
+
+class WatchlistUpsert(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+    name: str = Field(min_length=1, max_length=64)
+    industry: str | None = None
+    note: str | None = None

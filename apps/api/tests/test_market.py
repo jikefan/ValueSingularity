@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
 
-def test_overview_matches_contract(client: TestClient) -> None:
-    response = client.get("/api/market/overview")
+async def test_overview_matches_contract(client: AsyncClient) -> None:
+    response = await client.get("/api/market/overview")
     assert response.status_code == 200
 
     body = response.json()
@@ -18,7 +18,8 @@ def test_overview_matches_contract(client: TestClient) -> None:
     assert {"code", "name", "price", "change_pct"} <= body["indices"][0].keys()
 
 
-def test_overview_is_ordered_by_inflow(client: TestClient) -> None:
-    flows = client.get("/api/market/overview").json()["hot_industries"]
+async def test_overview_is_ordered_by_inflow(client: AsyncClient) -> None:
+    response = await client.get("/api/market/overview")
+    flows = response.json()["hot_industries"]
     inflows = [flow["net_inflow"] for flow in flows]
     assert inflows == sorted(inflows, reverse=True)

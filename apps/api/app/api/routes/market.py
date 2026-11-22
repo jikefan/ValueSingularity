@@ -9,5 +9,5 @@ router = APIRouter(tags=["market"])
 
 
 @router.get("/market/overview", response_model=MarketOverview)
-def market_overview(service: MarketServiceDep) -> MarketOverview:
-    return service.overview()
+async def market_overview(service: MarketServiceDep) -> MarketOverview:
+    return await service.overview()

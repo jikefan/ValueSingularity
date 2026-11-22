@@ -1,11 +1,50 @@
 from __future__ import annotations
 
-import pytest
-from fastapi.testclient import TestClient
+from collections.abc import AsyncIterator
 
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.api.deps import get_db
+from app.db.base import Base
 from app.main import create_app
+from app.settings import settings
 
 
 @pytest.fixture
-def client() -> TestClient:
-    return TestClient(create_app())
+async def client() -> AsyncIterator[AsyncClient]:
+    """No database: routes used here must not touch it."""
+    async with AsyncClient(
+        transport=ASGITransport(app=create_app()), base_url="http://test"
+    ) as test_client:
+        yield test_client
+
+
+@pytest.fixture
+async def db_client() -> AsyncIterator[AsyncClient]:
+    """Real PostgreSQL client. Skipped when VS_TEST_DATABASE_URL is unset."""
+    if not settings.test_database_url:
+        pytest.skip("设置 VS_TEST_DATABASE_URL（或 .env）后运行数据库测试")
+
+    engine = create_async_engine(settings.test_database_url)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    testing_session = async_sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+    app = create_app()
+
+    async def override_get_db() -> AsyncIterator[AsyncSession]:
+        async with testing_session() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()

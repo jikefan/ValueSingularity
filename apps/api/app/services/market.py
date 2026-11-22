@@ -10,5 +10,5 @@ class MarketService:
     def __init__(self, repository: MarketRepository) -> None:
         self._repository = repository
 
-    def overview(self) -> MarketOverview:
-        return self._repository.overview()
+    async def overview(self) -> MarketOverview:
+        return await self._repository.overview()

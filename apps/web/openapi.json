@@ -1,0 +1,495 @@
+{
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "IndexQuote": {
+        "properties": {
+          "change_pct": {
+            "description": "涨跌幅，百分数（-1.2 表示 -1.2%）",
+            "title": "Change Pct",
+            "type": "number"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "price",
+          "change_pct"
+        ],
+        "title": "IndexQuote",
+        "type": "object"
+      },
+      "IndustryFlow": {
+        "properties": {
+          "change_pct": {
+            "title": "Change Pct",
+            "type": "number"
+          },
+          "companies": {
+            "minimum": 0.0,
+            "title": "Companies",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "net_inflow": {
+            "description": "净流入，单位：元",
+            "title": "Net Inflow",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "change_pct",
+          "net_inflow",
+          "companies"
+        ],
+        "title": "IndustryFlow",
+        "type": "object"
+      },
+      "MarketOverview": {
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "hot_industries": {
+            "items": {
+              "$ref": "#/components/schemas/IndustryFlow"
+            },
+            "title": "Hot Industries",
+            "type": "array"
+          },
+          "indices": {
+            "items": {
+              "$ref": "#/components/schemas/IndexQuote"
+            },
+            "title": "Indices",
+            "type": "array"
+          },
+          "temperature": {
+            "$ref": "#/components/schemas/MarketTemperature"
+          }
+        },
+        "required": [
+          "generated_at",
+          "indices",
+          "temperature",
+          "hot_industries"
+        ],
+        "title": "MarketOverview",
+        "type": "object"
+      },
+      "MarketTemperature": {
+        "properties": {
+          "bond_yield": {
+            "description": "十年国债收益率，百分数",
+            "title": "Bond Yield",
+            "type": "number"
+          },
+          "comment": {
+            "title": "Comment",
+            "type": "string"
+          },
+          "equity_bond_spread": {
+            "description": "股债性价比（EP - 国债收益率），百分数",
+            "title": "Equity Bond Spread",
+            "type": "number"
+          },
+          "level": {
+            "$ref": "#/components/schemas/TemperatureLevel"
+          },
+          "pe_median": {
+            "description": "全市场 PE 中位数",
+            "title": "Pe Median",
+            "type": "number"
+          },
+          "pe_percentile": {
+            "description": "历史分位，百分数",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Pe Percentile",
+            "type": "number"
+          },
+          "score": {
+            "description": "0=冰点，100=过热",
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "score",
+          "level",
+          "pe_median",
+          "pe_percentile",
+          "bond_yield",
+          "equity_bond_spread",
+          "comment"
+        ],
+        "title": "MarketTemperature",
+        "type": "object"
+      },
+      "TemperatureLevel": {
+        "description": "A-share market temperature bucket, from cold to hot.",
+        "enum": [
+          "cold",
+          "cool",
+          "neutral",
+          "warm",
+          "hot"
+        ],
+        "title": "TemperatureLevel",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WatchlistItem": {
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "code": {
+            "pattern": "^\\d{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "added_at"
+        ],
+        "title": "WatchlistItem",
+        "type": "object"
+      },
+      "WatchlistUpsert": {
+        "properties": {
+          "code": {
+            "pattern": "^\\d{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "industry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "WatchlistUpsert",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "A 股价值挖掘分析服务",
+    "title": "ValueSingularity API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/health": {
+      "get": {
+        "description": "Liveness: the process answers at all.",
+        "operationId": "system_health",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/health/db": {
+      "get": {
+        "description": "Readiness: the database answers.",
+        "operationId": "system_health_db",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Db",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/market/overview": {
+      "get": {
+        "operationId": "market_market_overview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketOverview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Market Overview",
+        "tags": [
+          "market"
+        ]
+      }
+    },
+    "/api/watchlist": {
+      "get": {
+        "operationId": "watchlist_list_watchlist",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WatchlistItem"
+                  },
+                  "title": "Response Watchlist List Watchlist",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Watchlist",
+        "tags": [
+          "watchlist"
+        ]
+      },
+      "put": {
+        "operationId": "watchlist_upsert_watchlist",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistUpsert"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Upsert Watchlist",
+        "tags": [
+          "watchlist"
+        ]
+      }
+    },
+    "/api/watchlist/{code}": {
+      "delete": {
+        "operationId": "watchlist_remove_watchlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Watchlist",
+        "tags": [
+          "watchlist"
+        ]
+      }
+    }
+  }
+}

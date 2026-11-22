@@ -8,17 +8,24 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.routing import APIRoute
 
+from app.api.deps import close_db_pool
 from app.api.router import api_router
 from app.settings import settings
 
 logger = logging.getLogger("vs.api")
 
 
+def _operation_id(route: APIRoute) -> str:
+    return f"{route.tags[0]}_{route.name}" if route.tags else route.name
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info("ValueSingularity API starting")
     yield
+    await close_db_pool()
     logger.info("ValueSingularity API stopped")
 
 
@@ -28,6 +35,7 @@ def create_app() -> FastAPI:
         description="A 股价值挖掘分析服务",
         version="0.1.0",
         lifespan=lifespan,
+        generate_unique_id_function=_operation_id,
     )
     app.add_middleware(
         CORSMiddleware,

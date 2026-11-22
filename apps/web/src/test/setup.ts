@@ -1,1 +1,13 @@
 import '@testing-library/jest-dom/vitest'
+
+const NativeRequest = globalThis.Request
+
+class RelativeUrlRequest extends NativeRequest {
+  constructor(input: RequestInfo | URL, init?: RequestInit) {
+    const resolved =
+      typeof input === 'string' && input.startsWith('/') ? `http://localhost${input}` : input
+    super(resolved, init)
+  }
+}
+
+globalThis.Request = RelativeUrlRequest

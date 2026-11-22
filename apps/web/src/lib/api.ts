@@ -1,4 +1,6 @@
-import type { Health, MarketOverview } from '../types/api'
+import createClient from 'openapi-fetch'
+import type { Health, MarketOverview, WatchlistItem, WatchlistUpsert } from '../types/api'
+import type { paths } from '../types/openapi.gen'
 
 export class ApiError extends Error {
   readonly status: number
@@ -10,29 +12,83 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    headers: { Accept: 'application/json' },
-    ...init,
-  })
+const client = createClient<paths>({
+  baseUrl: '',
+  fetch: (input) => globalThis.fetch(input),
+})
 
-  if (!response.ok) {
-    let detail = response.statusText
-    try {
-      const body: unknown = await response.json()
-      if (body && typeof body === 'object' && 'detail' in body) {
-        detail = String(body.detail)
-      }
-    } catch {
-      // keep statusText
-    }
-    throw new ApiError(detail, response.status)
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isUnknownArray(value: unknown): value is readonly unknown[] {
+  return Array.isArray(value)
+}
+
+function extractErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'string' && error.length > 0) {
+    return error
   }
+  if (!isRecord(error)) {
+    return fallback
+  }
+  const detail = error.detail
+  if (typeof detail === 'string' && detail.length > 0) {
+    return detail
+  }
+  if (isUnknownArray(detail) && detail.length > 0) {
+    const first = detail[0]
+    if (isRecord(first) && typeof first.msg === 'string' && first.msg.length > 0) {
+      return first.msg
+    }
+    return JSON.stringify(detail)
+  }
+  if (detail !== undefined && detail !== null) {
+    return JSON.stringify(detail)
+  }
+  return fallback
+}
 
-  return (await response.json()) as T
+interface ApiResult<T> {
+  data?: T
+  error?: unknown
+  response: Response
+}
+
+function fallbackMessage(response: Response): string {
+  return response.statusText || `HTTP ${response.status}`
+}
+
+function unwrap<T>(result: ApiResult<T>): T {
+  const { data, error, response } = result
+  if (!response.ok || data === undefined) {
+    throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
+  }
+  return data
 }
 
 export const api = {
-  health: () => get<Health>('/health'),
-  marketOverview: () => get<MarketOverview>('/market/overview'),
+  health: async (signal?: AbortSignal): Promise<Health> =>
+    unwrap(await client.GET('/api/health', { signal })),
+
+  healthDb: async (signal?: AbortSignal): Promise<Health> =>
+    unwrap(await client.GET('/api/health/db', { signal })),
+
+  marketOverview: async (signal?: AbortSignal): Promise<MarketOverview> =>
+    unwrap(await client.GET('/api/market/overview', { signal })),
+
+  listWatchlist: async (signal?: AbortSignal): Promise<WatchlistItem[]> =>
+    unwrap(await client.GET('/api/watchlist', { signal })),
+
+  upsertWatchlist: async (body: WatchlistUpsert): Promise<WatchlistItem> =>
+    unwrap(await client.PUT('/api/watchlist', { body })),
+
+  removeWatchlist: async (code: string): Promise<void> => {
+    const { error, response } = await client.DELETE('/api/watchlist/{code}', {
+      params: { path: { code } },
+    })
+    if (!response.ok) {
+      throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
+    }
+  },
 }
