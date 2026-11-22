@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.memory.market import MemoryMarketRepository
+from app.adapters.postgres.market import PostgresMarketRepository
 from app.adapters.postgres.user import PostgresRefreshTokenRepository, PostgresUserRepository
 from app.adapters.postgres.watchlist import PostgresWatchlistRepository
 from app.adapters.security.password import Argon2PasswordHasher
@@ -25,9 +25,8 @@ bearer_scheme = HTTPBearer(auto_error=False)
 DbSessionDep = Annotated[AsyncSession, Depends(get_db)]
 
 
-@lru_cache
-def get_market_service() -> MarketService:
-    return MarketService(MemoryMarketRepository())
+def get_market_service(session: DbSessionDep) -> MarketService:
+    return MarketService(PostgresMarketRepository(session))
 
 
 @lru_cache

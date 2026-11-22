@@ -10,6 +10,9 @@ vi.mock('../../lib/charts', () => ({
 }))
 
 const SAMPLE_OVERVIEW: MarketOverview = {
+  schema_version: 1,
+  as_of: '2026-11-18',
+  data_source: 'akshare',
   generated_at: '2026-11-18T10:00:00Z',
   indices: [
     { code: '000001', name: '上证指数', price: 3218.42, change_pct: 0.62 },
@@ -75,6 +78,9 @@ describe('MarketPage', () => {
     expect(screen.getByText('半导体')).toBeInTheDocument()
     expect(screen.getByText('31.20 亿')).toBeInTheDocument()
     expect(screen.getByText('168')).toBeInTheDocument()
+    expect(screen.getByText('交易日 2026-11-18')).toBeInTheDocument()
+    expect(screen.getByText('2026-11-18')).toBeInTheDocument()
+    expect(screen.getByText('akshare')).toBeInTheDocument()
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
     const requestArg = fetchSpy.mock.calls[0]?.[0]

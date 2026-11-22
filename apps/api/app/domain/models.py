@@ -6,11 +6,14 @@ Every field here is part of the public contract; the web client mirrors these in
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
+
+StockExchange = Literal["SH", "SZ", "BJ"]
 
 
 class TemperatureLevel(StrEnum):
@@ -56,10 +59,67 @@ class IndustryFlow(BaseModel):
 
 
 class MarketOverview(BaseModel):
+    schema_version: int = 1
+    as_of: date
+    data_source: str = "akshare"
     generated_at: datetime
     indices: list[IndexQuote]
     temperature: MarketTemperature
     hot_industries: list[IndustryFlow]
+
+
+class StockMetaRecord(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+    name: str = Field(min_length=1, max_length=64)
+    exchange: StockExchange
+    industry_sw1: str | None = None
+    industry_sw2: str | None = None
+    list_date: date | None = None
+    is_st: bool = False
+    is_active: bool = True
+
+
+class TradeCalendarEntry(BaseModel):
+    trade_date: date
+    is_open: bool = True
+
+
+class IndexDailyRow(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+    trade_date: date
+    close: float
+    change_pct: float
+    pe_ttm: float | None = None
+    pb: float | None = None
+    turnover: float | None = None
+
+
+class MacroRateRow(BaseModel):
+    trade_date: date
+    cn_10y_bond_yield: float
+    market_pe_median: float = Field(gt=0)
+
+
+class MarketFeedBundle(BaseModel):
+    as_of: date
+    data_source: str = "akshare"
+    indices: list[IndexQuote]
+    hot_industries: list[IndustryFlow]
+    stock_list: list[StockMetaRecord]
+    trade_calendar: list[TradeCalendarEntry]
+    index_daily: list[IndexDailyRow]
+    macro_rates: list[MacroRateRow]
+
+
+class SyncSummary(BaseModel):
+    as_of: date
+    data_source: str
+    stock_count: int = Field(ge=0)
+    trade_calendar_count: int = Field(ge=0)
+    index_daily_count: int = Field(ge=0)
+    macro_rate_count: int = Field(ge=0)
+    temperature_score: float = Field(ge=0, le=100)
+    temperature_level: TemperatureLevel
 
 
 class Health(BaseModel):

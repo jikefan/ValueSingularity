@@ -107,6 +107,7 @@ export function MarketPage() {
         extra={
           <span className="row" style={{ gap: 8 }}>
             <Tag color={meta.color}>{meta.label}</Tag>
+            <Tag color="gray">{`交易日 ${data.as_of}`}</Tag>
             <span className="small muted mono">{fmtDateTime(data.generated_at)}</span>
           </span>
         }
@@ -186,9 +187,14 @@ export function MarketPage() {
         </Card>
       </div>
 
-      <p className="small muted">
-        数据来自 API 当前适配器（骨架阶段为内存 fixture，接入 akshare 后替换，接口不变）。
-      </p>
+      <div className="row small muted">
+        <span>
+          数据来源：<span className="mono">{data.data_source}</span>
+        </span>
+        <span>
+          快照日期：<span className="mono">{data.as_of}</span>
+        </span>
+      </div>
     </div>
   )
 }

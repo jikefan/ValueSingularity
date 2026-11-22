@@ -238,6 +238,16 @@ export interface components {
         /** MarketOverview */
         MarketOverview: {
             /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * Data Source
+             * @default akshare
+             */
+            data_source: string;
+            /**
              * Generated At
              * Format: date-time
              */
@@ -246,6 +256,11 @@ export interface components {
             hot_industries: components["schemas"]["IndustryFlow"][];
             /** Indices */
             indices: components["schemas"]["IndexQuote"][];
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
             temperature: components["schemas"]["MarketTemperature"];
         };
         /** MarketTemperature */

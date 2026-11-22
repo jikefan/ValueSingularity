@@ -114,6 +114,16 @@
       },
       "MarketOverview": {
         "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "data_source": {
+            "default": "akshare",
+            "title": "Data Source",
+            "type": "string"
+          },
           "generated_at": {
             "format": "date-time",
             "title": "Generated At",
@@ -133,11 +143,17 @@
             "title": "Indices",
             "type": "array"
           },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
           "temperature": {
             "$ref": "#/components/schemas/MarketTemperature"
           }
         },
         "required": [
+          "as_of",
           "generated_at",
           "indices",
           "temperature",

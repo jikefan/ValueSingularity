@@ -6,16 +6,22 @@ only on the protocol, so tests and new data sources never touch business logic.
 
 from __future__ import annotations
 
-from datetime import datetime
+from collections.abc import Sequence
+from datetime import date, datetime
 from typing import Protocol
 from uuid import UUID
 
 from app.domain.models import (
     AuthenticatedUser,
+    IndexDailyRow,
+    MacroRateRow,
+    MarketFeedBundle,
     MarketOverview,
     PlanTier,
     RefreshRotationResult,
     RefreshTokenRecord,
+    StockMetaRecord,
+    TradeCalendarEntry,
     UserAuthRecord,
     WatchlistItem,
     WatchlistUpsert,
@@ -25,6 +31,39 @@ from app.domain.models import (
 class MarketRepository(Protocol):
     async def overview(self) -> MarketOverview:
         """Return the current market snapshot."""
+        ...
+
+    async def save_overview(self, snapshot: MarketOverview) -> None:
+        """Persist the latest market overview snapshot."""
+        ...
+
+
+class StockMetaRepository(Protocol):
+    async def upsert_many(self, items: Sequence[StockMetaRecord]) -> int:
+        """Upsert platform-shared stock metadata and return affected count."""
+        ...
+
+
+class MarketFactStore(Protocol):
+    async def write_meta_facts(
+        self,
+        *,
+        stock_list: Sequence[StockMetaRecord],
+        trade_calendar: Sequence[TradeCalendarEntry],
+        index_daily: Sequence[IndexDailyRow],
+        macro_rates: Sequence[MacroRateRow],
+    ) -> None:
+        """Atomically persist metadata and macro fact tables to Parquet."""
+        ...
+
+    async def load_macro_history(self, as_of: date, lookback_years: int = 10) -> list[MacroRateRow]:
+        """Load macro rate and market PE rows up to as_of within lookback_years."""
+        ...
+
+
+class MarketFeedPort(Protocol):
+    async def fetch_market_bundle(self, as_of: date | None = None) -> MarketFeedBundle:
+        """Fetch raw market overview inputs and meta/macro fact datasets."""
         ...
 
 

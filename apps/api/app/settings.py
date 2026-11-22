@@ -6,7 +6,7 @@ Environment variables use the ``VS_`` prefix (see .env.example).
 from pathlib import Path
 from typing import Self
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     web_dist: Path | None = None
     # 集成测试库；为空则跳过涉及数据库的测试
     test_database_url: str | None = None
+
+    data_dir: Path = Path(__file__).resolve().parents[3] / "data/market"
+    market_sync_timeout_seconds: float = Field(default=20.0, gt=0)
+    market_sync_max_attempts: int = Field(default=3, ge=1)
 
     jwt_secret: str = "dev-insecure-change-me-in-production"
     jwt_algorithm: str = "HS256"

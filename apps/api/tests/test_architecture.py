@@ -99,6 +99,10 @@ def test_domain_layer_isolation() -> None:
             "sqlalchemy",
             "fastapi",
             "akshare",
+            "duckdb",
+            "pyarrow",
+            "polars",
+            "tenacity",
             "jwt",
             "pyjwt",
             "argon2",
@@ -117,6 +121,10 @@ def test_services_layer_isolation() -> None:
             "sqlalchemy",
             "fastapi",
             "akshare",
+            "duckdb",
+            "pyarrow",
+            "polars",
+            "tenacity",
             "jwt",
             "pyjwt",
             "argon2",
@@ -128,7 +136,21 @@ def test_services_layer_isolation() -> None:
 def test_api_routes_layer_isolation() -> None:
     _assert_no_forbidden_imports(
         "api/routes",
-        ("app.adapters", "app.db", "sqlalchemy", "jwt", "pyjwt", "argon2", "passlib", "pwdlib"),
+        (
+            "app.adapters",
+            "app.db",
+            "sqlalchemy",
+            "akshare",
+            "duckdb",
+            "pyarrow",
+            "polars",
+            "tenacity",
+            "jwt",
+            "pyjwt",
+            "argon2",
+            "passlib",
+            "pwdlib",
+        ),
     )
 
 
@@ -169,6 +191,14 @@ def test_ports_and_services_are_async() -> None:
 
 def test_postgres_adapters_are_async() -> None:
     _assert_public_methods_are_async(sorted((APP_ROOT / "adapters/postgres").rglob("*.py")))
+
+
+def test_duckdb_and_akshare_adapters_are_async() -> None:
+    paths = [
+        *sorted((APP_ROOT / "adapters/duckdb").rglob("*.py")),
+        *sorted((APP_ROOT / "adapters/akshare").rglob("*.py")),
+    ]
+    _assert_public_methods_are_async(paths)
 
 
 def test_no_sync_db_or_testclient_regressions() -> None:
