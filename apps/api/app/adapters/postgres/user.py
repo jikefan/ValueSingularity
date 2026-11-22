@@ -6,13 +6,20 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import RefreshToken as RefreshTokenRow
 from app.db.models import User as UserRow
 from app.domain.errors import EmailAlreadyRegisteredError
-from app.domain.models import PlanTier, RefreshTokenRecord, UserAuthRecord
+from app.domain.models import (
+    PlanTier,
+    RefreshRotationResult,
+    RefreshRotationStatus,
+    RefreshTokenRecord,
+    UserAuthRecord,
+)
 
 
 def _to_user_record(row: UserRow) -> UserAuthRecord:
@@ -98,24 +105,82 @@ class PostgresRefreshTokenRepository:
         await self._session.refresh(row)
         return _to_token_record(row)
 
-    async def get_by_hash(self, token_hash: str) -> RefreshTokenRecord | None:
+    async def rotate_token(
+        self,
+        *,
+        token_hash: str,
+        new_token_hash: str,
+        now: datetime,
+        new_expires_at: datetime,
+        user_agent: str | None,
+    ) -> RefreshRotationResult:
         row = await self._session.scalar(
-            select(RefreshTokenRow).where(RefreshTokenRow.token_hash == token_hash)
+            select(RefreshTokenRow)
+            .where(RefreshTokenRow.token_hash == token_hash)
+            .with_for_update()
         )
-        return _to_token_record(row) if row else None
+        if row is None:
+            await self._session.rollback()
+            return RefreshRotationResult(status=RefreshRotationStatus.NOT_FOUND)
+        if row.expires_at <= now:
+            await self._session.rollback()
+            return RefreshRotationResult(status=RefreshRotationStatus.EXPIRED)
+        if row.revoked_at is not None:
+            # Reuse of an already-rotated refresh token signals replay;
+            # invalidate the entire session family inside the locked transaction.
+            await self._session.execute(
+                update(RefreshTokenRow)
+                .where(
+                    RefreshTokenRow.user_id == row.user_id,
+                    RefreshTokenRow.revoked_at.is_(None),
+                )
+                .values(revoked_at=now)
+            )
+            try:
+                await self._session.commit()
+            except Exception:
+                await self._session.rollback()
+                raise
+            return RefreshRotationResult(status=RefreshRotationStatus.REPLAYED)
 
-    async def revoke(self, token_id: UUID, revoked_at: datetime) -> None:
-        await self._session.execute(
+        user = await self._session.get(UserRow, row.user_id)
+        if user is None:
+            await self._session.rollback()
+            return RefreshRotationResult(status=RefreshRotationStatus.NOT_FOUND)
+        if not user.is_active:
+            row.revoked_at = now
+            try:
+                await self._session.commit()
+            except Exception:
+                await self._session.rollback()
+                raise
+            return RefreshRotationResult(status=RefreshRotationStatus.INACTIVE)
+
+        user_record = _to_user_record(user)
+        row.revoked_at = now
+        self._session.add(
+            RefreshTokenRow(
+                user_id=row.user_id,
+                token_hash=new_token_hash,
+                expires_at=new_expires_at,
+                user_agent=user_agent[:255] if user_agent else None,
+            )
+        )
+        try:
+            await self._session.commit()
+        except Exception:
+            await self._session.rollback()
+            raise
+        return RefreshRotationResult(status=RefreshRotationStatus.ROTATED, user=user_record)
+
+    async def revoke_by_hash(self, token_hash: str, revoked_at: datetime) -> bool:
+        result = await self._session.execute(
             update(RefreshTokenRow)
-            .where(RefreshTokenRow.id == token_id, RefreshTokenRow.revoked_at.is_(None))
+            .where(
+                RefreshTokenRow.token_hash == token_hash,
+                RefreshTokenRow.revoked_at.is_(None),
+            )
             .values(revoked_at=revoked_at)
         )
         await self._session.commit()
-
-    async def revoke_all_for_user(self, user_id: UUID, revoked_at: datetime) -> None:
-        await self._session.execute(
-            update(RefreshTokenRow)
-            .where(RefreshTokenRow.user_id == user_id, RefreshTokenRow.revoked_at.is_(None))
-            .values(revoked_at=revoked_at)
-        )
-        await self._session.commit()
+        return isinstance(result, CursorResult) and result.rowcount > 0

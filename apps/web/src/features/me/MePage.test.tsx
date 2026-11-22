@@ -222,4 +222,66 @@ describe('MePage', () => {
     })
     expect(deletedCode).toBe('600519')
   })
+
+  it('enforces field length and target price bounds aligned with backend schema', async () => {
+    let putCalled = false
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'active-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/watchlist' && request.method === 'PUT') {
+        putCalled = true
+      }
+      return Promise.resolve(
+        jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
+      )
+    })
+
+    renderMePage()
+
+    const nameInput = await screen.findByLabelText('股票名称')
+    const industryInput = screen.getByLabelText('行业')
+    const targetPriceInput = screen.getByLabelText('目标价（元）')
+
+    expect(nameInput).toHaveAttribute('maxLength', '64')
+    expect(industryInput).toHaveAttribute('maxLength', '64')
+    expect(targetPriceInput).toHaveAttribute('min', '0.001')
+    expect(targetPriceInput).toHaveAttribute('max', '999999999.999')
+    expect(targetPriceInput).toHaveAttribute('step', '0.001')
+
+    fireEvent.change(screen.getByLabelText('股票代码'), { target: { value: '600519' } })
+    fireEvent.change(nameInput, { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存自选' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('请输入 1–64 个字符的股票名称')
+
+    fireEvent.change(nameInput, { target: { value: '贵州茅台' } })
+    fireEvent.change(industryInput, { target: { value: '行'.repeat(65) } })
+    fireEvent.click(screen.getByRole('button', { name: '保存自选' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('行业名称不能超过 64 个字符')
+
+    fireEvent.change(industryInput, { target: { value: '白酒' } })
+    fireEvent.change(targetPriceInput, { target: { value: '0.0001' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存自选' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('目标价不能小于 0.001')
+
+    fireEvent.change(targetPriceInput, { target: { value: '1000000000' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存自选' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('目标价不能大于 999999999.999')
+
+    expect(putCalled).toBe(false)
+  })
 })

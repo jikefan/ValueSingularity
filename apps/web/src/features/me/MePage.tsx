@@ -19,7 +19,7 @@ type ParsedNumber = { ok: true; value: number | null } | { ok: false; error: str
 function parseOptionalNumber(
   raw: string,
   label: string,
-  constraints: { min?: number; minExclusive?: number; max?: number },
+  constraints: { min?: number; max?: number },
 ): ParsedNumber {
   const trimmed = raw.trim()
   if (!trimmed) {
@@ -28,9 +28,6 @@ function parseOptionalNumber(
   const parsed = Number(trimmed)
   if (!Number.isFinite(parsed)) {
     return { ok: false, error: `${label}须为有效数字` }
-  }
-  if (constraints.minExclusive !== undefined && parsed <= constraints.minExclusive) {
-    return { ok: false, error: `${label}必须大于 ${constraints.minExclusive}` }
   }
   if (constraints.min !== undefined && parsed < constraints.min) {
     return { ok: false, error: `${label}不能小于 ${constraints.min}` }
@@ -131,6 +128,7 @@ export function MePage() {
   function handleSubmit() {
     const trimmedCode = code.trim()
     const trimmedName = name.trim()
+    const trimmedIndustry = industry.trim()
 
     if (!/^\d{6}$/.test(trimmedCode)) {
       setFormError('股票代码须为 6 位数字')
@@ -140,8 +138,15 @@ export function MePage() {
       setFormError('请输入 1–64 个字符的股票名称')
       return
     }
+    if (trimmedIndustry.length > 64) {
+      setFormError('行业名称不能超过 64 个字符')
+      return
+    }
 
-    const parsedPrice = parseOptionalNumber(targetPrice, '目标价', { minExclusive: 0 })
+    const parsedPrice = parseOptionalNumber(targetPrice, '目标价', {
+      min: 0.001,
+      max: 999_999_999.999,
+    })
     if (!parsedPrice.ok) {
       setFormError(parsedPrice.error)
       return
@@ -166,7 +171,7 @@ export function MePage() {
     const payload: WatchlistUpsert = {
       code: trimmedCode,
       name: trimmedName,
-      industry: industry.trim() || null,
+      industry: trimmedIndustry || null,
       note: note.trim() || null,
       target_price: parsedPrice.value,
       target_pe_percentile: parsedPe.value,
@@ -282,6 +287,7 @@ export function MePage() {
                 id="wl-industry"
                 className="input"
                 type="text"
+                maxLength={64}
                 placeholder="例如 白酒（可选）"
                 value={industry}
                 onChange={(event) => setIndustry(event.target.value)}
@@ -294,8 +300,9 @@ export function MePage() {
                 id="wl-target-price"
                 className="input mono"
                 type="number"
-                step="0.01"
-                min="0"
+                step="0.001"
+                min="0.001"
+                max="999999999.999"
                 placeholder="例如 1400"
                 value={targetPrice}
                 onChange={(event) => setTargetPrice(event.target.value)}

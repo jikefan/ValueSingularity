@@ -39,6 +39,30 @@ function asRequest(input: RequestInfo | URL): Request {
   throw new Error('Expected Request instance from openapi-fetch')
 }
 
+function createDeferred<T>() {
+  let resolvePromise: ((value: T) => void) | undefined
+  let rejectPromise: ((reason?: unknown) => void) | undefined
+  const promise = new Promise<T>((resolve, reject) => {
+    resolvePromise = resolve
+    rejectPromise = reject
+  })
+  return {
+    promise,
+    resolve(value: T) {
+      if (!resolvePromise) {
+        throw new Error('Deferred resolver not initialized')
+      }
+      resolvePromise(value)
+    },
+    reject(reason?: unknown) {
+      if (!rejectPromise) {
+        throw new Error('Deferred rejector not initialized')
+      }
+      rejectPromise(reason)
+    },
+  }
+}
+
 describe('api auth and single-flight refresh middleware', () => {
   afterEach(() => {
     setAccessToken(null)
@@ -155,5 +179,249 @@ describe('api auth and single-flight refresh middleware', () => {
     ).rejects.toBeInstanceOf(ApiError)
 
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('never resurrects accessToken when logout() races with an in-flight refresh', async () => {
+    setAccessToken('expired-token')
+    const expiredListener = vi.fn()
+    const unsubscribe = subscribeAuthExpired(expiredListener)
+    const refreshStarted = createDeferred<void>()
+    const refreshGate = createDeferred<Response>()
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'resurrected-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/watchlist') {
+        return Promise.resolve(jsonResponse({ detail: '登录凭证已过期' }, 401))
+      }
+      if (pathname === '/api/auth/refresh') {
+        refreshStarted.resolve()
+        return refreshGate.promise
+      }
+      if (pathname === '/api/auth/logout') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    try {
+      const pendingRequest = api.listWatchlist()
+      await refreshStarted.promise
+
+      await api.logout()
+      expect(getAccessToken()).toBeNull()
+
+      refreshGate.resolve(jsonResponse(tokenResponse, 200))
+
+      await expect(pendingRequest).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 401,
+      })
+      expect(getAccessToken()).toBeNull()
+      expect(expiredListener).not.toHaveBeenCalled()
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('does not wipe new login accessToken or emit authExpired when a stale refresh fails', async () => {
+    setAccessToken('expired-token')
+    const expiredListener = vi.fn()
+    const unsubscribe = subscribeAuthExpired(expiredListener)
+    const refreshStarted = createDeferred<void>()
+    const refreshGate = createDeferred<Response>()
+
+    const newLoginResponse: TokenResponse = {
+      access_token: 'new-user-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/watchlist') {
+        return Promise.resolve(jsonResponse({ detail: '登录凭证已过期' }, 401))
+      }
+      if (pathname === '/api/auth/refresh') {
+        refreshStarted.resolve()
+        return refreshGate.promise
+      }
+      if (pathname === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(newLoginResponse, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    try {
+      const pendingRequest = api.listWatchlist()
+      await refreshStarted.promise
+
+      await api.login({ email: 'investor@example.com', password: 'password123' })
+      expect(getAccessToken()).toBe('new-user-token')
+
+      refreshGate.resolve(jsonResponse({ detail: '会话已失效，请重新登录' }, 401))
+
+      await expect(pendingRequest).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 401,
+      })
+      expect(getAccessToken()).toBe('new-user-token')
+      expect(expiredListener).not.toHaveBeenCalled()
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('reuses already-rotated accessToken on slow late-401 without a second refresh', async () => {
+    setAccessToken('expired-token')
+
+    const payload: WatchlistUpsert = {
+      code: '600519',
+      name: '贵州茅台',
+      industry: '白酒',
+      note: '现金流充沛',
+      target_price: 1400,
+      target_pe_percentile: 25,
+      target_dividend_yield: 3.2,
+      alert_enabled: true,
+    }
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'fresh-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    const slowPutStarted = createDeferred<void>()
+    const slowPutGate = createDeferred<Response>()
+    let refreshCount = 0
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+      const auth = request.headers.get('Authorization')
+
+      if (pathname === '/api/auth/refresh') {
+        refreshCount += 1
+        return jsonResponse(tokenResponse, 200)
+      }
+
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        if (auth === 'Bearer expired-token') {
+          return jsonResponse({ detail: '登录凭证已过期' }, 401)
+        }
+        if (auth === 'Bearer fresh-token') {
+          return jsonResponse([SAMPLE_ITEM], 200)
+        }
+      }
+
+      if (pathname === '/api/watchlist' && request.method === 'PUT') {
+        if (auth === 'Bearer expired-token') {
+          slowPutStarted.resolve()
+          return await slowPutGate.promise
+        }
+        if (auth === 'Bearer fresh-token') {
+          return jsonResponse(SAMPLE_ITEM, 200)
+        }
+      }
+
+      return jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500)
+    })
+
+    const slowPut = api.upsertWatchlist(payload)
+    await slowPutStarted.promise
+
+    const items = await api.listWatchlist()
+    expect(items).toEqual([SAMPLE_ITEM])
+    expect(refreshCount).toBe(1)
+
+    slowPutGate.resolve(jsonResponse({ detail: '登录凭证已过期' }, 401))
+    const upserted = await slowPut
+
+    expect(upserted).toEqual(SAMPLE_ITEM)
+    expect(refreshCount).toBe(1)
+    expect(getAccessToken()).toBe('fresh-token')
+  })
+
+  it('propagates 503 ApiError from refresh without clearing accessToken or firing authExpired', async () => {
+    setAccessToken('current-token')
+    const expiredListener = vi.fn()
+    const unsubscribe = subscribeAuthExpired(expiredListener)
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/watchlist') {
+        return Promise.resolve(jsonResponse({ detail: '登录凭证已过期' }, 401))
+      }
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '服务暂不可用' }, 503))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    try {
+      await expect(api.listWatchlist()).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 503,
+        message: '服务暂不可用',
+      })
+      expect(getAccessToken()).toBe('current-token')
+      expect(expiredListener).not.toHaveBeenCalled()
+
+      await expect(api.refreshSession()).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 503,
+        message: '服务暂不可用',
+      })
+      expect(getAccessToken()).toBe('current-token')
+      expect(expiredListener).not.toHaveBeenCalled()
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('preserves accessToken and throws ApiError when refresh hits a network failure', async () => {
+    setAccessToken('current-token')
+    const expiredListener = vi.fn()
+    const unsubscribe = subscribeAuthExpired(expiredListener)
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/watchlist') {
+        return Promise.resolve(jsonResponse({ detail: '登录凭证已过期' }, 401))
+      }
+      if (pathname === '/api/auth/refresh') {
+        return Promise.reject(new TypeError('Failed to fetch'))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    try {
+      await expect(api.listWatchlist()).rejects.toMatchObject({
+        name: 'ApiError',
+        status: 0,
+        message: 'Failed to fetch',
+      })
+      expect(getAccessToken()).toBe('current-token')
+      expect(expiredListener).not.toHaveBeenCalled()
+    } finally {
+      unsubscribe()
+    }
   })
 })

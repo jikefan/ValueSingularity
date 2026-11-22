@@ -14,6 +14,7 @@ from app.domain.models import (
     AuthenticatedUser,
     MarketOverview,
     PlanTier,
+    RefreshRotationResult,
     RefreshTokenRecord,
     UserAuthRecord,
     WatchlistItem,
@@ -78,16 +79,20 @@ class RefreshTokenRepository(Protocol):
         """Persist a hashed refresh token record."""
         ...
 
-    async def get_by_hash(self, token_hash: str) -> RefreshTokenRecord | None:
-        """Look up a refresh token record by SHA-256 hash."""
+    async def rotate_token(
+        self,
+        *,
+        token_hash: str,
+        new_token_hash: str,
+        now: datetime,
+        new_expires_at: datetime,
+        user_agent: str | None,
+    ) -> RefreshRotationResult:
+        """Atomically validate, revoke, and replace a refresh token."""
         ...
 
-    async def revoke(self, token_id: UUID, revoked_at: datetime) -> None:
-        """Mark a single refresh token as revoked."""
-        ...
-
-    async def revoke_all_for_user(self, user_id: UUID, revoked_at: datetime) -> None:
-        """Revoke all active refresh tokens belonging to a user."""
+    async def revoke_by_hash(self, token_hash: str, revoked_at: datetime) -> bool:
+        """Revoke an active refresh token by SHA-256 hash."""
         ...
 
 

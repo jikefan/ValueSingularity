@@ -49,11 +49,11 @@ def upgrade() -> None:
         sa.UniqueConstraint("phone", name="uq_users_phone"),
         sa.CheckConstraint(
             "email IS NOT NULL OR phone IS NOT NULL",
-            name="ck_users_contact_present",
+            name="contact_present",
         ),
         sa.CheckConstraint(
             "plan_tier IN ('free', 'pro', 'ai_plus')",
-            name="ck_users_plan_tier_valid",
+            name="plan_tier_valid",
         ),
     )
 
@@ -135,7 +135,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "source_type IN ('watchlist_sentinel', 'journal_falsify')",
-            name="ck_alert_deliveries_source_type_valid",
+            name="source_type_valid",
         ),
     )
 
@@ -186,7 +186,7 @@ def upgrade() -> None:
         ondelete="CASCADE",
     )
     op.create_check_constraint(
-        "ck_journal_action_valid",
+        "action_valid",
         "journal",
         "action IN ('buy', 'sell', 'add', 'trim', 'pass')",
     )
@@ -232,7 +232,7 @@ def downgrade() -> None:
     op.drop_column("events", "user_id")
 
     op.drop_index("ix_journal_user_code_created_at", table_name="journal")
-    op.drop_constraint("ck_journal_action_valid", "journal", type_="check")
+    op.drop_constraint("action_valid", "journal", type_="check")
     op.drop_constraint("fk_journal_user_id_users", "journal", type_="foreignkey")
     op.drop_column("journal", "benchmark_price")
     op.drop_column("journal", "benchmark_code")

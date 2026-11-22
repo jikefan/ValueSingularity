@@ -126,6 +126,19 @@ class RefreshTokenRecord(BaseModel):
     revoked_at: datetime | None
 
 
+class RefreshRotationStatus(StrEnum):
+    ROTATED = "rotated"
+    NOT_FOUND = "not_found"
+    EXPIRED = "expired"
+    REPLAYED = "replayed"
+    INACTIVE = "inactive"
+
+
+class RefreshRotationResult(BaseModel):
+    status: RefreshRotationStatus
+    user: UserAuthRecord | None = None
+
+
 class WatchlistItem(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
     name: str
@@ -142,9 +155,23 @@ class WatchlistItem(BaseModel):
 class WatchlistUpsert(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
     name: str = Field(min_length=1, max_length=64)
-    industry: str | None = None
+    industry: str | None = Field(default=None, max_length=64)
     note: str | None = None
-    target_price: float | None = Field(default=None, gt=0)
-    target_pe_percentile: float | None = Field(default=None, ge=0, le=100)
-    target_dividend_yield: float | None = Field(default=None, ge=0, le=100)
+    target_price: float | None = Field(
+        default=None, ge=0.001, le=999_999_999.999, allow_inf_nan=False
+    )
+    target_pe_percentile: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
+    target_dividend_yield: float | None = Field(default=None, ge=0, le=100, allow_inf_nan=False)
     alert_enabled: bool = False
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("industry", mode="before")
+    @classmethod
+    def _strip_industry(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value

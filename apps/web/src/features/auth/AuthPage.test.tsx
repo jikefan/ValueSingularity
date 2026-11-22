@@ -1,8 +1,9 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from '../../lib/AuthProvider'
+import { useAuth } from '../../lib/authContext'
 import { setAccessToken } from '../../lib/api'
 import { createQueryClient } from '../../lib/queryClient'
 import type { TokenResponse, UserProfile } from '../../types/api'
@@ -158,5 +159,80 @@ describe('AuthPage', () => {
 
     expect(await screen.findByText('登录失败')).toBeInTheDocument()
     expect(screen.getByText('邮箱或密码错误')).toBeInTheDocument()
+  })
+
+  it('cancels slow bootstrapSession so login user state is never clobbered', async () => {
+    let resolveBootstrapMe: ((res: Response) => void) | undefined
+    const bootstrapMePromise = new Promise<Response>((resolve) => {
+      resolveBootstrapMe = resolve
+    })
+
+    const oldUser: UserProfile = { ...SAMPLE_USER, email: 'stale@example.com' }
+    const freshUser: UserProfile = { ...SAMPLE_USER, email: 'fresh@example.com' }
+    const freshToken: TokenResponse = {
+      access_token: 'fresh-login-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: freshUser,
+    }
+
+    setAccessToken('initial-stale-token')
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/me') {
+        return bootstrapMePromise
+      }
+      if (pathname === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(freshToken, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    function AuthProbe() {
+      const { user, login } = useAuth()
+      return (
+        <div>
+          <span data-testid="auth-user">{user ? user.email : 'none'}</span>
+          <button
+            type="button"
+            onClick={() => {
+              void login({ email: 'fresh@example.com', password: 'password123' })
+            }}
+          >
+            切换登录
+          </button>
+        </div>
+      )
+    }
+
+    const client = createQueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <AuthProbe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '切换登录' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('auth-user')).toHaveTextContent('fresh@example.com')
+    })
+
+    if (!resolveBootstrapMe) {
+      throw new Error('Expected /api/auth/me resolver')
+    }
+    resolveBootstrapMe(jsonResponse(oldUser, 200))
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(screen.getByTestId('auth-user')).toHaveTextContent('fresh@example.com')
   })
 })

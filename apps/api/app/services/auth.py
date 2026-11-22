@@ -11,6 +11,7 @@ from app.domain.models import (
     AuthSession,
     LoginRequest,
     PlanTier,
+    RefreshRotationStatus,
     RegisterRequest,
     TokenResponse,
     UserAuthRecord,
@@ -111,33 +112,29 @@ class AuthService:
             raise InvalidRefreshTokenError()
 
         token_hash = await self._tokens.hash_refresh_token(raw_refresh_token)
-        record = await self._refresh_tokens.get_by_hash(token_hash)
+        raw_refresh, new_hash = await self._tokens.generate_refresh_token()
         now = datetime.now(UTC)
+        new_expires_at = now + timedelta(days=self._refresh_ttl_days)
 
-        if record is None or record.expires_at <= now:
-            raise InvalidRefreshTokenError()
-        if record.revoked_at is not None:
-            # Reuse of an already-rotated refresh token signals replay;
-            # invalidate the entire session family.
-            await self._refresh_tokens.revoke_all_for_user(record.user_id, now)
-            raise InvalidRefreshTokenError()
-
-        await self._refresh_tokens.revoke(record.id, now)
-        user = await self._users.get_by_id(record.user_id)
-        if user is None:
-            raise InvalidRefreshTokenError()
-        if not user.is_active:
+        result = await self._refresh_tokens.rotate_token(
+            token_hash=token_hash,
+            new_token_hash=new_hash,
+            now=now,
+            new_expires_at=new_expires_at,
+            user_agent=user_agent,
+        )
+        if result.status == RefreshRotationStatus.INACTIVE:
             raise InactiveUserError()
+        if result.status != RefreshRotationStatus.ROTATED or result.user is None:
+            raise InvalidRefreshTokenError()
 
-        return await self._issue_session(user, user_agent)
+        return await self._build_auth_session(result.user, raw_refresh)
 
     async def logout(self, raw_refresh_token: str | None) -> None:
         if not raw_refresh_token:
             return
         token_hash = await self._tokens.hash_refresh_token(raw_refresh_token)
-        record = await self._refresh_tokens.get_by_hash(token_hash)
-        if record is not None and record.revoked_at is None:
-            await self._refresh_tokens.revoke(record.id, datetime.now(UTC))
+        await self._refresh_tokens.revoke_by_hash(token_hash, datetime.now(UTC))
 
     async def get_profile(self, user_id: UUID) -> UserProfile:
         user = await self._users.get_by_id(user_id)
@@ -154,8 +151,6 @@ class AuthService:
         return user
 
     async def _issue_session(self, user: UserAuthRecord, user_agent: str | None) -> AuthSession:
-        auth_user = AuthenticatedUser(id=user.id, plan_tier=user.plan_tier)
-        access_token, expires_in = await self._tokens.issue_access_token(auth_user)
         raw_refresh, token_hash = await self._tokens.generate_refresh_token()
         expires_at = datetime.now(UTC) + timedelta(days=self._refresh_ttl_days)
         await self._refresh_tokens.create(
@@ -164,6 +159,11 @@ class AuthService:
             expires_at=expires_at,
             user_agent=user_agent,
         )
+        return await self._build_auth_session(user, raw_refresh)
+
+    async def _build_auth_session(self, user: UserAuthRecord, raw_refresh: str) -> AuthSession:
+        auth_user = AuthenticatedUser(id=user.id, plan_tier=user.plan_tier)
+        access_token, expires_in = await self._tokens.issue_access_token(auth_user)
         return AuthSession(
             token=TokenResponse(
                 access_token=access_token,

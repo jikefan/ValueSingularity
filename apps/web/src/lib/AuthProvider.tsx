@@ -34,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (body: LoginRequest): Promise<UserProfile> => {
       const res = await api.login(body)
+      await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
       queryClient.setQueryData(queryKeys.auth.me(), res.user)
       await queryClient.invalidateQueries({ queryKey: queryKeys.watchlist.all })
       return res.user
@@ -44,6 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(
     async (body: RegisterRequest): Promise<UserProfile> => {
       const res = await api.register(body)
+      await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
       queryClient.setQueryData(queryKeys.auth.me(), res.user)
       await queryClient.invalidateQueries({ queryKey: queryKeys.watchlist.all })
       return res.user
@@ -57,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Clear local session state even if the remote logout call fails.
     } finally {
+      await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
       queryClient.setQueryData(queryKeys.auth.me(), null)
       queryClient.removeQueries({ queryKey: queryKeys.watchlist.all })
     }

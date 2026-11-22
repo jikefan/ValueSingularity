@@ -7,6 +7,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,17 +59,14 @@ class PostgresWatchlistRepository:
         return _to_domain(row) if row else None
 
     async def upsert(self, user_id: UUID, payload: WatchlistUpsert) -> WatchlistItem:
-        row = await self._session.scalar(
-            select(WatchlistRow).where(
-                WatchlistRow.user_id == user_id, WatchlistRow.code == payload.code
-            )
-        )
+        now = datetime.now(UTC)
         target_price = _to_decimal(payload.target_price)
         target_pe_percentile = _to_decimal(payload.target_pe_percentile)
         target_dividend_yield = _to_decimal(payload.target_dividend_yield)
 
-        if row is None:
-            row = WatchlistRow(
+        stmt = (
+            pg_insert(WatchlistRow)
+            .values(
                 user_id=user_id,
                 code=payload.code,
                 name=payload.name,
@@ -79,20 +77,26 @@ class PostgresWatchlistRepository:
                 target_dividend_yield=target_dividend_yield,
                 alert_enabled=payload.alert_enabled,
             )
-            self._session.add(row)
-        else:
-            row.name = payload.name
-            row.industry = payload.industry
-            row.note = payload.note
-            row.target_price = target_price
-            row.target_pe_percentile = target_pe_percentile
-            row.target_dividend_yield = target_dividend_yield
-            row.alert_enabled = payload.alert_enabled
-            row.updated_at = datetime.now(UTC)
-
+            .on_conflict_do_update(
+                index_elements=["user_id", "code"],
+                set_={
+                    "name": payload.name,
+                    "industry": payload.industry,
+                    "note": payload.note,
+                    "target_price": target_price,
+                    "target_pe_percentile": target_pe_percentile,
+                    "target_dividend_yield": target_dividend_yield,
+                    "alert_enabled": payload.alert_enabled,
+                    "updated_at": now,
+                },
+            )
+            .returning(WatchlistRow)
+            .execution_options(populate_existing=True)
+        )
+        row = (await self._session.scalars(stmt)).one()
+        item = _to_domain(row)
         await self._session.commit()
-        await self._session.refresh(row)
-        return _to_domain(row)
+        return item
 
     async def remove(self, user_id: UUID, code: str) -> bool:
         result = await self._session.execute(
