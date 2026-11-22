@@ -80,6 +80,10 @@ class StockMetaRecord(BaseModel):
     is_active: bool = True
 
 
+class StockDetail(StockMetaRecord):
+    snapshot_available: bool = False
+
+
 class TradeCalendarEntry(BaseModel):
     trade_date: date
     is_open: bool = True
@@ -236,3 +240,89 @@ class WatchlistUpsert(BaseModel):
         if isinstance(value, str):
             return value.strip() or None
         return value
+
+
+class JournalAction(StrEnum):
+    """Supported investment decision actions in the journal."""
+
+    BUY = "buy"
+    SELL = "sell"
+    ADD = "add"
+    TRIM = "trim"
+    PASS = "pass"
+
+
+class FalsifyRule(BaseModel):
+    metric: str = Field(min_length=1, max_length=64)
+    op: Literal["lt", "lte", "gt", "gte", "eq"]
+    value: FiniteFloat
+    periods: int = Field(default=1, ge=1, le=40)
+
+    @field_validator("metric", mode="before")
+    @classmethod
+    def _strip_metric(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class JournalCreate(BaseModel):
+    code: str = Field(pattern=r"^\d{6}$")
+    name: str | None = Field(default=None, max_length=64)
+    action: JournalAction
+    reason: str = Field(min_length=1, max_length=5000)
+    falsify_condition: str = Field(min_length=1, max_length=5000)
+    falsify_rules: list[FalsifyRule] | None = None
+    max_drawdown: FiniteFloat | None = Field(default=None, ge=0, le=100)
+    emotion: str | None = Field(default=None, max_length=32)
+    price: FiniteFloat | None = Field(default=None, ge=0.001, le=999_999_999.999)
+    benchmark_code: str = Field(default="000300", pattern=r"^\d{6}$")
+    benchmark_price: FiniteFloat | None = Field(default=None, ge=0.001, le=999_999_999.999)
+
+    @field_validator("name", "emotion", mode="before")
+    @classmethod
+    def _strip_optional_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @field_validator("reason", "falsify_condition", mode="before")
+    @classmethod
+    def _strip_required_text(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class JournalEntryItem(BaseModel):
+    id: int
+    code: str
+    name: str | None = None
+    action: JournalAction
+    reason: str
+    falsify_condition: str
+    falsify_rules: list[FalsifyRule] | None = None
+    max_drawdown: float | None = None
+    emotion: str | None = None
+    price: float | None = None
+    benchmark_code: str
+    benchmark_price: float | None = None
+    created_at: datetime
+
+
+EventMetaValue = str | int | FiniteFloat | bool | None
+
+
+class UserEventCreate(BaseModel):
+    type: str = Field(min_length=1, max_length=32)
+    code: str | None = Field(default=None, pattern=r"^\d{6}$")
+    meta: dict[str, EventMetaValue] | None = None
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _strip_type(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+
+class UserEventItem(BaseModel):
+    id: int
+    type: str
+    code: str | None = None
+    meta: dict[str, EventMetaValue] | None = None
+    ts: datetime

@@ -89,6 +89,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Events */
+        get: operations["events_list_events"];
+        put?: never;
+        /** Record Event */
+        post: operations["events_record_event"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -129,6 +147,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/journal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Journal */
+        get: operations["journal_list_journal"];
+        put?: never;
+        /** Create Journal */
+        post: operations["journal_create_journal"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/journal/{entry_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Journal */
+        delete: operations["journal_remove_journal"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market/overview": {
         parameters: {
             query?: never;
@@ -138,6 +191,40 @@ export interface paths {
         };
         /** Market Overview */
         get: operations["market_market_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stocks/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search Stocks */
+        get: operations["stocks_search_stocks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/stocks/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stock */
+        get: operations["stocks_get_stock"];
         put?: never;
         post?: never;
         delete?: never;
@@ -185,6 +272,23 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** FalsifyRule */
+        FalsifyRule: {
+            /** Metric */
+            metric: string;
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: "lt" | "lte" | "gt" | "gte" | "eq";
+            /**
+             * Periods
+             * @default 1
+             */
+            periods: number;
+            /** Value */
+            value: number;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -224,6 +328,70 @@ export interface components {
              * @description 净流入，单位：元
              */
             net_inflow: number;
+        };
+        /**
+         * JournalAction
+         * @description Supported investment decision actions in the journal.
+         * @enum {string}
+         */
+        JournalAction: "buy" | "sell" | "add" | "trim" | "pass";
+        /** JournalCreate */
+        JournalCreate: {
+            action: components["schemas"]["JournalAction"];
+            /**
+             * Benchmark Code
+             * @default 000300
+             */
+            benchmark_code: string;
+            /** Benchmark Price */
+            benchmark_price?: number | null;
+            /** Code */
+            code: string;
+            /** Emotion */
+            emotion?: string | null;
+            /** Falsify Condition */
+            falsify_condition: string;
+            /** Falsify Rules */
+            falsify_rules?: components["schemas"]["FalsifyRule"][] | null;
+            /** Max Drawdown */
+            max_drawdown?: number | null;
+            /** Name */
+            name?: string | null;
+            /** Price */
+            price?: number | null;
+            /** Reason */
+            reason: string;
+        };
+        /** JournalEntryItem */
+        JournalEntryItem: {
+            action: components["schemas"]["JournalAction"];
+            /** Benchmark Code */
+            benchmark_code: string;
+            /** Benchmark Price */
+            benchmark_price?: number | null;
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Emotion */
+            emotion?: string | null;
+            /** Falsify Condition */
+            falsify_condition: string;
+            /** Falsify Rules */
+            falsify_rules?: components["schemas"]["FalsifyRule"][] | null;
+            /** Id */
+            id: number;
+            /** Max Drawdown */
+            max_drawdown?: number | null;
+            /** Name */
+            name?: string | null;
+            /** Price */
+            price?: number | null;
+            /** Reason */
+            reason: string;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -312,6 +480,67 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** StockDetail */
+        StockDetail: {
+            /** Code */
+            code: string;
+            /**
+             * Exchange
+             * @enum {string}
+             */
+            exchange: "SH" | "SZ" | "BJ";
+            /** Industry Sw1 */
+            industry_sw1?: string | null;
+            /** Industry Sw2 */
+            industry_sw2?: string | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Is St
+             * @default false
+             */
+            is_st: boolean;
+            /** List Date */
+            list_date?: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Snapshot Available
+             * @default false
+             */
+            snapshot_available: boolean;
+        };
+        /** StockMetaRecord */
+        StockMetaRecord: {
+            /** Code */
+            code: string;
+            /**
+             * Exchange
+             * @enum {string}
+             */
+            exchange: "SH" | "SZ" | "BJ";
+            /** Industry Sw1 */
+            industry_sw1?: string | null;
+            /** Industry Sw2 */
+            industry_sw2?: string | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean;
+            /**
+             * Is St
+             * @default false
+             */
+            is_st: boolean;
+            /** List Date */
+            list_date?: string | null;
+            /** Name */
+            name: string;
+        };
         /**
          * TemperatureLevel
          * @description A-share market temperature bucket, from cold to hot.
@@ -330,6 +559,35 @@ export interface components {
              */
             token_type: string;
             user: components["schemas"]["UserProfile"];
+        };
+        /** UserEventCreate */
+        UserEventCreate: {
+            /** Code */
+            code?: string | null;
+            /** Meta */
+            meta?: {
+                [key: string]: string | number | boolean | null;
+            } | null;
+            /** Type */
+            type: string;
+        };
+        /** UserEventItem */
+        UserEventItem: {
+            /** Code */
+            code?: string | null;
+            /** Id */
+            id: number;
+            /** Meta */
+            meta?: {
+                [key: string]: string | number | boolean | null;
+            } | null;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+            /** Type */
+            type: string;
         };
         /** UserProfile */
         UserProfile: {
@@ -553,6 +811,70 @@ export interface operations {
             };
         };
     };
+    events_list_events: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserEventItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    events_record_event: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserEventCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserEventItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     system_health: {
         parameters: {
             query?: never;
@@ -593,6 +915,100 @@ export interface operations {
             };
         };
     };
+    journal_list_journal: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JournalEntryItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    journal_create_journal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JournalCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JournalEntryItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    journal_remove_journal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entry_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     market_market_overview: {
         parameters: {
             query?: never;
@@ -609,6 +1025,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketOverview"];
+                };
+            };
+        };
+    };
+    stocks_search_stocks: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockMetaRecord"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stocks_get_stock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

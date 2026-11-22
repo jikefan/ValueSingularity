@@ -1,10 +1,15 @@
 import createClient from 'openapi-fetch'
 import type {
   Health,
+  JournalCreate,
+  JournalEntryItem,
   LoginRequest,
   MarketOverview,
   RegisterRequest,
+  StockDetail,
+  StockMetaRecord,
   TokenResponse,
+  UserEventItem,
   UserProfile,
   WatchlistItem,
   WatchlistUpsert,
@@ -251,4 +256,52 @@ export const api = {
       throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
     }
   },
+
+  searchStocks: async (q: string, limit = 10, signal?: AbortSignal): Promise<StockMetaRecord[]> =>
+    unwrap(
+      await client.GET('/api/stocks/search', {
+        params: { query: { q, limit } },
+        signal,
+      }),
+    ),
+
+  getStock: async (code: string, signal?: AbortSignal): Promise<StockDetail> =>
+    unwrap(
+      await client.GET('/api/stocks/{code}', {
+        params: { path: { code } },
+        signal,
+      }),
+    ),
+
+  listJournal: async (
+    code?: string,
+    limit = 50,
+    signal?: AbortSignal,
+  ): Promise<JournalEntryItem[]> =>
+    unwrap(
+      await client.GET('/api/journal', {
+        params: { query: code ? { code, limit } : { limit } },
+        signal,
+      }),
+    ),
+
+  createJournal: async (body: JournalCreate): Promise<JournalEntryItem> =>
+    unwrap(await client.POST('/api/journal', { body })),
+
+  removeJournal: async (entryId: number): Promise<void> => {
+    const { error, response } = await client.DELETE('/api/journal/{entry_id}', {
+      params: { path: { entry_id: entryId } },
+    })
+    if (!response.ok) {
+      throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
+    }
+  },
+
+  listEvents: async (limit = 50, signal?: AbortSignal): Promise<UserEventItem[]> =>
+    unwrap(
+      await client.GET('/api/events', {
+        params: { query: { limit } },
+        signal,
+      }),
+    ),
 }

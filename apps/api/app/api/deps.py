@@ -9,7 +9,9 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.adapters.postgres.market import PostgresMarketRepository
+from app.adapters.postgres.event import PostgresEventRepository
+from app.adapters.postgres.journal import PostgresJournalRepository
+from app.adapters.postgres.market import PostgresMarketRepository, PostgresStockMetaRepository
 from app.adapters.postgres.user import PostgresRefreshTokenRepository, PostgresUserRepository
 from app.adapters.postgres.watchlist import PostgresWatchlistRepository
 from app.adapters.security.password import Argon2PasswordHasher
@@ -17,7 +19,10 @@ from app.adapters.security.token import JwtTokenCodec
 from app.db.session import DatabaseUnavailableError, check_db_health, dispose_db, get_db
 from app.domain.models import AuthenticatedUser
 from app.services.auth import AuthService, InvalidAccessTokenError
+from app.services.event import EventService
+from app.services.journal import JournalService
 from app.services.market import MarketService
+from app.services.stock import StockService
 from app.services.watchlist import WatchlistService
 from app.settings import settings
 
@@ -57,9 +62,28 @@ def get_watchlist_service(session: DbSessionDep) -> WatchlistService:
     return WatchlistService(PostgresWatchlistRepository(session))
 
 
+def get_stock_service(session: DbSessionDep) -> StockService:
+    return StockService(PostgresStockMetaRepository(session))
+
+
+def get_journal_service(session: DbSessionDep) -> JournalService:
+    return JournalService(
+        repository=PostgresJournalRepository(session),
+        stock_meta=PostgresStockMetaRepository(session),
+        events=PostgresEventRepository(session),
+    )
+
+
+def get_event_service(session: DbSessionDep) -> EventService:
+    return EventService(PostgresEventRepository(session))
+
+
 MarketServiceDep = Annotated[MarketService, Depends(get_market_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 WatchlistServiceDep = Annotated[WatchlistService, Depends(get_watchlist_service)]
+StockServiceDep = Annotated[StockService, Depends(get_stock_service)]
+JournalServiceDep = Annotated[JournalService, Depends(get_journal_service)]
+EventServiceDep = Annotated[EventService, Depends(get_event_service)]
 
 
 async def get_current_user(
@@ -98,15 +122,21 @@ __all__ = [
     "CurrentUserDep",
     "DatabaseUnavailableError",
     "DbSessionDep",
+    "EventServiceDep",
+    "JournalServiceDep",
     "MarketServiceDep",
+    "StockServiceDep",
     "WatchlistServiceDep",
     "bearer_scheme",
     "close_db_pool",
     "get_auth_service",
     "get_current_user",
     "get_db",
+    "get_event_service",
+    "get_journal_service",
     "get_market_service",
     "get_password_hasher",
+    "get_stock_service",
     "get_token_codec",
     "get_watchlist_service",
     "verify_db",

@@ -12,8 +12,17 @@ export const queryKeys = {
     all: ['watchlist'] as const,
     list: () => ['watchlist', 'list'] as const,
   },
-  stock: {
-    all: ['stock'] as const,
-    detail: (code: string) => ['stock', code] as const,
+  stocks: {
+    all: ['stocks'] as const,
+    search: (q: string) => ['stocks', 'search', q] as const,
+    detail: (code: string) => ['stocks', 'detail', code] as const,
+  },
+  journal: {
+    all: ['journal'] as const,
+    list: (code?: string) => ['journal', 'list', code ?? 'all'] as const,
+  },
+  events: {
+    all: ['events'] as const,
+    list: () => ['events', 'list'] as const,
   },
 } as const

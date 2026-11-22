@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { JournalEntryCard } from '../../components/ui/JournalEntryCard'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { useAuth } from '../../lib/authContext'
 import { fmtNum } from '../../lib/format'
-import type { PlanTier, WatchlistItem, WatchlistUpsert } from '../../types/api'
+import { useJournal, useRemoveJournal } from '../../lib/useJournal'
+import { parseOptionalNumber } from '../../lib/validation'
+import type { JournalAction, PlanTier, WatchlistItem, WatchlistUpsert } from '../../types/api'
 import { useRemoveWatchlist, useUpsertWatchlist, useWatchlist } from './useWatchlist'
 
 const PLAN_COLOR: Record<PlanTier, 'gray' | 'blue' | 'green'> = {
@@ -14,28 +17,26 @@ const PLAN_COLOR: Record<PlanTier, 'gray' | 'blue' | 'green'> = {
   ai_plus: 'green',
 }
 
-type ParsedNumber = { ok: true; value: number | null } | { ok: false; error: string }
+type JournalFilter = 'all' | 'buy_add' | 'trim_sell' | 'pass'
 
-function parseOptionalNumber(
-  raw: string,
-  label: string,
-  constraints: { min?: number; max?: number },
-): ParsedNumber {
-  const trimmed = raw.trim()
-  if (!trimmed) {
-    return { ok: true, value: null }
+const JOURNAL_FILTERS: ReadonlyArray<{ key: JournalFilter; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'buy_add', label: '买入 / 加仓' },
+  { key: 'trim_sell', label: '减仓 / 卖出' },
+  { key: 'pass', label: 'Pass 观察池' },
+]
+
+function matchesJournalFilter(action: JournalAction, filter: JournalFilter): boolean {
+  switch (filter) {
+    case 'all':
+      return true
+    case 'buy_add':
+      return action === 'buy' || action === 'add'
+    case 'trim_sell':
+      return action === 'trim' || action === 'sell'
+    case 'pass':
+      return action === 'pass'
   }
-  const parsed = Number(trimmed)
-  if (!Number.isFinite(parsed)) {
-    return { ok: false, error: `${label}须为有效数字` }
-  }
-  if (constraints.min !== undefined && parsed < constraints.min) {
-    return { ok: false, error: `${label}不能小于 ${constraints.min}` }
-  }
-  if (constraints.max !== undefined && parsed > constraints.max) {
-    return { ok: false, error: `${label}不能大于 ${constraints.max}` }
-  }
-  return { ok: true, value: parsed }
 }
 
 function renderThresholdBadges(item: WatchlistItem) {
@@ -73,6 +74,9 @@ export function MePage() {
   const watchlistQuery = useWatchlist(Boolean(user))
   const upsertMutation = useUpsertWatchlist()
   const removeMutation = useRemoveWatchlist()
+  const journalQuery = useJournal(undefined, Boolean(user))
+  const removeJournalMutation = useRemoveJournal()
+  const [journalFilter, setJournalFilter] = useState<JournalFilter>('all')
 
   const [editingCode, setEditingCode] = useState<string | null>(null)
   const [code, setCode] = useState('')
@@ -225,6 +229,17 @@ export function MePage() {
       ? removeMutation.error.message
       : '删除失败，请稍后重试'
     : null
+
+  const removeJournalErrorMessage = removeJournalMutation.isError
+    ? removeJournalMutation.error instanceof Error
+      ? removeJournalMutation.error.message
+      : '删除日记失败，请稍后重试'
+    : null
+
+  const journalEntries = journalQuery.data ?? []
+  const filteredJournal = journalEntries.filter((entry) =>
+    matchesJournalFilter(entry.action, journalFilter),
+  )
 
   return (
     <div className="container stack" style={{ gap: 16 }}>
@@ -471,6 +486,77 @@ export function MePage() {
             </tbody>
           </table>
         )}
+      </Card>
+
+      <Card
+        title="决策日记与 Pass 观察池"
+        extra={
+          journalQuery.data ? (
+            <span className="small muted mono">{journalQuery.data.length} 条记录</span>
+          ) : null
+        }
+      >
+        <div className="stack" style={{ gap: 14 }}>
+          <div className="filter-bar" role="group" aria-label="日记筛选">
+            {JOURNAL_FILTERS.map((filterOption) => (
+              <button
+                key={filterOption.key}
+                type="button"
+                aria-pressed={journalFilter === filterOption.key}
+                className={
+                  journalFilter === filterOption.key ? 'filter-pill active' : 'filter-pill'
+                }
+                onClick={() => setJournalFilter(filterOption.key)}
+              >
+                {filterOption.label}
+              </button>
+            ))}
+          </div>
+
+          {removeJournalErrorMessage ? (
+            <div className="inline-error" role="alert">
+              {removeJournalErrorMessage}
+            </div>
+          ) : null}
+
+          {journalQuery.isPending || (!journalQuery.data && journalQuery.isFetching) ? (
+            <LoadingBlock lines={3} />
+          ) : journalQuery.isError ? (
+            <ErrorBlock
+              title="决策日记加载失败"
+              message={
+                journalQuery.error instanceof Error ? journalQuery.error.message : '未知错误'
+              }
+              onRetry={() => {
+                void journalQuery.refetch()
+              }}
+            />
+          ) : journalEntries.length === 0 ? (
+            <EmptyBlock
+              title="还没有决策日记"
+              hint="前往个股分析页记录买入、卖出或 Pass 观察决策。"
+            />
+          ) : filteredJournal.length === 0 ? (
+            <EmptyBlock
+              title="当前筛选下暂无记录"
+              hint="切换上方筛选条件查看全部决策或 Pass 观察池。"
+            />
+          ) : (
+            <div className="journal-list">
+              {filteredJournal.map((entry) => (
+                <JournalEntryCard
+                  key={entry.id}
+                  entry={entry}
+                  showStockLink
+                  isDeleting={
+                    removeJournalMutation.isPending && removeJournalMutation.variables === entry.id
+                  }
+                  onDelete={(entryId) => removeJournalMutation.mutate(entryId)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </Card>
     </div>
   )

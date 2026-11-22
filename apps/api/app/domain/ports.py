@@ -14,15 +14,20 @@ from uuid import UUID
 from app.domain.models import (
     AuthenticatedUser,
     IndexDailyRow,
+    JournalCreate,
+    JournalEntryItem,
     MacroRateRow,
     MarketFeedBundle,
     MarketOverview,
     PlanTier,
     RefreshRotationResult,
     RefreshTokenRecord,
+    StockDetail,
     StockMetaRecord,
     TradeCalendarEntry,
     UserAuthRecord,
+    UserEventCreate,
+    UserEventItem,
     WatchlistItem,
     WatchlistUpsert,
 )
@@ -41,6 +46,14 @@ class MarketRepository(Protocol):
 class StockMetaRepository(Protocol):
     async def upsert_many(self, items: Sequence[StockMetaRecord]) -> int:
         """Upsert platform-shared stock metadata and return affected count."""
+        ...
+
+    async def search(self, query: str, *, limit: int = 10) -> list[StockMetaRecord]:
+        """Search stocks by code or name, prioritized by exact code and prefix matches."""
+        ...
+
+    async def get_detail(self, code: str) -> StockDetail | None:
+        """Return stock metadata and snapshot availability for a 6-digit code."""
         ...
 
 
@@ -82,6 +95,36 @@ class WatchlistRepository(Protocol):
 
     async def remove(self, user_id: UUID, code: str) -> bool:
         """Delete a user's watchlist item by code; return whether a row was removed."""
+        ...
+
+
+class JournalRepository(Protocol):
+    async def list(
+        self,
+        user_id: UUID,
+        *,
+        code: str | None = None,
+        limit: int = 50,
+    ) -> list[JournalEntryItem]:
+        """Return a user's journal entries ordered by recency, optionally filtered by code."""
+        ...
+
+    async def create(self, user_id: UUID, payload: JournalCreate) -> JournalEntryItem:
+        """Persist a new journal entry scoped to the given user."""
+        ...
+
+    async def remove(self, user_id: UUID, entry_id: int) -> bool:
+        """Delete a user's journal entry by ID; return whether a row was removed."""
+        ...
+
+
+class EventRepository(Protocol):
+    async def list(self, user_id: UUID, *, limit: int = 50) -> list[UserEventItem]:
+        """Return a user's audit/behavior events ordered by recency."""
+        ...
+
+    async def record(self, user_id: UUID, payload: UserEventCreate) -> UserEventItem:
+        """Persist an audit/behavior event scoped to the given user."""
         ...
 
 

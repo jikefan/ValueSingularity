@@ -1,6 +1,45 @@
 {
   "components": {
     "schemas": {
+      "FalsifyRule": {
+        "properties": {
+          "metric": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Metric",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "lt",
+              "lte",
+              "gt",
+              "gte",
+              "eq"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "periods": {
+            "default": 1,
+            "maximum": 40.0,
+            "minimum": 1.0,
+            "title": "Periods",
+            "type": "integer"
+          },
+          "value": {
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric",
+          "op",
+          "value"
+        ],
+        "title": "FalsifyRule",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -95,6 +134,245 @@
           "net_inflow"
         ],
         "title": "IndustryFlow",
+        "type": "object"
+      },
+      "JournalAction": {
+        "description": "Supported investment decision actions in the journal.",
+        "enum": [
+          "buy",
+          "sell",
+          "add",
+          "trim",
+          "pass"
+        ],
+        "title": "JournalAction",
+        "type": "string"
+      },
+      "JournalCreate": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/JournalAction"
+          },
+          "benchmark_code": {
+            "default": "000300",
+            "pattern": "^\\d{6}$",
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "benchmark_price": {
+            "anyOf": [
+              {
+                "maximum": 999999999.999,
+                "minimum": 0.001,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Price"
+          },
+          "code": {
+            "pattern": "^\\d{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion"
+          },
+          "falsify_condition": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Falsify Condition",
+            "type": "string"
+          },
+          "falsify_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FalsifyRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Falsify Rules"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "maximum": 999999999.999,
+                "minimum": 0.001,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "reason": {
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "action",
+          "reason",
+          "falsify_condition"
+        ],
+        "title": "JournalCreate",
+        "type": "object"
+      },
+      "JournalEntryItem": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/JournalAction"
+          },
+          "benchmark_code": {
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "benchmark_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Price"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion"
+          },
+          "falsify_condition": {
+            "title": "Falsify Condition",
+            "type": "string"
+          },
+          "falsify_rules": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FalsifyRule"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Falsify Rules"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "action",
+          "reason",
+          "falsify_condition",
+          "benchmark_code",
+          "created_at"
+        ],
+        "title": "JournalEntryItem",
         "type": "object"
       },
       "LoginRequest": {
@@ -257,6 +535,161 @@
         "title": "RegisterRequest",
         "type": "object"
       },
+      "StockDetail": {
+        "properties": {
+          "code": {
+            "pattern": "^\\d{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "exchange": {
+            "enum": [
+              "SH",
+              "SZ",
+              "BJ"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "industry_sw1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry Sw1"
+          },
+          "industry_sw2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry Sw2"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_st": {
+            "default": false,
+            "title": "Is St",
+            "type": "boolean"
+          },
+          "list_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "List Date"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "snapshot_available": {
+            "default": false,
+            "title": "Snapshot Available",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "exchange"
+        ],
+        "title": "StockDetail",
+        "type": "object"
+      },
+      "StockMetaRecord": {
+        "properties": {
+          "code": {
+            "pattern": "^\\d{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "exchange": {
+            "enum": [
+              "SH",
+              "SZ",
+              "BJ"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "industry_sw1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry Sw1"
+          },
+          "industry_sw2": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry Sw2"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_st": {
+            "default": false,
+            "title": "Is St",
+            "type": "boolean"
+          },
+          "list_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "List Date"
+          },
+          "name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "exchange"
+        ],
+        "title": "StockMetaRecord",
+        "type": "object"
+      },
       "TemperatureLevel": {
         "description": "A-share market temperature bucket, from cold to hot.",
         "enum": [
@@ -294,6 +727,128 @@
           "user"
         ],
         "title": "TokenResponse",
+        "type": "object"
+      },
+      "UserEventCreate": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "type": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "UserEventCreate",
+        "type": "object"
+      },
+      "UserEventItem": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "ts"
+        ],
+        "title": "UserEventItem",
         "type": "object"
       },
       "UserProfile": {
@@ -738,6 +1293,104 @@
         ]
       }
     },
+    "/api/events": {
+      "get": {
+        "operationId": "events_list_events",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/UserEventItem"
+                  },
+                  "title": "Response Events List Events",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Events",
+        "tags": [
+          "events"
+        ]
+      },
+      "post": {
+        "operationId": "events_record_event",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserEventCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEventItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Record Event",
+        "tags": [
+          "events"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "description": "Liveness: the process answers at all.",
@@ -782,6 +1435,162 @@
         ]
       }
     },
+    "/api/journal": {
+      "get": {
+        "operationId": "journal_list_journal",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^\\d{6}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/JournalEntryItem"
+                  },
+                  "title": "Response Journal List Journal",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Journal",
+        "tags": [
+          "journal"
+        ]
+      },
+      "post": {
+        "operationId": "journal_create_journal",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JournalCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JournalEntryItem"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Journal",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/journal/{entry_id}": {
+      "delete": {
+        "operationId": "journal_remove_journal",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Entry Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Journal",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
     "/api/market/overview": {
       "get": {
         "operationId": "market_market_overview",
@@ -800,6 +1609,109 @@
         "summary": "Market Overview",
         "tags": [
           "market"
+        ]
+      }
+    },
+    "/api/stocks/search": {
+      "get": {
+        "operationId": "stocks_search_stocks",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/StockMetaRecord"
+                  },
+                  "title": "Response Stocks Search Stocks",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search Stocks",
+        "tags": [
+          "stocks"
+        ]
+      }
+    },
+    "/api/stocks/{code}": {
+      "get": {
+        "operationId": "stocks_get_stock",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{6}$",
+              "title": "Code",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Stock",
+        "tags": [
+          "stocks"
         ]
       }
     },

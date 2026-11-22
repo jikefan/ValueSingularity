@@ -5,7 +5,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from '../../lib/AuthProvider'
 import { setAccessToken } from '../../lib/api'
 import { createQueryClient } from '../../lib/queryClient'
-import type { TokenResponse, UserProfile, WatchlistItem, WatchlistUpsert } from '../../types/api'
+import type {
+  JournalEntryItem,
+  TokenResponse,
+  UserProfile,
+  WatchlistItem,
+  WatchlistUpsert,
+} from '../../types/api'
 import { MePage } from './MePage'
 
 const SAMPLE_USER: UserProfile = {
@@ -141,6 +147,9 @@ describe('MePage', () => {
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return jsonResponse(watchlistState, 200)
       }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
       if (pathname === '/api/watchlist' && request.method === 'PUT') {
         const body = parseWatchlistUpsert(await request.clone().text())
         putPayload = body
@@ -243,6 +252,9 @@ describe('MePage', () => {
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return Promise.resolve(jsonResponse([], 200))
       }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
       if (pathname === '/api/watchlist' && request.method === 'PUT') {
         putCalled = true
       }
@@ -283,5 +295,163 @@ describe('MePage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('目标价不能大于 999999999.999')
 
     expect(putCalled).toBe(false)
+  })
+
+  it('renders journal entries, filters Pass pool, and deletes via DELETE /api/journal/{id}', async () => {
+    let journalState: JournalEntryItem[] = [
+      {
+        id: 101,
+        code: '600519',
+        name: '贵州茅台',
+        action: 'buy',
+        reason: '批价企稳回升，分红率具备吸引力',
+        falsify_condition: '连续两季现金流低于净利润',
+        falsify_rules: null,
+        max_drawdown: 18,
+        emotion: '冷静',
+        price: 1450,
+        benchmark_code: '000300',
+        benchmark_price: null,
+        created_at: '2026-11-22T09:00:00Z',
+      },
+      {
+        id: 102,
+        code: '000858',
+        name: '五粮液',
+        action: 'pass',
+        reason: '短期渠道库存偏高，暂放入观察池',
+        falsify_condition: '春节动销超预期且估值回落至 12 倍以下',
+        falsify_rules: null,
+        max_drawdown: null,
+        emotion: '克制',
+        price: null,
+        benchmark_code: '000300',
+        benchmark_price: null,
+        created_at: '2026-11-22T10:00:00Z',
+      },
+    ]
+    let deletedJournalId: number | null = null
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'active-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([INITIAL_ITEM], 200))
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(journalState, 200))
+      }
+      if (pathname.startsWith('/api/journal/') && request.method === 'DELETE') {
+        deletedJournalId = Number(pathname.slice('/api/journal/'.length))
+        journalState = journalState.filter((entry) => entry.id !== deletedJournalId)
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(
+        jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
+      )
+    })
+
+    renderMePage()
+
+    expect(await screen.findByText('批价企稳回升，分红率具备吸引力')).toBeInTheDocument()
+    expect(screen.getByText('短期渠道库存偏高，暂放入观察池')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '000858' })).toHaveAttribute('href', '/stock/000858')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Pass 观察池' }))
+    expect(screen.queryByText('批价企稳回升，分红率具备吸引力')).not.toBeInTheDocument()
+    expect(screen.getByText('短期渠道库存偏高，暂放入观察池')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '买入 / 加仓' }))
+    expect(screen.getByText('批价企稳回升，分红率具备吸引力')).toBeInTheDocument()
+    expect(screen.queryByText('短期渠道库存偏高，暂放入观察池')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '全部' }))
+    const journalDeleteButtons = screen.getAllByRole('button', { name: '删除日记' })
+    expect(journalDeleteButtons).toHaveLength(2)
+    expect(screen.getAllByRole('button', { name: '删除' })).toHaveLength(1)
+
+    const secondJournalDelete = journalDeleteButtons[1]
+    expect(secondJournalDelete).toBeDefined()
+    if (secondJournalDelete) {
+      fireEvent.click(secondJournalDelete)
+    }
+
+    await waitFor(() => {
+      expect(screen.queryByText('短期渠道库存偏高，暂放入观察池')).not.toBeInTheDocument()
+    })
+    expect(deletedJournalId).toBe(102)
+  })
+
+  it('shows journal error block on 503 and recovers on retry', async () => {
+    let journalAttempts = 0
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'active-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([INITIAL_ITEM], 200))
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        journalAttempts += 1
+        if (journalAttempts === 1) {
+          return Promise.resolve(jsonResponse({ detail: '日记查询超时' }, 503))
+        }
+        return Promise.resolve(
+          jsonResponse(
+            [
+              {
+                id: 201,
+                code: '600519',
+                name: '贵州茅台',
+                action: 'add',
+                reason: '批价回升加仓',
+                falsify_condition: '库存周转恶化',
+                falsify_rules: null,
+                max_drawdown: null,
+                emotion: null,
+                price: null,
+                benchmark_code: '000300',
+                benchmark_price: null,
+                created_at: '2026-11-22T11:00:00Z',
+              },
+            ],
+            200,
+          ),
+        )
+      }
+      return Promise.resolve(
+        jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
+      )
+    })
+
+    renderMePage()
+
+    expect(await screen.findByText('决策日记加载失败')).toBeInTheDocument()
+    expect(screen.getByText('日记查询超时')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText('批价回升加仓')).toBeInTheDocument()
   })
 })

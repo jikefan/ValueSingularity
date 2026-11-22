@@ -188,6 +188,75 @@ p {
   background: linear-gradient(135deg, var(--accent), var(--electric));
 }
 
+.nav-search {
+  position: relative;
+  flex: 0 1 300px;
+  min-width: 180px;
+}
+
+.nav-search-input {
+  padding: 6px 12px;
+}
+
+.nav-search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  max-height: 340px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(5, 11, 17, 0.75);
+}
+
+.nav-search-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: calc(var(--radius-sm) - 3px);
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.nav-search-item:hover,
+.nav-search-item.active {
+  color: var(--white);
+  background: rgba(89, 198, 255, 0.12);
+}
+
+.nav-search-item-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.nav-search-item-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.nav-search-status {
+  padding: 10px 12px;
+  font-size: 12px;
+  color: var(--soft);
+}
+
 .spacer {
   flex: 1;
 }
@@ -603,6 +672,154 @@ p {
   text-decoration: underline;
 }
 
+.textarea {
+  min-height: 76px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* ---------- stock detail & tabs ---------- */
+.stock-header-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.stock-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.stock-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--white);
+}
+
+.stock-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tab-btn {
+  padding: 7px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--soft);
+  background: transparent;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+
+.tab-btn:hover {
+  border-color: var(--electric);
+  color: var(--white);
+}
+
+.tab-btn.active {
+  border-color: transparent;
+  color: var(--ink);
+  font-weight: 600;
+  background: linear-gradient(135deg, var(--accent), var(--electric));
+}
+
+/* ---------- journal & filters ---------- */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-pill {
+  padding: 5px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--soft);
+  background: transparent;
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+
+.filter-pill:hover {
+  border-color: var(--electric);
+  color: var(--white);
+}
+
+.filter-pill.active {
+  border-color: var(--electric);
+  color: var(--white);
+  background: rgba(89, 198, 255, 0.14);
+}
+
+.journal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.journal-item {
+  padding: 14px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--ink-2);
+}
+
+.journal-item-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.journal-item-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.journal-item-body {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.journal-field-label {
+  margin-right: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.journal-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 /* ---------- footer ---------- */
 .footer {
   padding: 20px;
@@ -613,7 +830,16 @@ p {
 }
 
 @media (max-width: 900px) {
-  .grid-4 {
+  .topnav-inner {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .nav-search {
+    order: 3;
+    flex: 1 1 100%;
+  }
+  .grid-4,
+  .stock-meta-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .grid-2,
@@ -629,7 +855,8 @@ p {
 }
 
 @media (max-width: 560px) {
-  .grid-4 {
+  .grid-4,
+  .stock-meta-grid {
     grid-template-columns: 1fr;
   }
   .nav-links a {

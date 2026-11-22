@@ -5,6 +5,12 @@ import { api, getAccessToken, subscribeAuthExpired } from './api'
 import { AuthContext, type AuthContextValue } from './authContext'
 import { queryKeys } from './queryKeys'
 
+const USER_SCOPED_QUERY_KEYS = [
+  queryKeys.watchlist.all,
+  queryKeys.journal.all,
+  queryKeys.events.all,
+] as const
+
 async function bootstrapSession(signal?: AbortSignal): Promise<UserProfile | null> {
   if (!getAccessToken()) {
     const session = await api.refreshSession()
@@ -15,6 +21,18 @@ async function bootstrapSession(signal?: AbortSignal): Promise<UserProfile | nul
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
+
+  const clearUserCaches = useCallback(() => {
+    for (const queryKey of USER_SCOPED_QUERY_KEYS) {
+      queryClient.removeQueries({ queryKey })
+    }
+  }, [queryClient])
+
+  const resetUserCaches = useCallback(async () => {
+    await Promise.all(
+      USER_SCOPED_QUERY_KEYS.map((queryKey) => queryClient.resetQueries({ queryKey })),
+    )
+  }, [queryClient])
 
   const { data, isPending } = useQuery({
     queryKey: queryKeys.auth.me(),
@@ -27,19 +45,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     return subscribeAuthExpired(() => {
       queryClient.setQueryData(queryKeys.auth.me(), null)
-      queryClient.removeQueries({ queryKey: queryKeys.watchlist.all })
+      clearUserCaches()
     })
-  }, [queryClient])
+  }, [clearUserCaches, queryClient])
 
   const login = useCallback(
     async (body: LoginRequest): Promise<UserProfile> => {
       const res = await api.login(body)
       await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
       queryClient.setQueryData(queryKeys.auth.me(), res.user)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.watchlist.all })
+      await resetUserCaches()
       return res.user
     },
-    [queryClient],
+    [queryClient, resetUserCaches],
   )
 
   const register = useCallback(
@@ -47,10 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await api.register(body)
       await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
       queryClient.setQueryData(queryKeys.auth.me(), res.user)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.watchlist.all })
+      await resetUserCaches()
       return res.user
     },
-    [queryClient],
+    [queryClient, resetUserCaches],
   )
 
   const logout = useCallback(async (): Promise<void> => {
@@ -61,9 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       await queryClient.cancelQueries({ queryKey: queryKeys.auth.me() })
       queryClient.setQueryData(queryKeys.auth.me(), null)
-      queryClient.removeQueries({ queryKey: queryKeys.watchlist.all })
+      clearUserCaches()
     }
-  }, [queryClient])
+  }, [clearUserCaches, queryClient])
 
   const value = useMemo<AuthContextValue>(
     () => ({

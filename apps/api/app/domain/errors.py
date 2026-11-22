@@ -19,3 +19,15 @@ class MarketFeedUnavailableError(Exception):
         super().__init__(f"行情数据源不可用 ({source}): {detail}")
         self.source = source
         self.detail = detail
+
+
+class StockNotFoundError(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(f"未找到股票 {code}")
+        self.code = code
+
+
+class JournalEntryNotFoundError(Exception):
+    def __init__(self, entry_id: int) -> None:
+        super().__init__(f"决策日记 #{entry_id} 不存在")
+        self.entry_id = entry_id
