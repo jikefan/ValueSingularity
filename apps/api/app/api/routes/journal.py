@@ -5,7 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from app.api.deps import CurrentUserDep, DatabaseUnavailableError, JournalServiceDep
-from app.domain.models import JournalAction, JournalCreate, JournalEntryItem
+from app.domain.models import (
+    DecisionLedgerReport,
+    JournalAction,
+    JournalCreate,
+    JournalEntryItem,
+)
 from app.services.journal import JournalEntryNotFoundError
 
 router = APIRouter(prefix="/journal", tags=["journal"])
@@ -36,6 +41,21 @@ async def create_journal(
 ) -> JournalEntryItem:
     try:
         return await service.create(user.id, payload)
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"数据库不可用: {exc}",
+        ) from exc
+
+
+@router.get("/ledger", response_model=DecisionLedgerReport)
+async def get_journal_ledger(
+    user: CurrentUserDep,
+    service: JournalServiceDep,
+    limit: Annotated[int, Query(ge=1, le=200)] = 200,
+) -> DecisionLedgerReport:
+    try:
+        return await service.ledger(user.id, limit=limit)
     except DatabaseUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

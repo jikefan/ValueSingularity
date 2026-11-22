@@ -4,6 +4,58 @@
  */
 
 export interface paths {
+    "/api/alerts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Alerts */
+        get: operations["alerts_list_alerts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alerts/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Alert Preferences */
+        get: operations["alerts_get_alert_preferences"];
+        /** Update Alert Preferences */
+        put: operations["alerts_update_alert_preferences"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alerts/scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Scan Alerts */
+        post: operations["alerts_scan_alerts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/login": {
         parameters: {
             query?: never;
@@ -165,6 +217,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/journal/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Journal Ledger */
+        get: operations["journal_get_journal_ledger"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/journal/{entry_id}": {
         parameters: {
             query?: never;
@@ -307,6 +376,99 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActionLedgerRow */
+        ActionLedgerRow: {
+            action: components["schemas"]["JournalAction"];
+            /** Avg Excess Return Pct */
+            avg_excess_return_pct?: number | null;
+            /** Avg Stock Return Pct */
+            avg_stock_return_pct?: number | null;
+            /** Comparable Count */
+            comparable_count: number;
+            /** Total Count */
+            total_count: number;
+            /** Win Count */
+            win_count: number;
+            /** Win Rate Pct */
+            win_rate_pct?: number | null;
+        };
+        /** AlertDeliveryItem */
+        AlertDeliveryItem: {
+            /** Channel */
+            channel: string;
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Dividend Yield Pct */
+            current_dividend_yield_pct?: number | null;
+            /** Current Pe Percentile */
+            current_pe_percentile?: number | null;
+            /** Current Price */
+            current_price?: number | null;
+            /** Detail */
+            detail: string;
+            /** Id */
+            id: number;
+            /** Matched Conditions */
+            matched_conditions: string[];
+            /** Rule Signature */
+            rule_signature: string;
+            /**
+             * Source Type
+             * @enum {string}
+             */
+            source_type: "watchlist_sentinel" | "journal_falsify";
+            /** Status */
+            status: string;
+            /** Stock Name */
+            stock_name?: string | null;
+            /**
+             * Trigger Date
+             * Format: date
+             */
+            trigger_date: string;
+        };
+        /** AlertScanSummary */
+        AlertScanSummary: {
+            /** As Of */
+            as_of?: string | null;
+            /** Deliveries */
+            deliveries?: components["schemas"]["AlertDeliveryItem"][];
+            /**
+             * Evaluated Rules
+             * @default 0
+             */
+            evaluated_rules: number;
+            /**
+             * Matched Count
+             * @default 0
+             */
+            matched_count: number;
+            /**
+             * Newly Triggered Count
+             * @default 0
+             */
+            newly_triggered_count: number;
+            /**
+             * Users Scanned
+             * @default 1
+             */
+            users_scanned: number;
+            /**
+             * Webhook Failed Count
+             * @default 0
+             */
+            webhook_failed_count: number;
+            /**
+             * Webhook Sent Count
+             * @default 0
+             */
+            webhook_sent_count: number;
+        };
         /** AnnualFinancialTrendPoint */
         AnnualFinancialTrendPoint: {
             /** Deduct Net Profit Yuan */
@@ -377,6 +539,57 @@ export interface components {
             };
             /** Year */
             year: number;
+        };
+        /** DecisionLedgerReport */
+        DecisionLedgerReport: {
+            /** Avg Excess Return Pct */
+            avg_excess_return_pct?: number | null;
+            /** Avg Stock Return Pct */
+            avg_stock_return_pct?: number | null;
+            /** Benchmark As Of */
+            benchmark_as_of?: string | null;
+            /** By Action */
+            by_action: components["schemas"]["ActionLedgerRow"][];
+            /** By Emotion */
+            by_emotion: components["schemas"]["EmotionLedgerRow"][];
+            /** Comparable Count */
+            comparable_count: number;
+            /**
+             * Current Benchmark Code
+             * @default 000300
+             */
+            current_benchmark_code: string;
+            /** Current Benchmark Price */
+            current_benchmark_price?: number | null;
+            /** Items */
+            items: components["schemas"]["JournalEntryComparison"][];
+            /** Pass Avoided Loss Count */
+            pass_avoided_loss_count: number;
+            /** Pass Count */
+            pass_count: number;
+            /** Total Entries */
+            total_entries: number;
+            /** Win Count */
+            win_count: number;
+            /** Win Rate Pct */
+            win_rate_pct?: number | null;
+        };
+        /** EmotionLedgerRow */
+        EmotionLedgerRow: {
+            /** Avg Excess Return Pct */
+            avg_excess_return_pct?: number | null;
+            /** Avg Stock Return Pct */
+            avg_stock_return_pct?: number | null;
+            /** Comparable Count */
+            comparable_count: number;
+            /** Emotion */
+            emotion: string;
+            /** Total Count */
+            total_count: number;
+            /** Win Count */
+            win_count: number;
+            /** Win Rate Pct */
+            win_rate_pct?: number | null;
         };
         /** FalsifyRule */
         FalsifyRule: {
@@ -499,6 +712,54 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** JournalEntryComparison */
+        JournalEntryComparison: {
+            action: components["schemas"]["JournalAction"];
+            /** Benchmark Return Pct */
+            benchmark_return_pct?: number | null;
+            /** Code */
+            code: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Current Benchmark Price */
+            current_benchmark_price?: number | null;
+            /** Current Pe Ttm */
+            current_pe_ttm?: number | null;
+            /** Current Price */
+            current_price?: number | null;
+            /** Current Score */
+            current_score?: number | null;
+            /** Days Held */
+            days_held: number;
+            /** Emotion */
+            emotion?: string | null;
+            /** Entry Benchmark Price */
+            entry_benchmark_price?: number | null;
+            /** Entry Pe Ttm */
+            entry_pe_ttm?: number | null;
+            /** Entry Price */
+            entry_price?: number | null;
+            /** Entry Score */
+            entry_score?: number | null;
+            /** Excess Return Pct */
+            excess_return_pct?: number | null;
+            /**
+             * Falsify Triggered
+             * @default false
+             */
+            falsify_triggered: boolean;
+            /** Falsify Triggers */
+            falsify_triggers?: string[];
+            /** Id */
+            id: number;
+            /** Name */
+            name?: string | null;
+            /** Stock Return Pct */
+            stock_return_pct?: number | null;
+        };
         /** JournalEntryItem */
         JournalEntryItem: {
             action: components["schemas"]["JournalAction"];
@@ -529,6 +790,41 @@ export interface components {
             price?: number | null;
             /** Reason */
             reason: string;
+            snapshot?: components["schemas"]["JournalTimeCapsule"] | null;
+        };
+        /** JournalTimeCapsule */
+        JournalTimeCapsule: {
+            /** As Of */
+            as_of?: string | null;
+            /** Benchmark As Of */
+            benchmark_as_of?: string | null;
+            /**
+             * Benchmark Code
+             * @default 000300
+             */
+            benchmark_code: string;
+            /** Benchmark Price */
+            benchmark_price?: number | null;
+            /** Close */
+            close?: number | null;
+            /** Ct Red Count */
+            ct_red_count?: number | null;
+            /** Ct Yellow Count */
+            ct_yellow_count?: number | null;
+            /** Dividend Yield Pct */
+            dividend_yield_pct?: number | null;
+            /** Implied Fcf Cagr Pct */
+            implied_fcf_cagr_pct?: number | null;
+            /** Pb */
+            pb?: number | null;
+            /** Pe Percentile 10Y */
+            pe_percentile_10y?: number | null;
+            /** Pe Ttm */
+            pe_ttm?: number | null;
+            /** Roe 5Y Avg Pct */
+            roe_5y_avg_pct?: number | null;
+            /** Total Score */
+            total_score?: number | null;
         };
         /** LoginRequest */
         LoginRequest: {
@@ -547,6 +843,8 @@ export interface components {
              * Format: date
              */
             as_of: string;
+            /** Benchmark Indices */
+            benchmark_indices?: components["schemas"]["IndexQuote"][];
             /**
              * Data Source
              * @default akshare
@@ -624,6 +922,53 @@ export interface components {
             roe_5y_avg_pct?: number | null;
             /** Roic Approx Pct */
             roic_approx_pct?: number | null;
+        };
+        /** NotificationPreferences */
+        NotificationPreferences: {
+            /**
+             * Channel Type
+             * @default feishu
+             * @enum {string}
+             */
+            channel_type: "feishu" | "wecom" | "custom";
+            /**
+             * In App Enabled
+             * @default true
+             */
+            in_app_enabled: boolean;
+            /**
+             * Webhook Enabled
+             * @default false
+             */
+            webhook_enabled: boolean;
+            /**
+             * Webhook Url Configured
+             * @default false
+             */
+            webhook_url_configured: boolean;
+            /** Webhook Url Masked */
+            webhook_url_masked?: string | null;
+        };
+        /** NotificationPreferencesUpdate */
+        NotificationPreferencesUpdate: {
+            /**
+             * Channel Type
+             * @default feishu
+             * @enum {string}
+             */
+            channel_type: "feishu" | "wecom" | "custom";
+            /**
+             * In App Enabled
+             * @default true
+             */
+            in_app_enabled: boolean;
+            /**
+             * Webhook Enabled
+             * @default false
+             */
+            webhook_enabled: boolean;
+            /** Webhook Url */
+            webhook_url?: string | null;
         };
         /** PeerBenchmarkMetrics */
         PeerBenchmarkMetrics: {
@@ -1089,6 +1434,110 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    alerts_list_alerts: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertDeliveryItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    alerts_get_alert_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferences"];
+                };
+            };
+        };
+    };
+    alerts_update_alert_preferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationPreferencesUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationPreferences"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    alerts_scan_alerts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertScanSummary"];
+                };
+            };
+        };
+    };
     auth_login: {
         parameters: {
             query?: never;
@@ -1370,6 +1819,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JournalEntryItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    journal_get_journal_ledger: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionLedgerReport"];
                 };
             };
             /** @description Validation Error */

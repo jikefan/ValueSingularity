@@ -35,6 +35,15 @@ export const queryKeys = {
         code ?? 'all',
         actions && actions.length > 0 ? [...actions].sort().join(',') : 'all',
       ] as const,
+    ledger: (limit?: number) =>
+      limit === undefined
+        ? (['journal', 'ledger'] as const)
+        : (['journal', 'ledger', limit] as const),
+  },
+  alerts: {
+    all: ['alerts'] as const,
+    list: (limit = 50) => ['alerts', 'list', limit] as const,
+    preferences: () => ['alerts', 'preferences'] as const,
   },
   events: {
     all: ['events'] as const,

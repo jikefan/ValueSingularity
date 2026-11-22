@@ -45,3 +45,8 @@ class JournalEntryNotFoundError(Exception):
     def __init__(self, entry_id: int) -> None:
         super().__init__(f"决策日记 #{entry_id} 不存在")
         self.entry_id = entry_id
+
+
+class NotificationConfigError(Exception):
+    def __init__(self, message: str) -> None:
+        super().__init__(message)

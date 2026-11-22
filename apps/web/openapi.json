@@ -1,6 +1,241 @@
 {
   "components": {
     "schemas": {
+      "ActionLedgerRow": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/JournalAction"
+          },
+          "avg_excess_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Excess Return Pct"
+          },
+          "avg_stock_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Stock Return Pct"
+          },
+          "comparable_count": {
+            "minimum": 0.0,
+            "title": "Comparable Count",
+            "type": "integer"
+          },
+          "total_count": {
+            "minimum": 0.0,
+            "title": "Total Count",
+            "type": "integer"
+          },
+          "win_count": {
+            "minimum": 0.0,
+            "title": "Win Count",
+            "type": "integer"
+          },
+          "win_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate Pct"
+          }
+        },
+        "required": [
+          "action",
+          "total_count",
+          "comparable_count",
+          "win_count"
+        ],
+        "title": "ActionLedgerRow",
+        "type": "object"
+      },
+      "AlertDeliveryItem": {
+        "properties": {
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_dividend_yield_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Dividend Yield Pct"
+          },
+          "current_pe_percentile": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Pe Percentile"
+          },
+          "current_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Price"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "matched_conditions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Matched Conditions",
+            "type": "array"
+          },
+          "rule_signature": {
+            "title": "Rule Signature",
+            "type": "string"
+          },
+          "source_type": {
+            "enum": [
+              "watchlist_sentinel",
+              "journal_falsify"
+            ],
+            "title": "Source Type",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "stock_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Name"
+          },
+          "trigger_date": {
+            "format": "date",
+            "title": "Trigger Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_type",
+          "code",
+          "trigger_date",
+          "rule_signature",
+          "matched_conditions",
+          "detail",
+          "channel",
+          "status",
+          "created_at"
+        ],
+        "title": "AlertDeliveryItem",
+        "type": "object"
+      },
+      "AlertScanSummary": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/AlertDeliveryItem"
+            },
+            "title": "Deliveries",
+            "type": "array"
+          },
+          "evaluated_rules": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Evaluated Rules",
+            "type": "integer"
+          },
+          "matched_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Matched Count",
+            "type": "integer"
+          },
+          "newly_triggered_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Newly Triggered Count",
+            "type": "integer"
+          },
+          "users_scanned": {
+            "default": 1,
+            "minimum": 0.0,
+            "title": "Users Scanned",
+            "type": "integer"
+          },
+          "webhook_failed_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Webhook Failed Count",
+            "type": "integer"
+          },
+          "webhook_sent_count": {
+            "default": 0,
+            "minimum": 0.0,
+            "title": "Webhook Sent Count",
+            "type": "integer"
+          }
+        },
+        "title": "AlertScanSummary",
+        "type": "object"
+      },
       "AnnualFinancialTrendPoint": {
         "properties": {
           "deduct_net_profit_yuan": {
@@ -254,6 +489,193 @@
           "metrics"
         ],
         "title": "CtRuleEvidence",
+        "type": "object"
+      },
+      "DecisionLedgerReport": {
+        "properties": {
+          "avg_excess_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Excess Return Pct"
+          },
+          "avg_stock_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Stock Return Pct"
+          },
+          "benchmark_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark As Of"
+          },
+          "by_action": {
+            "items": {
+              "$ref": "#/components/schemas/ActionLedgerRow"
+            },
+            "title": "By Action",
+            "type": "array"
+          },
+          "by_emotion": {
+            "items": {
+              "$ref": "#/components/schemas/EmotionLedgerRow"
+            },
+            "title": "By Emotion",
+            "type": "array"
+          },
+          "comparable_count": {
+            "minimum": 0.0,
+            "title": "Comparable Count",
+            "type": "integer"
+          },
+          "current_benchmark_code": {
+            "default": "000300",
+            "title": "Current Benchmark Code",
+            "type": "string"
+          },
+          "current_benchmark_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Benchmark Price"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JournalEntryComparison"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "pass_avoided_loss_count": {
+            "minimum": 0.0,
+            "title": "Pass Avoided Loss Count",
+            "type": "integer"
+          },
+          "pass_count": {
+            "minimum": 0.0,
+            "title": "Pass Count",
+            "type": "integer"
+          },
+          "total_entries": {
+            "minimum": 0.0,
+            "title": "Total Entries",
+            "type": "integer"
+          },
+          "win_count": {
+            "minimum": 0.0,
+            "title": "Win Count",
+            "type": "integer"
+          },
+          "win_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate Pct"
+          }
+        },
+        "required": [
+          "total_entries",
+          "comparable_count",
+          "win_count",
+          "pass_count",
+          "pass_avoided_loss_count",
+          "by_emotion",
+          "by_action",
+          "items"
+        ],
+        "title": "DecisionLedgerReport",
+        "type": "object"
+      },
+      "EmotionLedgerRow": {
+        "properties": {
+          "avg_excess_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Excess Return Pct"
+          },
+          "avg_stock_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Stock Return Pct"
+          },
+          "comparable_count": {
+            "minimum": 0.0,
+            "title": "Comparable Count",
+            "type": "integer"
+          },
+          "emotion": {
+            "title": "Emotion",
+            "type": "string"
+          },
+          "total_count": {
+            "minimum": 0.0,
+            "title": "Total Count",
+            "type": "integer"
+          },
+          "win_count": {
+            "minimum": 0.0,
+            "title": "Win Count",
+            "type": "integer"
+          },
+          "win_rate_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate Pct"
+          }
+        },
+        "required": [
+          "emotion",
+          "total_count",
+          "comparable_count",
+          "win_count"
+        ],
+        "title": "EmotionLedgerRow",
         "type": "object"
       },
       "FalsifyRule": {
@@ -636,6 +1058,195 @@
         "title": "JournalCreate",
         "type": "object"
       },
+      "JournalEntryComparison": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/JournalAction"
+          },
+          "benchmark_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Return Pct"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_benchmark_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Benchmark Price"
+          },
+          "current_pe_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Pe Ttm"
+          },
+          "current_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Price"
+          },
+          "current_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Score"
+          },
+          "days_held": {
+            "minimum": 0.0,
+            "title": "Days Held",
+            "type": "integer"
+          },
+          "emotion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emotion"
+          },
+          "entry_benchmark_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Benchmark Price"
+          },
+          "entry_pe_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Pe Ttm"
+          },
+          "entry_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Price"
+          },
+          "entry_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Score"
+          },
+          "excess_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excess Return Pct"
+          },
+          "falsify_triggered": {
+            "default": false,
+            "title": "Falsify Triggered",
+            "type": "boolean"
+          },
+          "falsify_triggers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Falsify Triggers",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "stock_return_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stock Return Pct"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "action",
+          "created_at",
+          "days_held"
+        ],
+        "title": "JournalEntryComparison",
+        "type": "object"
+      },
       "JournalEntryItem": {
         "properties": {
           "action": {
@@ -734,6 +1345,16 @@
           "reason": {
             "title": "Reason",
             "type": "string"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JournalTimeCapsule"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -746,6 +1367,162 @@
           "created_at"
         ],
         "title": "JournalEntryItem",
+        "type": "object"
+      },
+      "JournalTimeCapsule": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "benchmark_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark As Of"
+          },
+          "benchmark_code": {
+            "default": "000300",
+            "title": "Benchmark Code",
+            "type": "string"
+          },
+          "benchmark_price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Price"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "ct_red_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ct Red Count"
+          },
+          "ct_yellow_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ct Yellow Count"
+          },
+          "dividend_yield_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield Pct"
+          },
+          "implied_fcf_cagr_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implied Fcf Cagr Pct"
+          },
+          "pb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pb"
+          },
+          "pe_percentile_10y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe Percentile 10Y"
+          },
+          "pe_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe Ttm"
+          },
+          "roe_5y_avg_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roe 5Y Avg Pct"
+          },
+          "total_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Score"
+          }
+        },
+        "title": "JournalTimeCapsule",
         "type": "object"
       },
       "LoginRequest": {
@@ -775,6 +1552,13 @@
             "format": "date",
             "title": "As Of",
             "type": "string"
+          },
+          "benchmark_indices": {
+            "items": {
+              "$ref": "#/components/schemas/IndexQuote"
+            },
+            "title": "Benchmark Indices",
+            "type": "array"
           },
           "data_source": {
             "default": "akshare",
@@ -969,6 +1753,86 @@
           "dimensions"
         ],
         "title": "MoatSection",
+        "type": "object"
+      },
+      "NotificationPreferences": {
+        "properties": {
+          "channel_type": {
+            "default": "feishu",
+            "enum": [
+              "feishu",
+              "wecom",
+              "custom"
+            ],
+            "title": "Channel Type",
+            "type": "string"
+          },
+          "in_app_enabled": {
+            "default": true,
+            "title": "In App Enabled",
+            "type": "boolean"
+          },
+          "webhook_enabled": {
+            "default": false,
+            "title": "Webhook Enabled",
+            "type": "boolean"
+          },
+          "webhook_url_configured": {
+            "default": false,
+            "title": "Webhook Url Configured",
+            "type": "boolean"
+          },
+          "webhook_url_masked": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Url Masked"
+          }
+        },
+        "title": "NotificationPreferences",
+        "type": "object"
+      },
+      "NotificationPreferencesUpdate": {
+        "properties": {
+          "channel_type": {
+            "default": "feishu",
+            "enum": [
+              "feishu",
+              "wecom",
+              "custom"
+            ],
+            "title": "Channel Type",
+            "type": "string"
+          },
+          "in_app_enabled": {
+            "default": true,
+            "title": "In App Enabled",
+            "type": "boolean"
+          },
+          "webhook_enabled": {
+            "default": false,
+            "title": "Webhook Enabled",
+            "type": "boolean"
+          },
+          "webhook_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Webhook Url"
+          }
+        },
+        "title": "NotificationPreferencesUpdate",
         "type": "object"
       },
       "PeerBenchmarkMetrics": {
@@ -2515,6 +3379,156 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/alerts": {
+      "get": {
+        "operationId": "alerts_list_alerts",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AlertDeliveryItem"
+                  },
+                  "title": "Response Alerts List Alerts",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Alerts",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/alerts/preferences": {
+      "get": {
+        "operationId": "alerts_get_alert_preferences",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Alert Preferences",
+        "tags": [
+          "alerts"
+        ]
+      },
+      "put": {
+        "operationId": "alerts_update_alert_preferences",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotificationPreferencesUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Alert Preferences",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/alerts/scan": {
+      "post": {
+        "operationId": "alerts_scan_alerts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertScanSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Scan Alerts",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "auth_login",
@@ -2929,6 +3943,56 @@
           }
         ],
         "summary": "Create Journal",
+        "tags": [
+          "journal"
+        ]
+      }
+    },
+    "/api/journal/ledger": {
+      "get": {
+        "operationId": "journal_get_journal_ledger",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionLedgerReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Journal Ledger",
         "tags": [
           "journal"
         ]

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { JournalEntryCard } from '../../components/ui/JournalEntryCard'
@@ -6,10 +6,19 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateB
 import { Tag } from '../../components/ui/Tag'
 import { useAuth } from '../../lib/authContext'
 import { formatNum, formatPct, formatSignedPct } from '../../lib/format'
-import { JOURNAL_ACTION_META } from '../../lib/journalLabels'
+import {
+  FALSIFY_METRIC_OPTIONS,
+  FALSIFY_OP_OPTIONS,
+  FALSIFY_RULE_PRESETS,
+  isMultiPeriodFalsifyMetric,
+  JOURNAL_ACTION_META,
+  JOURNAL_EMOTION_PRESETS,
+  type FalsifyOp,
+} from '../../lib/journalLabels'
 import { useCreateJournal, useJournal, useRemoveJournal } from '../../lib/useJournal'
 import { parseOptionalNumber } from '../../lib/validation'
 import type {
+  FalsifyRule,
   JournalAction,
   JournalCreate,
   StockDetail,
@@ -17,11 +26,24 @@ import type {
 } from '../../types/api'
 
 const ACTION_OPTIONS: JournalAction[] = ['buy', 'add', 'trim', 'sell', 'pass']
+const MAX_FALSIFY_RULES = 5
+
+type FalsifyRuleDraft = {
+  id: number
+  metric: string
+  op: FalsifyOp
+  value: string
+  periods: string
+}
 
 function isJournalAction(value: string): value is JournalAction {
   return (
     value === 'buy' || value === 'add' || value === 'trim' || value === 'sell' || value === 'pass'
   )
+}
+
+function isFalsifyOp(value: string): value is FalsifyOp {
+  return value === 'lt' || value === 'lte' || value === 'gt' || value === 'gte' || value === 'eq'
 }
 
 export function StockDecisionTab({
@@ -36,13 +58,45 @@ export function StockDecisionTab({
   const createJournal = useCreateJournal()
   const removeJournal = useRemoveJournal()
 
+  const nextRuleIdRef = useRef(1)
   const [action, setAction] = useState<JournalAction>('buy')
   const [reason, setReason] = useState('')
   const [falsifyCondition, setFalsifyCondition] = useState('')
   const [price, setPrice] = useState('')
   const [maxDrawdown, setMaxDrawdown] = useState('')
   const [emotion, setEmotion] = useState('')
+  const [ruleDrafts, setRuleDrafts] = useState<FalsifyRuleDraft[]>([])
   const [formError, setFormError] = useState<string | null>(null)
+
+  function addRuleDraft(initial?: FalsifyRule) {
+    setRuleDrafts((prev) => {
+      if (prev.length >= MAX_FALSIFY_RULES) {
+        return prev
+      }
+      const id = nextRuleIdRef.current
+      nextRuleIdRef.current += 1
+      const metric = initial?.metric ?? 'pe_ttm'
+      const supportsMultiPeriod = isMultiPeriodFalsifyMetric(metric)
+      return [
+        ...prev,
+        {
+          id,
+          metric,
+          op: initial?.op ?? 'gte',
+          value: initial !== undefined ? String(initial.value) : '',
+          periods: supportsMultiPeriod && initial !== undefined ? String(initial.periods) : '1',
+        },
+      ]
+    })
+  }
+
+  function updateRuleDraft(id: number, patch: Partial<Omit<FalsifyRuleDraft, 'id'>>) {
+    setRuleDrafts((prev) => prev.map((draft) => (draft.id === id ? { ...draft, ...patch } : draft)))
+  }
+
+  function removeRuleDraft(id: number) {
+    setRuleDrafts((prev) => prev.filter((draft) => draft.id !== id))
+  }
 
   function handleSubmit() {
     const trimmedReason = reason.trim()
@@ -88,6 +142,60 @@ export function StockDecisionTab({
       return
     }
 
+    const parsedRules: FalsifyRule[] = []
+    for (let idx = 0; idx < ruleDrafts.length; idx += 1) {
+      const draft = ruleDrafts[idx]
+      if (!draft) {
+        continue
+      }
+      const metric = draft.metric.trim()
+      if (!metric || metric.length > 64) {
+        setFormError(`第 ${idx + 1} 条否证规则指标无效`)
+        return
+      }
+      if (!draft.value.trim()) {
+        setFormError(`请填写第 ${idx + 1} 条否证规则的阈值`)
+        return
+      }
+      const parsedValue = parseOptionalNumber(draft.value, `第 ${idx + 1} 条规则阈值`, {
+        min: -1e12,
+        max: 1e12,
+      })
+      if (!parsedValue.ok || parsedValue.value === null) {
+        setFormError(parsedValue.ok ? `请填写第 ${idx + 1} 条否证规则的阈值` : parsedValue.error)
+        return
+      }
+      const supportsMultiPeriod = isMultiPeriodFalsifyMetric(metric)
+      let periodsValue = 1
+      if (supportsMultiPeriod) {
+        if (!draft.periods.trim()) {
+          setFormError(`请填写第 ${idx + 1} 条否证规则的连续期数`)
+          return
+        }
+        const parsedPeriods = parseOptionalNumber(draft.periods, `第 ${idx + 1} 条规则连续期数`, {
+          min: 1,
+          max: 10,
+        })
+        if (
+          !parsedPeriods.ok ||
+          parsedPeriods.value === null ||
+          !Number.isInteger(parsedPeriods.value)
+        ) {
+          setFormError(
+            parsedPeriods.ok ? `第 ${idx + 1} 条规则连续期数须为 1–10 的整数` : parsedPeriods.error,
+          )
+          return
+        }
+        periodsValue = parsedPeriods.value
+      }
+      parsedRules.push({
+        metric,
+        op: draft.op,
+        value: parsedValue.value,
+        periods: periodsValue,
+      })
+    }
+
     setFormError(null)
     const payload: JournalCreate = {
       code: stock.code,
@@ -99,6 +207,7 @@ export function StockDecisionTab({
       max_drawdown: parsedDrawdown.value,
       emotion: trimmedEmotion || null,
       benchmark_code: '000300',
+      ...(parsedRules.length > 0 ? { falsify_rules: parsedRules } : {}),
     }
 
     createJournal.mutate(payload, {
@@ -108,6 +217,7 @@ export function StockDecisionTab({
         setPrice('')
         setMaxDrawdown('')
         setEmotion('')
+        setRuleDrafts([])
       },
     })
   }
@@ -125,6 +235,11 @@ export function StockDecisionTab({
       <Tag color="amber">{`雷达评分 ${snapshot.radar.total_score}/100`}</Tag>
     </div>
   ) : null
+
+  const dividendYieldPct = snapshot
+    ? (snapshot.valuation.dividend_yield_pct ??
+      snapshot.shareholder_return.current_dividend_yield_pct)
+    : null
 
   if (isAuthLoading) {
     return (
@@ -183,6 +298,15 @@ export function StockDecisionTab({
             handleSubmit()
           }}
         >
+          {snapshot ? (
+            <div className="notice-box decision-capsule-hint">
+              <strong>时间胶囊将自动留存：</strong>
+              <span>
+                {`股价 ${formatNum(snapshot.valuation.close, 2)} · PE(TTM) ${formatNum(snapshot.valuation.pe_ttm, 2)} · 股息率 ${formatPct(dividendYieldPct, 2)} · 雷达评分 ${snapshot.radar.total_score}/100（及沪深 300 基准点位）`}
+              </span>
+            </div>
+          ) : null}
+
           <div className="form-grid">
             <div className="field">
               <label htmlFor="journal-action">决策动作</label>
@@ -216,6 +340,22 @@ export function StockDecisionTab({
                 value={emotion}
                 onChange={(event) => setEmotion(event.target.value)}
               />
+              <div className="emotion-chips" role="group" aria-label="快捷情绪标签">
+                {JOURNAL_EMOTION_PRESETS.map((preset) => {
+                  const active = emotion.trim() === preset
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      aria-pressed={active}
+                      className={active ? 'filter-pill active' : 'filter-pill'}
+                      onClick={() => setEmotion(active ? '' : preset)}
+                    >
+                      {preset}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
 
             <div className="field">
@@ -287,6 +427,137 @@ export function StockDecisionTab({
                 value={falsifyCondition}
                 onChange={(event) => setFalsifyCondition(event.target.value)}
               />
+            </div>
+
+            <div className="field field-full">
+              <div className="falsify-builder">
+                <div className="falsify-builder-head">
+                  <span className="small soft">
+                    量化否证红线构建器（可选 · {ruleDrafts.length}/{MAX_FALSIFY_RULES}）
+                  </span>
+                  <div className="falsify-preset-row">
+                    {FALSIFY_RULE_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        className="btn-ghost"
+                        disabled={ruleDrafts.length >= MAX_FALSIFY_RULES}
+                        onClick={() => addRuleDraft(preset.rule)}
+                      >
+                        + {preset.label}
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      disabled={ruleDrafts.length >= MAX_FALSIFY_RULES}
+                      onClick={() => addRuleDraft()}
+                    >
+                      + 自定义规则
+                    </button>
+                  </div>
+                </div>
+
+                {ruleDrafts.length > 0 ? (
+                  <div className="falsify-rule-list">
+                    {ruleDrafts.map((draft, index) => {
+                      const supportsMultiPeriod = isMultiPeriodFalsifyMetric(draft.metric)
+                      return (
+                        <div key={draft.id} className="stack" style={{ gap: 4 }}>
+                          <div className="falsify-rule-row">
+                            <select
+                              aria-label={`规则 ${index + 1} 指标`}
+                              className="input"
+                              value={draft.metric}
+                              onChange={(event) => {
+                                const nextMetric = event.target.value
+                                updateRuleDraft(draft.id, {
+                                  metric: nextMetric,
+                                  ...(isMultiPeriodFalsifyMetric(nextMetric)
+                                    ? {}
+                                    : { periods: '1' }),
+                                })
+                              }}
+                            >
+                              {FALSIFY_METRIC_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.unit ? `${opt.label} (${opt.unit})` : opt.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <select
+                              aria-label={`规则 ${index + 1} 条件`}
+                              className="input mono"
+                              value={draft.op}
+                              onChange={(event) => {
+                                const next = event.target.value
+                                if (isFalsifyOp(next)) {
+                                  updateRuleDraft(draft.id, { op: next })
+                                }
+                              }}
+                            >
+                              {FALSIFY_OP_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+
+                            <input
+                              aria-label={`规则 ${index + 1} 阈值`}
+                              className="input mono"
+                              type="number"
+                              step="any"
+                              placeholder="阈值"
+                              value={draft.value}
+                              onChange={(event) =>
+                                updateRuleDraft(draft.id, { value: event.target.value })
+                              }
+                            />
+
+                            <div className="falsify-periods-wrap">
+                              <input
+                                aria-label={`规则 ${index + 1} 连续期数`}
+                                className="input mono"
+                                type="number"
+                                min={1}
+                                max={10}
+                                step={1}
+                                disabled={!supportsMultiPeriod}
+                                title={
+                                  supportsMultiPeriod ? undefined : '当期快照指标按最新 1 期判定'
+                                }
+                                value={supportsMultiPeriod ? draft.periods : '1'}
+                                onChange={(event) =>
+                                  updateRuleDraft(draft.id, { periods: event.target.value })
+                                }
+                              />
+                              <span className="small muted">期</span>
+                            </div>
+
+                            <button
+                              type="button"
+                              className="btn-danger"
+                              aria-label={`移除规则 ${index + 1}`}
+                              onClick={() => removeRuleDraft(draft.id)}
+                            >
+                              移除
+                            </button>
+                          </div>
+                          {!supportsMultiPeriod ? (
+                            <span className="small muted">当期快照指标按最新 1 期判定</span>
+                          ) : null}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="small muted">
+                    添加结构化量化条件后，哨兵雷达可在指标触及红线时自动发出否证提醒。
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

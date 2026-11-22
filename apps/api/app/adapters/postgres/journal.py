@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Any
@@ -19,6 +20,7 @@ from app.domain.models import (
     JournalAction,
     JournalCreate,
     JournalEntryItem,
+    JournalTimeCapsule,
     UserEventCreate,
 )
 
@@ -29,6 +31,12 @@ def _to_float(val: Decimal | None) -> float | None:
 
 def _to_decimal(val: float | None) -> Decimal | None:
     return Decimal(str(val)) if val is not None else None
+
+
+def _parse_snapshot(raw: object) -> JournalTimeCapsule | None:
+    if not isinstance(raw, dict):
+        return None
+    return JournalTimeCapsule.model_validate(raw)
 
 
 def _to_domain(row: JournalEntry) -> JournalEntryItem:
@@ -50,6 +58,7 @@ def _to_domain(row: JournalEntry) -> JournalEntryItem:
         price=_to_float(row.price),
         benchmark_code=row.benchmark_code,
         benchmark_price=_to_float(row.benchmark_price),
+        snapshot=_parse_snapshot(row.snapshot),
         created_at=row.created_at,
     )
 
@@ -83,17 +92,40 @@ class PostgresJournalRepository:
             raise DatabaseUnavailableError(exc.__class__.__name__) from exc
         return [_to_domain(row) for row in rows]
 
+    async def list_holding_lifecycle_entries(
+        self, user_id: UUID
+    ) -> builtins.list[JournalEntryItem]:
+        stmt = (
+            select(JournalEntry)
+            .where(
+                JournalEntry.user_id == user_id,
+                JournalEntry.action.in_(
+                    [JournalAction.BUY.value, JournalAction.ADD.value, JournalAction.SELL.value]
+                ),
+            )
+            .order_by(JournalEntry.created_at.asc(), JournalEntry.id.asc())
+        )
+        try:
+            rows = (await self._session.scalars(stmt)).all()
+        except SQLAlchemyError as exc:
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+        return [_to_domain(row) for row in rows]
+
     async def create(
         self,
         user_id: UUID,
         payload: JournalCreate,
         *,
+        snapshot: JournalTimeCapsule | None = None,
         audit_event: UserEventCreate | None = None,
     ) -> JournalEntryItem:
         rules_json: list[dict[str, Any]] | None = (
             [rule.model_dump(mode="json") for rule in payload.falsify_rules]
             if payload.falsify_rules is not None
             else None
+        )
+        snapshot_json: dict[str, Any] | None = (
+            snapshot.model_dump(mode="json") if snapshot is not None else None
         )
         row = JournalEntry(
             user_id=user_id,
@@ -108,6 +140,7 @@ class PostgresJournalRepository:
             price=_to_decimal(payload.price),
             benchmark_code=payload.benchmark_code,
             benchmark_price=_to_decimal(payload.benchmark_price),
+            snapshot=snapshot_json,
         )
         try:
             self._session.add(row)

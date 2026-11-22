@@ -11,6 +11,14 @@ export function useJournal(code?: string, enabled = true, actions?: readonly Jou
   })
 }
 
+export function useJournalLedger(enabled = true, limit = 200) {
+  return useQuery({
+    queryKey: queryKeys.journal.ledger(limit === 200 ? undefined : limit),
+    queryFn: ({ signal }) => api.getJournalLedger(limit, signal),
+    enabled,
+  })
+}
+
 export function useCreateJournal() {
   const queryClient = useQueryClient()
   return useMutation({

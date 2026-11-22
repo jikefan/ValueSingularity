@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from datetime import UTC, date, datetime
 
 from app.domain.models import (
+    IndexQuote,
     IndustryFlow,
     MacroRateRow,
     MarketFeedBundle,
@@ -14,6 +15,10 @@ from app.domain.models import (
     MarketTemperature,
     TemperatureLevel,
 )
+
+_BENCHMARK_INDEX_NAMES: dict[str, str] = {
+    "000300": "沪深300",
+}
 
 _LEVEL_COMMENTS: dict[TemperatureLevel, str] = {
     TemperatureLevel.COLD: (
@@ -121,12 +126,33 @@ def build_market_overview(
             unique_flows.append(flow)
     sorted_industries = sorted(unique_flows, key=lambda item: (-item.net_inflow, item.name))
 
+    overview_codes = {q.code for q in bundle.indices}
+    benchmark_indices: list[IndexQuote] = []
+    seen_benchmarks: set[str] = set()
+    for row in bundle.index_daily:
+        if (
+            row.trade_date == bundle.as_of
+            and row.code in _BENCHMARK_INDEX_NAMES
+            and row.code not in overview_codes
+            and row.code not in seen_benchmarks
+        ):
+            seen_benchmarks.add(row.code)
+            benchmark_indices.append(
+                IndexQuote(
+                    code=row.code,
+                    name=_BENCHMARK_INDEX_NAMES[row.code],
+                    price=row.close,
+                    change_pct=row.change_pct,
+                )
+            )
+
     return MarketOverview(
         schema_version=1,
         as_of=bundle.as_of,
         data_source=bundle.data_source,
         generated_at=generated_at if generated_at is not None else datetime.now(UTC),
         indices=list(bundle.indices),
+        benchmark_indices=benchmark_indices,
         temperature=temperature,
         hot_industries=sorted_industries,
     )

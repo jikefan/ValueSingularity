@@ -1,11 +1,16 @@
 import createClient from 'openapi-fetch'
 import type {
+  AlertDeliveryItem,
+  AlertScanSummary,
+  DecisionLedgerReport,
   Health,
   JournalAction,
   JournalCreate,
   JournalEntryItem,
   LoginRequest,
   MarketOverview,
+  NotificationPreferences,
+  NotificationPreferencesUpdate,
   RegisterRequest,
   StockCompareItem,
   StockDetail,
@@ -353,6 +358,32 @@ export const api = {
       throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
     }
   },
+
+  getJournalLedger: async (limit = 200, signal?: AbortSignal): Promise<DecisionLedgerReport> =>
+    unwrap(
+      await client.GET('/api/journal/ledger', {
+        params: { query: { limit } },
+        signal,
+      }),
+    ),
+
+  listAlerts: async (limit = 50, signal?: AbortSignal): Promise<AlertDeliveryItem[]> =>
+    unwrap(
+      await client.GET('/api/alerts', {
+        params: { query: { limit } },
+        signal,
+      }),
+    ),
+
+  scanAlerts: async (): Promise<AlertScanSummary> => unwrap(await client.POST('/api/alerts/scan')),
+
+  getAlertPreferences: async (signal?: AbortSignal): Promise<NotificationPreferences> =>
+    unwrap(await client.GET('/api/alerts/preferences', { signal })),
+
+  updateAlertPreferences: async (
+    body: NotificationPreferencesUpdate,
+  ): Promise<NotificationPreferences> =>
+    unwrap(await client.PUT('/api/alerts/preferences', { body })),
 
   listEvents: async (limit = 50, signal?: AbortSignal): Promise<UserEventItem[]> =>
     unwrap(

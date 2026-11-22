@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+
+from app.domain.url_safety import validate_public_webhook_url
 
 FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 StockExchange = Literal["SH", "SZ", "BJ"]
@@ -74,6 +76,7 @@ class MarketOverview(BaseModel):
     data_source: str = "akshare"
     generated_at: datetime
     indices: list[IndexQuote]
+    benchmark_indices: list[IndexQuote] = Field(default_factory=list)
     temperature: MarketTemperature
     hot_industries: list[IndustryFlow]
 
@@ -314,6 +317,23 @@ class JournalCreate(BaseModel):
         return _reject_nul(value) if value is not None else None
 
 
+class JournalTimeCapsule(BaseModel):
+    as_of: date | None = None
+    close: FiniteFloat | None = None
+    pe_ttm: FiniteFloat | None = None
+    pe_percentile_10y: FiniteFloat | None = None
+    pb: FiniteFloat | None = None
+    dividend_yield_pct: FiniteFloat | None = None
+    implied_fcf_cagr_pct: FiniteFloat | None = None
+    roe_5y_avg_pct: FiniteFloat | None = None
+    ct_red_count: int | None = None
+    ct_yellow_count: int | None = None
+    total_score: int | None = None
+    benchmark_code: str = "000300"
+    benchmark_price: FiniteFloat | None = None
+    benchmark_as_of: date | None = None
+
+
 class JournalEntryItem(BaseModel):
     id: int
     code: str
@@ -327,7 +347,158 @@ class JournalEntryItem(BaseModel):
     price: float | None = None
     benchmark_code: str
     benchmark_price: float | None = None
+    snapshot: JournalTimeCapsule | None = None
     created_at: datetime
+
+
+class JournalEntryComparison(BaseModel):
+    id: int
+    code: str
+    name: str | None = None
+    action: JournalAction
+    emotion: str | None = None
+    created_at: datetime
+    entry_price: FiniteFloat | None = None
+    current_price: FiniteFloat | None = None
+    stock_return_pct: FiniteFloat | None = None
+    entry_benchmark_price: FiniteFloat | None = None
+    current_benchmark_price: FiniteFloat | None = None
+    benchmark_return_pct: FiniteFloat | None = None
+    excess_return_pct: FiniteFloat | None = None
+    entry_pe_ttm: FiniteFloat | None = None
+    current_pe_ttm: FiniteFloat | None = None
+    entry_score: int | None = None
+    current_score: int | None = None
+    days_held: int = Field(ge=0)
+    falsify_triggered: bool = False
+    falsify_triggers: list[str] = Field(default_factory=list)
+
+
+class EmotionLedgerRow(BaseModel):
+    emotion: str
+    total_count: int = Field(ge=0)
+    comparable_count: int = Field(ge=0)
+    win_count: int = Field(ge=0)
+    win_rate_pct: FiniteFloat | None = None
+    avg_stock_return_pct: FiniteFloat | None = None
+    avg_excess_return_pct: FiniteFloat | None = None
+
+
+class ActionLedgerRow(BaseModel):
+    action: JournalAction
+    total_count: int = Field(ge=0)
+    comparable_count: int = Field(ge=0)
+    win_count: int = Field(ge=0)
+    win_rate_pct: FiniteFloat | None = None
+    avg_stock_return_pct: FiniteFloat | None = None
+    avg_excess_return_pct: FiniteFloat | None = None
+
+
+class DecisionLedgerReport(BaseModel):
+    total_entries: int = Field(ge=0)
+    comparable_count: int = Field(ge=0)
+    win_count: int = Field(ge=0)
+    win_rate_pct: FiniteFloat | None = None
+    avg_stock_return_pct: FiniteFloat | None = None
+    avg_excess_return_pct: FiniteFloat | None = None
+    pass_count: int = Field(ge=0)
+    pass_avoided_loss_count: int = Field(ge=0)
+    current_benchmark_code: str = "000300"
+    current_benchmark_price: FiniteFloat | None = None
+    benchmark_as_of: date | None = None
+    by_emotion: list[EmotionLedgerRow]
+    by_action: list[ActionLedgerRow]
+    items: list[JournalEntryComparison]
+
+
+AlertSourceType = Literal["watchlist_sentinel", "journal_falsify"]
+WebhookChannel = Literal["feishu", "wecom", "custom"]
+
+
+class NotificationPreferences(BaseModel):
+    in_app_enabled: bool = True
+    webhook_enabled: bool = False
+    channel_type: WebhookChannel = "feishu"
+    webhook_url_configured: bool = False
+    webhook_url_masked: str | None = None
+
+
+class StoredNotificationConfig(BaseModel):
+    in_app_enabled: bool = True
+    webhook_enabled: bool = False
+    channel_type: WebhookChannel = "feishu"
+    webhook_url: str | None = None
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    in_app_enabled: bool = True
+    webhook_enabled: bool = False
+    channel_type: WebhookChannel = "feishu"
+    webhook_url: str | None = Field(default=None, max_length=500)
+
+    @field_validator("webhook_url", mode="before")
+    @classmethod
+    def _clean_webhook_url(cls, value: object) -> object:
+        if value is None or not isinstance(value, str):
+            return value
+        if any(ch == "\x00" or ord(ch) < 32 or ord(ch) == 127 for ch in value):
+            raise ValueError("Webhook URL 不能包含空字符或控制字符")
+        return value.strip()
+
+    @field_validator("webhook_url")
+    @classmethod
+    def _validate_webhook_url(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return value
+        return validate_public_webhook_url(value)
+
+    @model_validator(mode="after")
+    def _reject_clearing_url_when_enabled(self) -> Self:
+        if self.webhook_enabled and self.webhook_url == "":
+            raise ValueError("启用 Webhook 推送时不能同时清空 Webhook URL")
+        return self
+
+
+class TriggeredAlertCandidate(BaseModel):
+    user_id: UUID
+    source_type: AlertSourceType
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
+    stock_name: str | None = None
+    trigger_date: date
+    rule_signature: str = Field(min_length=1, max_length=64)
+    matched_conditions: list[str]
+    detail: str
+    current_price: FiniteFloat | None = None
+    current_pe_percentile: FiniteFloat | None = None
+    current_dividend_yield_pct: FiniteFloat | None = None
+
+
+class AlertDeliveryItem(BaseModel):
+    id: int
+    source_type: AlertSourceType
+    code: str
+    stock_name: str | None = None
+    trigger_date: date
+    rule_signature: str
+    matched_conditions: list[str]
+    detail: str
+    current_price: FiniteFloat | None = None
+    current_pe_percentile: FiniteFloat | None = None
+    current_dividend_yield_pct: FiniteFloat | None = None
+    channel: str
+    status: str
+    created_at: datetime
+
+
+class AlertScanSummary(BaseModel):
+    as_of: date | None = None
+    users_scanned: int = Field(default=1, ge=0)
+    evaluated_rules: int = Field(default=0, ge=0)
+    matched_count: int = Field(default=0, ge=0)
+    newly_triggered_count: int = Field(default=0, ge=0)
+    webhook_sent_count: int = Field(default=0, ge=0)
+    webhook_failed_count: int = Field(default=0, ge=0)
+    deliveries: list[AlertDeliveryItem] = Field(default_factory=list)
 
 
 EventMetaValue = str | int | FiniteFloat | bool | None

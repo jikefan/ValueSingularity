@@ -30,6 +30,9 @@ def default_market_overview() -> MarketOverview:
             IndexQuote(code="399006", name="创业板指", price=2071.55, change_pct=-0.24),
             IndexQuote(code="000688", name="科创50", price=1042.18, change_pct=1.35),
         ],
+        benchmark_indices=[
+            IndexQuote(code="000300", name="沪深300", price=3980.0, change_pct=0.52),
+        ],
         temperature=MarketTemperature(
             score=38.0,
             level=TemperatureLevel.COOL,

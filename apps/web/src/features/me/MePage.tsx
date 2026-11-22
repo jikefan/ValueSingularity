@@ -10,6 +10,8 @@ import { useJournal, useRemoveJournal } from '../../lib/useJournal'
 import { parseOptionalNumber } from '../../lib/validation'
 import type { JournalAction, PlanTier, WatchlistItem, WatchlistUpsert } from '../../types/api'
 import { useRemoveWatchlist, useUpsertWatchlist, useWatchlist } from '../../lib/useWatchlist'
+import { DecisionLedgerPanel } from './DecisionLedgerPanel'
+import { SentinelAlertsPanel } from './SentinelAlertsPanel'
 
 const PLAN_COLOR: Record<PlanTier, 'gray' | 'blue' | 'green'> = {
   free: 'gray',
@@ -476,6 +478,10 @@ export function MePage() {
           </table>
         )}
       </Card>
+
+      <SentinelAlertsPanel enabled={Boolean(user)} />
+
+      <DecisionLedgerPanel enabled={Boolean(user)} />
 
       <Card
         title="决策日记与 Pass 观察池"

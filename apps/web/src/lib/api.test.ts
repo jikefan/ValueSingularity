@@ -448,4 +448,123 @@ describe('api auth and single-flight refresh middleware', () => {
     expect(requestedUrls[0]).toContain('/api/stocks/600519/snapshot')
     expect(requestedUrls[1]).toContain('/api/stocks/compare?codes=600519%2C000858')
   })
+
+  it('calls journal ledger and sentinel alert endpoints with expected payloads and error propagation', async () => {
+    setAccessToken('valid-token')
+    const calls: Array<{ method: string; url: string; body: unknown }> = []
+
+    const sampleLedger = {
+      total_entries: 1,
+      comparable_count: 1,
+      win_count: 1,
+      win_rate_pct: 100,
+      avg_stock_return_pct: 12.5,
+      avg_excess_return_pct: 8.2,
+      pass_count: 0,
+      pass_avoided_loss_count: 0,
+      current_benchmark_code: '000300',
+      current_benchmark_price: 3950.25,
+      benchmark_as_of: '2026-11-22',
+      by_emotion: [],
+      by_action: [],
+      items: [],
+    }
+    const samplePrefs = {
+      in_app_enabled: true,
+      webhook_enabled: true,
+      channel_type: 'feishu',
+      webhook_url_configured: true,
+      webhook_url_masked: 'https://open.feishu.cn/****abcd',
+    }
+    const sampleScan = {
+      as_of: '2026-11-22',
+      users_scanned: 1,
+      evaluated_rules: 3,
+      matched_count: 1,
+      newly_triggered_count: 1,
+      webhook_sent_count: 0,
+      webhook_failed_count: 0,
+      deliveries: [],
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+      const rawBody = request.method === 'PUT' ? await request.clone().text() : ''
+      const parsedBody: unknown = rawBody ? JSON.parse(rawBody) : null
+      calls.push({ method: request.method, url: url.pathname + url.search, body: parsedBody })
+
+      if (url.pathname === '/api/journal/ledger' && request.method === 'GET') {
+        return jsonResponse(sampleLedger, 200)
+      }
+      if (url.pathname === '/api/alerts' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (url.pathname === '/api/alerts/scan' && request.method === 'POST') {
+        return jsonResponse(sampleScan, 200)
+      }
+      if (url.pathname === '/api/alerts/preferences' && request.method === 'GET') {
+        return jsonResponse(samplePrefs, 200)
+      }
+      if (url.pathname === '/api/alerts/preferences' && request.method === 'PUT') {
+        if (
+          typeof parsedBody === 'object' &&
+          parsedBody !== null &&
+          'webhook_url' in parsedBody &&
+          parsedBody.webhook_url === 'http://127.0.0.1/hook'
+        ) {
+          return jsonResponse({ detail: 'Webhook URL 不能指向内网、回环或保留 IP 地址' }, 422)
+        }
+        return jsonResponse(samplePrefs, 200)
+      }
+      return jsonResponse({ detail: 'unexpected' }, 500)
+    })
+
+    expect(await api.getJournalLedger(100)).toEqual(sampleLedger)
+    expect(await api.listAlerts(25)).toEqual([])
+    expect(await api.scanAlerts()).toEqual(sampleScan)
+    expect(await api.getAlertPreferences()).toEqual(samplePrefs)
+    expect(
+      await api.updateAlertPreferences({
+        in_app_enabled: true,
+        webhook_enabled: true,
+        channel_type: 'wecom',
+      }),
+    ).toEqual(samplePrefs)
+
+    await expect(
+      api.updateAlertPreferences({
+        in_app_enabled: true,
+        webhook_enabled: true,
+        channel_type: 'custom',
+        webhook_url: 'http://127.0.0.1/hook',
+      }),
+    ).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 422,
+      message: 'Webhook URL 不能指向内网、回环或保留 IP 地址',
+    })
+
+    expect(calls).toEqual([
+      { method: 'GET', url: '/api/journal/ledger?limit=100', body: null },
+      { method: 'GET', url: '/api/alerts?limit=25', body: null },
+      { method: 'POST', url: '/api/alerts/scan', body: null },
+      { method: 'GET', url: '/api/alerts/preferences', body: null },
+      {
+        method: 'PUT',
+        url: '/api/alerts/preferences',
+        body: { in_app_enabled: true, webhook_enabled: true, channel_type: 'wecom' },
+      },
+      {
+        method: 'PUT',
+        url: '/api/alerts/preferences',
+        body: {
+          in_app_enabled: true,
+          webhook_enabled: true,
+          channel_type: 'custom',
+          webhook_url: 'http://127.0.0.1/hook',
+        },
+      },
+    ])
+  })
 })

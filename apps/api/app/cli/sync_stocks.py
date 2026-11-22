@@ -14,9 +14,10 @@ from app.adapters.akshare.stock_feed import AkshareStockFactFeed
 from app.adapters.duckdb.stock_store import DuckDBStockFactStore
 from app.adapters.postgres.market import PostgresStockMetaRepository
 from app.adapters.postgres.snapshot import PostgresStockSnapshotRepository
+from app.cli.scan_alerts import run_alert_scan
 from app.db.session import AsyncSessionLocal, dispose_db
 from app.domain.errors import StockFactUnavailableError, StockNotFoundError
-from app.domain.models import StockSyncSummary
+from app.domain.models import AlertScanSummary, StockSyncSummary
 from app.services.stock_sync import StockSyncService
 from app.settings import settings
 
@@ -47,7 +48,8 @@ async def _run_sync(
     use_watchlist: bool,
     limit: int | None,
     as_of: date | None,
-) -> tuple[list[str], list[StockSyncSummary]]:
+    scan_alerts: bool = False,
+) -> tuple[list[str], list[StockSyncSummary], AlertScanSummary | None]:
     try:
         async with AsyncSessionLocal() as session:
             meta_repo = PostgresStockMetaRepository(session)
@@ -59,7 +61,7 @@ async def _run_sync(
                 target_codes = await meta_repo.list_active_codes(limit=limit or 50)
 
             if not target_codes:
-                return [], []
+                return [], [], None
 
             service = StockSyncService(
                 feed=AkshareStockFactFeed(
@@ -75,7 +77,10 @@ async def _run_sync(
                 as_of=as_of,
                 continue_on_error=len(target_codes) > 1,
             )
-            return target_codes, summaries
+            alert_summary: AlertScanSummary | None = None
+            if scan_alerts and summaries:
+                alert_summary = await run_alert_scan(session)
+            return target_codes, summaries, alert_summary
     finally:
         await dispose_db()
 
@@ -111,6 +116,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help="Optional snapshot trade date in YYYY-MM-DD format.",
     )
+    parser.add_argument(
+        "--scan-alerts",
+        action="store_true",
+        help="Run sentinel alert radar across users after stock snapshots update.",
+    )
     args = parser.parse_args(argv)
 
     if args.limit is not None and args.limit < 1:
@@ -132,12 +142,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
 
     try:
-        target_codes, summaries = asyncio.run(
+        target_codes, summaries, alert_summary = asyncio.run(
             _run_sync(
                 codes=parsed_codes,
                 use_watchlist=args.watchlist,
                 limit=args.limit,
                 as_of=target_date,
+                scan_alerts=args.scan_alerts,
             )
         )
     except (StockNotFoundError, StockFactUnavailableError) as exc:
@@ -171,6 +182,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             summary.ct_red_count,
             summary.ct_yellow_count,
             implied_text,
+        )
+    if alert_summary is not None:
+        logger.info(
+            "盘后哨兵扫描完成: users=%d rules=%d matched=%d new=%d sent=%d failed=%d",
+            alert_summary.users_scanned,
+            alert_summary.evaluated_rules,
+            alert_summary.matched_count,
+            alert_summary.newly_triggered_count,
+            alert_summary.webhook_sent_count,
+            alert_summary.webhook_failed_count,
         )
     return 0
 

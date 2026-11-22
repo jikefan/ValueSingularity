@@ -6,17 +6,20 @@ only on the protocol, so tests and new data sources never touch business logic.
 
 from __future__ import annotations
 
+import builtins
 from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Protocol
 from uuid import UUID
 
 from app.domain.models import (
+    AlertDeliveryItem,
     AuthenticatedUser,
     IndexDailyRow,
     JournalAction,
     JournalCreate,
     JournalEntryItem,
+    JournalTimeCapsule,
     MacroRateRow,
     MarketFeedBundle,
     MarketOverview,
@@ -27,7 +30,9 @@ from app.domain.models import (
     StockFactBundle,
     StockMetaRecord,
     StockSnapshotPayload,
+    StoredNotificationConfig,
     TradeCalendarEntry,
+    TriggeredAlertCandidate,
     UserAuthRecord,
     UserEventCreate,
     UserEventItem,
@@ -167,14 +172,21 @@ class JournalRepository(Protocol):
         """Return a user's journal entries ordered by recency."""
         ...
 
+    async def list_holding_lifecycle_entries(
+        self, user_id: UUID
+    ) -> builtins.list[JournalEntryItem]:
+        """Return all buy/add/sell journal entries for a user in chronological order."""
+        ...
+
     async def create(
         self,
         user_id: UUID,
         payload: JournalCreate,
         *,
+        snapshot: JournalTimeCapsule | None = None,
         audit_event: UserEventCreate | None = None,
     ) -> JournalEntryItem:
-        """Persist a new journal entry and optional audit event atomically."""
+        """Persist a new journal entry, optional time capsule, and optional audit event."""
         ...
 
     async def remove(self, user_id: UUID, entry_id: int) -> bool:
@@ -267,4 +279,57 @@ class TokenCodec(Protocol):
 
     async def hash_refresh_token(self, raw_token: str) -> str:
         """Compute the SHA-256 hex digest of a raw refresh token."""
+        ...
+
+
+class SettingsRepository(Protocol):
+    async def get_notification_config(self, user_id: UUID) -> StoredNotificationConfig:
+        """Return stored notification config for a user, or defaults when unset."""
+        ...
+
+    async def save_notification_config(
+        self, user_id: UUID, config: StoredNotificationConfig
+    ) -> StoredNotificationConfig:
+        """Persist notification preferences for a user."""
+        ...
+
+
+class AlertRepository(Protocol):
+    async def list_alerts(self, user_id: UUID, *, limit: int = 50) -> list[AlertDeliveryItem]:
+        """Return recent alert deliveries scoped to a user."""
+        ...
+
+    async def insert_alert_if_new(
+        self,
+        candidate: TriggeredAlertCandidate,
+        *,
+        channel: str,
+        status: str,
+        audit_event: UserEventCreate | None = None,
+    ) -> tuple[AlertDeliveryItem | None, bool]:
+        """Atomically insert an alert if unique for the day, plus optional audit event."""
+        ...
+
+    async def update_delivery_status(
+        self,
+        delivery_id: int,
+        *,
+        channel: str,
+        status: str,
+    ) -> AlertDeliveryItem | None:
+        """Update delivery channel and status after external dispatch."""
+        ...
+
+    async def list_users_with_alert_targets(self) -> list[UUID]:
+        """Return active user IDs with alert-enabled watchlist items or open positions."""
+        ...
+
+
+class WebhookNotifierPort(Protocol):
+    async def send_alerts(
+        self,
+        config: StoredNotificationConfig,
+        stock_alerts: Sequence[TriggeredAlertCandidate],
+    ) -> bool:
+        """Deliver alert summaries to an external webhook endpoint; return success boolean."""
         ...

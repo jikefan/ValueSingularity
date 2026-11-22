@@ -6,7 +6,11 @@ import { AuthProvider } from '../../lib/AuthProvider'
 import { setAccessToken } from '../../lib/api'
 import { createQueryClient } from '../../lib/queryClient'
 import type {
+  AlertDeliveryItem,
+  AlertScanSummary,
+  DecisionLedgerReport,
   JournalEntryItem,
+  NotificationPreferences,
   TokenResponse,
   UserProfile,
   WatchlistItem,
@@ -35,6 +39,47 @@ const INITIAL_ITEM: WatchlistItem = {
   alert_enabled: true,
   added_at: '2026-11-22T00:00:00Z',
   updated_at: '2026-11-22T00:00:00Z',
+}
+
+const EMPTY_LEDGER: DecisionLedgerReport = {
+  total_entries: 0,
+  comparable_count: 0,
+  win_count: 0,
+  win_rate_pct: null,
+  avg_stock_return_pct: null,
+  avg_excess_return_pct: null,
+  pass_count: 0,
+  pass_avoided_loss_count: 0,
+  current_benchmark_code: '000300',
+  current_benchmark_price: null,
+  benchmark_as_of: null,
+  by_emotion: [],
+  by_action: [],
+  items: [],
+}
+
+const DEFAULT_PREFS: NotificationPreferences = {
+  in_app_enabled: true,
+  webhook_enabled: false,
+  channel_type: 'feishu',
+  webhook_url_configured: false,
+  webhook_url_masked: null,
+}
+
+function handleEmptyPhase3Get(pathname: string, method: string): Response | null {
+  if (method !== 'GET') {
+    return null
+  }
+  if (pathname === '/api/journal/ledger') {
+    return jsonResponse(EMPTY_LEDGER, 200)
+  }
+  if (pathname === '/api/alerts') {
+    return jsonResponse([], 200)
+  }
+  if (pathname === '/api/alerts/preferences') {
+    return jsonResponse(DEFAULT_PREFS, 200)
+  }
+  return null
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -176,6 +221,10 @@ describe('MePage', () => {
         watchlistState = watchlistState.filter((existing) => existing.code !== deletedCode)
         return new Response(null, { status: 204 })
       }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return emptyPhase3
+      }
       return jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500)
     })
 
@@ -257,6 +306,10 @@ describe('MePage', () => {
       }
       if (pathname === '/api/watchlist' && request.method === 'PUT') {
         putCalled = true
+      }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return Promise.resolve(emptyPhase3)
       }
       return Promise.resolve(
         jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
@@ -382,6 +435,10 @@ describe('MePage', () => {
         journalState = journalState.filter((entry) => entry.id !== deletedJournalId)
         return Promise.resolve(new Response(null, { status: 204 }))
       }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return Promise.resolve(emptyPhase3)
+      }
       return Promise.resolve(
         jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
       )
@@ -472,6 +529,10 @@ describe('MePage', () => {
           ),
         )
       }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return Promise.resolve(emptyPhase3)
+      }
       return Promise.resolve(
         jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
       )
@@ -484,5 +545,337 @@ describe('MePage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     expect(await screen.findByText('批价回升加仓')).toBeInTheDocument()
+  })
+
+  it('renders Decision Quality Ledger with emotion attribution, CSI 300 Alpha, and falsify trigger status', async () => {
+    const ledgerReport: DecisionLedgerReport = {
+      total_entries: 3,
+      comparable_count: 2,
+      win_count: 1,
+      win_rate_pct: 50.0,
+      avg_stock_return_pct: 4.25,
+      avg_excess_return_pct: 2.15,
+      pass_count: 1,
+      pass_avoided_loss_count: 1,
+      current_benchmark_code: '000300',
+      current_benchmark_price: 3980.5,
+      benchmark_as_of: '2026-11-22',
+      by_emotion: [
+        {
+          emotion: '冷静',
+          total_count: 2,
+          comparable_count: 1,
+          win_count: 1,
+          win_rate_pct: 100.0,
+          avg_stock_return_pct: 18.5,
+          avg_excess_return_pct: 14.2,
+        },
+        {
+          emotion: '贪婪',
+          total_count: 1,
+          comparable_count: 1,
+          win_count: 0,
+          win_rate_pct: 0.0,
+          avg_stock_return_pct: -10.0,
+          avg_excess_return_pct: -9.9,
+        },
+      ],
+      by_action: [],
+      items: [
+        {
+          id: 501,
+          code: '600519',
+          name: '贵州茅台',
+          action: 'buy',
+          emotion: '冷静',
+          created_at: '2026-10-01T09:00:00Z',
+          entry_price: 1400,
+          current_price: 1659,
+          stock_return_pct: 18.5,
+          entry_benchmark_price: 3816.3,
+          current_benchmark_price: 3980.5,
+          benchmark_return_pct: 4.3,
+          excess_return_pct: 14.2,
+          entry_pe_ttm: 20.5,
+          current_pe_ttm: 24.3,
+          entry_score: 86,
+          current_score: 89,
+          days_held: 52,
+          falsify_triggered: false,
+          falsify_triggers: [],
+        },
+        {
+          id: 502,
+          code: '000858',
+          name: '五粮液',
+          action: 'add',
+          emotion: '贪婪',
+          created_at: '2026-10-15T09:00:00Z',
+          entry_price: 150,
+          current_price: 135,
+          stock_return_pct: -10.0,
+          entry_benchmark_price: 3984.5,
+          current_benchmark_price: 3980.5,
+          benchmark_return_pct: -0.1,
+          excess_return_pct: -9.9,
+          entry_pe_ttm: 16.0,
+          current_pe_ttm: 14.4,
+          entry_score: 78,
+          current_score: 72,
+          days_held: 38,
+          falsify_triggered: true,
+          falsify_triggers: ['ct_red_count >= 1 (当前 1)'],
+        },
+      ],
+    }
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'active-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/journal/ledger' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(ledgerReport, 200))
+      }
+      if (pathname === '/api/alerts' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/alerts/preferences' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_PREFS, 200))
+      }
+      return Promise.resolve(
+        jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
+      )
+    })
+
+    renderMePage()
+
+    expect(await screen.findByText('决策质量账本与沪深 300 Beta 归因')).toBeInTheDocument()
+    expect(await screen.findByText('2 / 3')).toBeInTheDocument()
+    expect(screen.getByText('50.0%').closest('.metric-value')).toHaveClass('tone-good')
+    expect(screen.getByText('+2.15%').closest('.metric-value')).toHaveClass('tone-good')
+    const passAvoidedMetric = screen
+      .getByText('Pass 观察池避险')
+      .parentElement?.querySelector('.metric-value')
+    expect(passAvoidedMetric).toHaveTextContent('1 / 1')
+    expect(passAvoidedMetric).toHaveClass('tone-good')
+    expect(screen.getByText('3,980.50')).toBeInTheDocument()
+
+    expect(screen.getByText('情绪胜率归因')).toBeInTheDocument()
+    expect(screen.getByText('100.0%')).toBeInTheDocument()
+    const negativeAlphaCells = screen.getAllByText('-9.90%')
+    expect(negativeAlphaCells).toHaveLength(2)
+    for (const cell of negativeAlphaCells) {
+      expect(cell).toHaveClass('tone-bad')
+    }
+
+    expect(screen.getByText('时间胶囊对照明细')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '600519' })).toHaveAttribute('href', '/stock/600519')
+    expect(screen.getByRole('link', { name: '000858' })).toHaveAttribute('href', '/stock/000858')
+    expect(screen.getByText('1,400.00 → 1,659.00')).toBeInTheDocument()
+    const positiveAlphaCells = screen.getAllByText('+14.20%')
+    expect(positiveAlphaCells).toHaveLength(2)
+    for (const cell of positiveAlphaCells) {
+      expect(cell).toHaveClass('tone-good')
+    }
+    expect(screen.getByText('未触发')).toBeInTheDocument()
+    expect(screen.getByText('已触发否证')).toBeInTheDocument()
+    expect(screen.getByText('ct_red_count >= 1 (当前 1)')).toBeInTheDocument()
+  })
+
+  it('triggers manual Sentinel scan, updates alerts radar, and manages webhook preferences including 422 and clear', async () => {
+    let alertsState: AlertDeliveryItem[] = []
+    let prefsState: NotificationPreferences = {
+      in_app_enabled: true,
+      webhook_enabled: true,
+      channel_type: 'feishu',
+      webhook_url_configured: true,
+      webhook_url_masked: 'https://open.feishu.cn/****abcd',
+    }
+    const savedPrefPayloads: unknown[] = []
+    let scanShouldFail = false
+
+    const newAlerts: AlertDeliveryItem[] = [
+      {
+        id: 1,
+        source_type: 'watchlist_sentinel',
+        code: '600519',
+        stock_name: '贵州茅台',
+        trigger_date: '2026-11-22',
+        rule_signature: 'wl:abc123',
+        matched_conditions: ['现价 1,380 <= 目标价 1,400'],
+        detail: '贵州茅台(600519) 命中自选击球区: 现价 1,380 <= 目标价 1,400',
+        current_price: 1380,
+        current_pe_percentile: 18.2,
+        current_dividend_yield_pct: 3.6,
+        channel: 'feishu',
+        status: 'sent',
+        created_at: '2026-11-22T12:00:00Z',
+      },
+      {
+        id: 2,
+        source_type: 'journal_falsify',
+        code: '000858',
+        stock_name: '五粮液',
+        trigger_date: '2026-11-22',
+        rule_signature: 'jf:9:def456',
+        matched_conditions: ['ct_red_count >= 1 (当前 1)'],
+        detail: '五粮液(000858) 触发持仓否证红线: ct_red_count >= 1 (当前 1)',
+        current_price: 135,
+        current_pe_percentile: 28.0,
+        current_dividend_yield_pct: 4.1,
+        channel: 'in_app',
+        status: 'recorded',
+        created_at: '2026-11-22T12:00:00Z',
+      },
+    ]
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'active-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return jsonResponse(tokenResponse, 200)
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (pathname === '/api/journal/ledger' && request.method === 'GET') {
+        return jsonResponse(EMPTY_LEDGER, 200)
+      }
+      if (pathname === '/api/alerts' && request.method === 'GET') {
+        return jsonResponse(alertsState, 200)
+      }
+      if (pathname === '/api/alerts/scan' && request.method === 'POST') {
+        if (scanShouldFail) {
+          return jsonResponse({ detail: '行情快照服务不可用' }, 503)
+        }
+        alertsState = newAlerts
+        const summary: AlertScanSummary = {
+          as_of: '2026-11-22',
+          users_scanned: 1,
+          evaluated_rules: 4,
+          matched_count: 2,
+          newly_triggered_count: 2,
+          webhook_sent_count: 1,
+          webhook_failed_count: 0,
+          deliveries: newAlerts,
+        }
+        return jsonResponse(summary, 200)
+      }
+      if (pathname === '/api/alerts/preferences' && request.method === 'GET') {
+        return jsonResponse(prefsState, 200)
+      }
+      if (pathname === '/api/alerts/preferences' && request.method === 'PUT') {
+        const parsed: unknown = JSON.parse(await request.clone().text())
+        savedPrefPayloads.push(parsed)
+        if (
+          isRecord(parsed) &&
+          typeof parsed.webhook_url === 'string' &&
+          parsed.webhook_url.includes('127.0.0.1')
+        ) {
+          return jsonResponse({ detail: 'Webhook URL 不能指向内网、回环或保留 IP 地址' }, 422)
+        }
+        if (isRecord(parsed)) {
+          const clearing = parsed.webhook_url === ''
+          const newUrl =
+            typeof parsed.webhook_url === 'string' && parsed.webhook_url.length > 0
+              ? parsed.webhook_url
+              : null
+          prefsState = {
+            in_app_enabled: Boolean(parsed.in_app_enabled),
+            webhook_enabled: Boolean(parsed.webhook_enabled),
+            channel_type:
+              parsed.channel_type === 'wecom' || parsed.channel_type === 'custom'
+                ? parsed.channel_type
+                : 'feishu',
+            webhook_url_configured: clearing
+              ? false
+              : Boolean(newUrl ?? prefsState.webhook_url_configured),
+            webhook_url_masked: clearing
+              ? null
+              : newUrl
+                ? 'https://qyapi.weixin.qq.com/****9999'
+                : prefsState.webhook_url_masked,
+          }
+        }
+        return jsonResponse(prefsState, 200)
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500)
+    })
+
+    renderMePage()
+
+    expect(await screen.findByText('已配置 · https://open.feishu.cn/****abcd')).toBeInTheDocument()
+    expect(screen.getByText('暂无击球区命中或否证触发记录')).toBeInTheDocument()
+
+    scanShouldFail = true
+    fireEvent.click(screen.getByRole('button', { name: '立即扫描哨兵雷达' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('行情快照服务不可用')
+
+    scanShouldFail = false
+    fireEvent.click(screen.getByRole('button', { name: '立即扫描哨兵雷达' }))
+    expect(
+      await screen.findByText(
+        '本次扫描完成：评估 4 条 · 命中 2 条 · 新增 2 条 · Webhook 成功 1 / 失败 0（基准日 2026-11-22）',
+      ),
+    ).toBeInTheDocument()
+    expect(await screen.findByText('击球区命中')).toBeInTheDocument()
+    expect(screen.getByText('否证红线')).toBeInTheDocument()
+    expect(screen.getByText('Webhook 已送达')).toBeInTheDocument()
+    expect(screen.getByText('站内已记录')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '600519' })).toHaveAttribute('href', '/stock/600519')
+    expect(screen.getByRole('link', { name: '000858' })).toHaveAttribute('href', '/stock/000858')
+
+    fireEvent.change(screen.getByLabelText('推送渠道类型'), { target: { value: 'wecom' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存推送设置' }))
+    expect(await screen.findByText('推送渠道设置已保存')).toBeInTheDocument()
+    expect(savedPrefPayloads[0]).toEqual({
+      in_app_enabled: true,
+      webhook_enabled: true,
+      channel_type: 'wecom',
+    })
+
+    fireEvent.change(screen.getByLabelText('新 Webhook URL（可选）'), {
+      target: { value: 'http://127.0.0.1/hook' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: '保存推送设置' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Webhook URL 不能指向内网、回环或保留 IP 地址',
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: '清空 Webhook' }))
+    expect(await screen.findByText('已清空 Webhook 地址并关闭外部推送')).toBeInTheDocument()
+    expect(screen.getByText('Webhook 未配置')).toBeInTheDocument()
+    expect(savedPrefPayloads[2]).toEqual({
+      in_app_enabled: true,
+      webhook_enabled: false,
+      channel_type: 'wecom',
+      webhook_url: '',
+    })
   })
 })

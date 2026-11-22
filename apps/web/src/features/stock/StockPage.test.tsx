@@ -7,6 +7,7 @@ import { AuthProvider } from '../../lib/AuthProvider'
 import { setAccessToken } from '../../lib/api'
 import { createQueryClient } from '../../lib/queryClient'
 import type {
+  FalsifyRule,
   JournalCreate,
   JournalEntryItem,
   StockDetail,
@@ -355,6 +356,34 @@ function isJournalAction(value: unknown): value is JournalCreate['action'] {
   )
 }
 
+function isFalsifyOp(value: unknown): value is FalsifyRule['op'] {
+  return value === 'lt' || value === 'lte' || value === 'gt' || value === 'gte' || value === 'eq'
+}
+
+function parseFalsifyRules(raw: unknown): FalsifyRule[] | undefined {
+  if (!Array.isArray(raw)) {
+    return undefined
+  }
+  const rules: FalsifyRule[] = []
+  for (const item of raw) {
+    if (
+      isRecord(item) &&
+      typeof item.metric === 'string' &&
+      isFalsifyOp(item.op) &&
+      typeof item.value === 'number' &&
+      typeof item.periods === 'number'
+    ) {
+      rules.push({
+        metric: item.metric,
+        op: item.op,
+        value: item.value,
+        periods: item.periods,
+      })
+    }
+  }
+  return rules
+}
+
 function parseJournalCreate(raw: string): JournalCreate {
   const parsed: unknown = JSON.parse(raw)
   if (
@@ -367,6 +396,7 @@ function parseJournalCreate(raw: string): JournalCreate {
   ) {
     throw new Error('Invalid JournalCreate payload')
   }
+  const falsifyRules = parseFalsifyRules(parsed.falsify_rules)
   return {
     code: parsed.code,
     name: typeof parsed.name === 'string' ? parsed.name : null,
@@ -377,6 +407,7 @@ function parseJournalCreate(raw: string): JournalCreate {
     max_drawdown: typeof parsed.max_drawdown === 'number' ? parsed.max_drawdown : null,
     emotion: typeof parsed.emotion === 'string' ? parsed.emotion : null,
     benchmark_code: parsed.benchmark_code,
+    ...(falsifyRules ? { falsify_rules: falsifyRules } : {}),
   }
 }
 
@@ -898,5 +929,167 @@ describe('StockPage', () => {
     const netReturnMetric = (await screen.findByText('-120.00 亿元')).closest('.metric-value')
     expect(netReturnMetric).toHaveClass('tone-bad')
     view.unmount()
+  })
+
+  it('submits structured falsify_rules with emotion chip, resets builder, and renders time-capsule pills', async () => {
+    let journalState: JournalEntryItem[] = [
+      {
+        id: 1,
+        code: '600519',
+        name: '贵州茅台',
+        action: 'add',
+        reason: '自定义规则历史验证',
+        falsify_condition: '净现金覆盖下降',
+        falsify_rules: [{ metric: 'custom_ratio', op: 'lt', value: 1.5, periods: 2 }],
+        max_drawdown: null,
+        emotion: '冷静',
+        price: 1480,
+        benchmark_code: '000300',
+        benchmark_price: 3900,
+        snapshot: {
+          as_of: '2026-11-01',
+          close: 1480,
+          pe_ttm: 21.8,
+          pe_percentile_10y: 22.4,
+          total_score: 88,
+          benchmark_code: '000300',
+          benchmark_price: 3900,
+        },
+        created_at: '2026-11-01T10:00:00Z',
+      },
+    ]
+    let capturedCreate: JournalCreate | null = null
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return jsonResponse(SAMPLE_TOKEN, 200)
+      }
+      if (url.pathname === '/api/stocks/600519' && request.method === 'GET') {
+        return jsonResponse(SAMPLE_STOCK, 200)
+      }
+      if (url.pathname === '/api/stocks/600519/snapshot' && request.method === 'GET') {
+        return jsonResponse(SAMPLE_SNAPSHOT, 200)
+      }
+      if (url.pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (url.pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse(journalState, 200)
+      }
+      if (url.pathname === '/api/journal' && request.method === 'POST') {
+        const body = parseJournalCreate(await request.clone().text())
+        capturedCreate = body
+        const created: JournalEntryItem = {
+          id: 99,
+          code: body.code,
+          name: body.name ?? null,
+          action: body.action,
+          reason: body.reason,
+          falsify_condition: body.falsify_condition,
+          falsify_rules: body.falsify_rules ?? null,
+          max_drawdown: body.max_drawdown ?? null,
+          emotion: body.emotion ?? null,
+          price: body.price ?? null,
+          benchmark_code: body.benchmark_code,
+          benchmark_price: 3950.25,
+          snapshot: {
+            as_of: '2026-11-20',
+            close: 1520,
+            pe_ttm: 22.1,
+            pe_percentile_10y: 26.5,
+            total_score: 89,
+            benchmark_code: '000300',
+            benchmark_price: 3950.25,
+            benchmark_as_of: '2026-11-21',
+          },
+          created_at: '2026-11-22T12:00:00Z',
+        }
+        journalState = [created, ...journalState]
+        return jsonResponse(created, 201)
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${url.pathname}` }, 500)
+    })
+
+    renderStockPage('/stock/600519')
+    fireEvent.click(await screen.findByRole('tab', { name: '投资决策' }))
+
+    expect(await screen.findByText('时间胶囊将自动留存：')).toBeInTheDocument()
+    expect(
+      screen.getByText(/股价 1,520\.00 · PE\(TTM\) 22\.10 · 股息率 3\.45% · 雷达评分 89\/100/),
+    ).toBeInTheDocument()
+
+    expect(await screen.findByText('规则：custom_ratio < 1.5（连续 2 期）')).toBeInTheDocument()
+    expect(screen.getByText('快照 PE 21.80')).toBeInTheDocument()
+    expect(screen.getByText('分位 22.4%')).toBeInTheDocument()
+    expect(screen.getByText('评分 88')).toBeInTheDocument()
+    expect(screen.getByText('沪深300 3,900.00')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '乐观' }))
+    expect(screen.getByLabelText('当前情绪')).toHaveValue('乐观')
+
+    fireEvent.change(screen.getByLabelText('投资理由'), {
+      target: { value: '高 ROE 现金牛折价窗口买入' },
+    })
+    fireEvent.change(screen.getByLabelText('否证条件'), {
+      target: { value: '出现 CT 红灯或估值极端过热时证伪' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '+ CT红灯≥1' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ PE分位≥85%' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ ROE<12%' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ 自定义规则' }))
+
+    expect(screen.getByLabelText('规则 1 连续期数')).toBeDisabled()
+    expect(screen.getByLabelText('规则 1 连续期数')).toHaveValue(1)
+    expect(screen.getByLabelText('规则 2 连续期数')).toBeDisabled()
+    expect(screen.getByLabelText('规则 2 连续期数')).toHaveValue(1)
+    expect(screen.getByLabelText('规则 3 连续期数')).not.toBeDisabled()
+    expect(screen.getAllByText('当期快照指标按最新 1 期判定')).toHaveLength(3)
+
+    // Multi-period annual metric retains user periods, while switching back to a scalar metric locks periods=1.
+    fireEvent.change(screen.getByLabelText('规则 4 指标'), { target: { value: 'roe_pct' } })
+    fireEvent.change(screen.getByLabelText('规则 4 连续期数'), { target: { value: '3' } })
+    expect(screen.getByLabelText('规则 4 连续期数')).toHaveValue(3)
+    fireEvent.change(screen.getByLabelText('规则 4 指标'), { target: { value: 'pe_ttm' } })
+    expect(screen.getByLabelText('规则 4 连续期数')).toBeDisabled()
+    expect(screen.getByLabelText('规则 4 连续期数')).toHaveValue(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('请填写第 4 条否证规则的阈值')
+    expect(capturedCreate).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '移除规则 4' }))
+    fireEvent.change(screen.getByLabelText('规则 3 连续期数'), { target: { value: '2' } })
+    fireEvent.click(screen.getByRole('button', { name: '记录决策' }))
+
+    expect(await screen.findByText('高 ROE 现金牛折价窗口买入')).toBeInTheDocument()
+    expect(capturedCreate).toEqual({
+      code: '600519',
+      name: '贵州茅台',
+      action: 'buy',
+      reason: '高 ROE 现金牛折价窗口买入',
+      falsify_condition: '出现 CT 红灯或估值极端过热时证伪',
+      price: null,
+      max_drawdown: null,
+      emotion: '乐观',
+      benchmark_code: '000300',
+      falsify_rules: [
+        { metric: 'ct_red_count', op: 'gte', value: 1, periods: 1 },
+        { metric: 'pe_percentile_10y', op: 'gte', value: 85, periods: 1 },
+        { metric: 'roe_pct', op: 'lt', value: 12, periods: 2 },
+      ],
+    })
+
+    expect(screen.getByText('规则：CT红灯数 ≥ 1（连续 1 期）')).toBeInTheDocument()
+    expect(screen.getByText('规则：10年PE分位 ≥ 85（连续 1 期）')).toBeInTheDocument()
+    expect(screen.getByText('规则：ROE < 12（连续 2 期）')).toBeInTheDocument()
+    expect(screen.getByText('快照 PE 22.10')).toBeInTheDocument()
+    expect(screen.getByText('分位 26.5%')).toBeInTheDocument()
+    expect(screen.getByText('评分 89')).toBeInTheDocument()
+    expect(screen.getByText('沪深300 3,950.25 (2026-11-21)')).toBeInTheDocument()
+    expect(screen.getByText(/0\/5/)).toBeInTheDocument()
   })
 })

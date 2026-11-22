@@ -124,6 +124,14 @@ describe('AuthProvider tenant cache isolation', () => {
     client.setQueryData(queryKeys.journal.list(), [
       { id: 1, code: '600519', reason: 'A的私密理由' },
     ])
+    client.setQueryData(queryKeys.alerts.list(), [{ id: 101, detail: 'A的告警明细' }])
+    client.setQueryData(queryKeys.alerts.preferences(), {
+      in_app_enabled: true,
+      webhook_enabled: true,
+      channel_type: 'feishu',
+      webhook_url_configured: true,
+      webhook_url_masked: 'https://open.feishu.cn/****A123',
+    })
     client.setQueryData(queryKeys.events.list(), [{ id: 10, type: 'journal_create' }])
 
     fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
@@ -133,10 +141,20 @@ describe('AuthProvider tenant cache isolation', () => {
     })
     expect(client.getQueryData(queryKeys.watchlist.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.journal.list())).toBeUndefined()
+    expect(client.getQueryData(queryKeys.alerts.list())).toBeUndefined()
+    expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
     expect(client.getQueryData(queryKeys.events.list())).toBeUndefined()
 
     client.setQueryData(queryKeys.watchlist.list(), [{ code: '000001', name: '残留' }])
     client.setQueryData(queryKeys.journal.list('600519'), [{ id: 2, reason: '残留日记' }])
+    client.setQueryData(queryKeys.alerts.list(), [{ id: 102, detail: '残留告警' }])
+    client.setQueryData(queryKeys.alerts.preferences(), {
+      in_app_enabled: false,
+      webhook_enabled: true,
+      channel_type: 'wecom',
+      webhook_url_configured: true,
+      webhook_url_masked: 'https://qyapi.weixin.qq.com/****9999',
+    })
     client.setQueryData(queryKeys.events.list(), [{ id: 20, type: 'stale' }])
 
     fireEvent.click(screen.getByRole('button', { name: '登录B' }))
@@ -146,6 +164,8 @@ describe('AuthProvider tenant cache isolation', () => {
     })
     expect(client.getQueryData(queryKeys.watchlist.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.journal.list('600519'))).toBeUndefined()
+    expect(client.getQueryData(queryKeys.alerts.list())).toBeUndefined()
+    expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
     expect(client.getQueryData(queryKeys.events.list())).toBeUndefined()
   })
 
@@ -198,6 +218,8 @@ describe('AuthProvider tenant cache isolation', () => {
 
     client.setQueryData(queryKeys.watchlist.list(), [{ code: '600519' }])
     client.setQueryData(queryKeys.journal.list(), [{ id: 1 }])
+    client.setQueryData(queryKeys.alerts.list(), [{ id: 301 }])
+    client.setQueryData(queryKeys.alerts.preferences(), { in_app_enabled: true })
     client.setQueryData(queryKeys.events.list(), [{ id: 2 }])
 
     await expect(api.listEvents()).rejects.toMatchObject({ status: 401 })
@@ -207,6 +229,8 @@ describe('AuthProvider tenant cache isolation', () => {
     })
     expect(client.getQueryData(queryKeys.watchlist.list())).toBeUndefined()
     expect(client.getQueryData(queryKeys.journal.list())).toBeUndefined()
+    expect(client.getQueryData(queryKeys.alerts.list())).toBeUndefined()
+    expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
     expect(client.getQueryData(queryKeys.events.list())).toBeUndefined()
   })
 
@@ -382,5 +406,100 @@ describe('AuthProvider tenant cache isolation', () => {
     expect(screen.getByTestId('current-user')).toHaveTextContent('guest')
     expect(getAccessToken()).toBeNull()
     expect(client.getQueryData(queryKeys.auth.me())).toBeNull()
+  })
+
+  it('isolates alerts.list and alerts.preferences across logout and User B login', async () => {
+    const tokenA: TokenResponse = {
+      access_token: 'token-a',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: USER_A,
+    }
+    const tokenB: TokenResponse = {
+      access_token: 'token-b',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: USER_B,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse(tokenA, 200))
+      }
+      if (pathname === '/api/auth/logout') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (pathname === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(tokenB, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const client = createQueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+
+    function Probe() {
+      const { user, login, logout } = useAuth()
+      return (
+        <div>
+          <span data-testid="current-user">{user ? user.email : 'guest'}</span>
+          <button
+            type="button"
+            onClick={() => {
+              void logout()
+            }}
+          >
+            退出登录
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void login({ email: 'user-b@example.com', password: 'password123' })
+            }}
+          >
+            登录B
+          </button>
+        </div>
+      )
+    }
+
+    render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('user-a@example.com')
+    })
+
+    client.setQueryData(queryKeys.alerts.list(50), [{ id: 1, detail: 'A的绝密触达' }])
+    client.setQueryData(queryKeys.alerts.preferences(), {
+      in_app_enabled: true,
+      webhook_enabled: true,
+      channel_type: 'feishu',
+      webhook_url_configured: true,
+      webhook_url_masked: 'https://open.feishu.cn/****A999',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '退出登录' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('guest')
+    })
+    expect(client.getQueryData(queryKeys.alerts.list(50))).toBeUndefined()
+    expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
+
+    fireEvent.click(screen.getByRole('button', { name: '登录B' }))
+    await waitFor(() => {
+      expect(screen.getByTestId('current-user')).toHaveTextContent('user-b@example.com')
+    })
+    expect(client.getQueryData(queryKeys.alerts.list(50))).toBeUndefined()
+    expect(client.getQueryData(queryKeys.alerts.preferences())).toBeUndefined()
   })
 })

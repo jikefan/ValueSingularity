@@ -8,6 +8,7 @@ import { queryKeys } from './queryKeys'
 const USER_SCOPED_QUERY_KEYS = [
   queryKeys.watchlist.all,
   queryKeys.journal.all,
+  queryKeys.alerts.all,
   queryKeys.events.all,
 ] as const
 

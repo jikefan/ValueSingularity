@@ -197,6 +197,7 @@ def test_duckdb_and_akshare_adapters_are_async() -> None:
     paths = [
         *sorted((APP_ROOT / "adapters/duckdb").rglob("*.py")),
         *sorted((APP_ROOT / "adapters/akshare").rglob("*.py")),
+        *sorted((APP_ROOT / "adapters/notifications").rglob("*.py")),
     ]
     _assert_public_methods_are_async(paths)
 

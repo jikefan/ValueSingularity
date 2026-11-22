@@ -9,6 +9,8 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.notifications.webhook import HttpxWebhookNotifier
+from app.adapters.postgres.alert import PostgresAlertRepository, PostgresSettingsRepository
 from app.adapters.postgres.event import PostgresEventRepository
 from app.adapters.postgres.journal import PostgresJournalRepository
 from app.adapters.postgres.market import PostgresMarketRepository, PostgresStockMetaRepository
@@ -19,6 +21,8 @@ from app.adapters.security.password import Argon2PasswordHasher
 from app.adapters.security.token import JwtTokenCodec
 from app.db.session import DatabaseUnavailableError, check_db_health, dispose_db, get_db
 from app.domain.models import AuthenticatedUser
+from app.domain.ports import WebhookNotifierPort
+from app.services.alerts import AlertScanService
 from app.services.auth import AuthService, InvalidAccessTokenError
 from app.services.event import EventService
 from app.services.journal import JournalService
@@ -74,6 +78,8 @@ def get_journal_service(session: DbSessionDep) -> JournalService:
     return JournalService(
         repository=PostgresJournalRepository(session),
         stock_meta=PostgresStockMetaRepository(session),
+        snapshot_repo=PostgresStockSnapshotRepository(session),
+        market_repo=PostgresMarketRepository(session),
     )
 
 
@@ -81,6 +87,29 @@ def get_event_service(session: DbSessionDep) -> EventService:
     return EventService(PostgresEventRepository(session))
 
 
+@lru_cache
+def get_webhook_notifier() -> WebhookNotifierPort:
+    return HttpxWebhookNotifier()
+
+
+WebhookNotifierDep = Annotated[WebhookNotifierPort, Depends(get_webhook_notifier)]
+
+
+def get_alert_service(
+    session: DbSessionDep,
+    webhook_notifier: WebhookNotifierDep,
+) -> AlertScanService:
+    return AlertScanService(
+        watchlist_repo=PostgresWatchlistRepository(session),
+        journal_repo=PostgresJournalRepository(session),
+        snapshot_repo=PostgresStockSnapshotRepository(session),
+        settings_repo=PostgresSettingsRepository(session),
+        alert_repo=PostgresAlertRepository(session),
+        webhook_notifier=webhook_notifier,
+    )
+
+
+AlertServiceDep = Annotated[AlertScanService, Depends(get_alert_service)]
 MarketServiceDep = Annotated[MarketService, Depends(get_market_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 WatchlistServiceDep = Annotated[WatchlistService, Depends(get_watchlist_service)]
@@ -121,6 +150,7 @@ async def close_db_pool() -> None:
 
 
 __all__ = [
+    "AlertServiceDep",
     "AuthServiceDep",
     "CurrentUserDep",
     "DatabaseUnavailableError",
@@ -132,6 +162,7 @@ __all__ = [
     "WatchlistServiceDep",
     "bearer_scheme",
     "close_db_pool",
+    "get_alert_service",
     "get_auth_service",
     "get_current_user",
     "get_db",
@@ -142,5 +173,6 @@ __all__ = [
     "get_stock_service",
     "get_token_codec",
     "get_watchlist_service",
+    "get_webhook_notifier",
     "verify_db",
 ]
