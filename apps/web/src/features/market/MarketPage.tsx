@@ -1,15 +1,23 @@
 import { useMemo } from 'react'
-import type { EChartsOption } from 'echarts'
+import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { Metric } from '../../components/ui/Metric'
 import { ScoreRing } from '../../components/ui/ScoreRing'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
-import { CHART_COLORS } from '../../lib/chartTheme'
-import { Chart } from '../../lib/charts'
+import { CHART_AXIS_COMMON, CHART_COLORS, CHART_TOOLTIP_COMMON } from '../../lib/chartTheme'
+import { Chart, type ChartOption } from '../../lib/charts'
 import { chgClass, fmtDateTime, fmtMoney, fmtNum, fmtPct } from '../../lib/format'
 import type { TemperatureLevel } from '../../types/api'
 import { useMarketOverview } from './useMarketOverview'
+
+const SAMPLE_STOCKS: ReadonlyArray<{ code: string; name: string }> = [
+  { code: '600519', name: '贵州茅台' },
+  { code: '600036', name: '招商银行' },
+  { code: '002594', name: '比亚迪' },
+  { code: '000858', name: '五粮液' },
+  { code: '300750', name: '宁德时代' },
+]
 
 const LEVEL_META: Record<
   TemperatureLevel,
@@ -25,26 +33,36 @@ const LEVEL_META: Record<
 export function MarketPage() {
   const { data, error, isPending, isFetching, isError, refetch } = useMarketOverview()
 
-  const flowOption = useMemo<EChartsOption>(() => {
+  const flowOption = useMemo<ChartOption>(() => {
     const flows = data?.hot_industries ?? []
     return {
-      grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
+      grid: { left: 12, right: 20, top: 16, bottom: 12, containLabel: true },
       tooltip: {
+        ...CHART_TOOLTIP_COMMON,
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        valueFormatter: (value) => `${fmtNum(Number(value), 2)} 亿`,
+        valueFormatter: (value: unknown) => `${fmtNum(Number(value), 2)} 亿`,
       },
       xAxis: {
+        ...CHART_AXIS_COMMON,
         type: 'value',
-        axisLabel: { color: CHART_COLORS.muted, formatter: '{value} 亿' },
-        splitLine: { lineStyle: { color: CHART_COLORS.grid } },
+        axisLabel: {
+          ...CHART_AXIS_COMMON.axisLabel,
+          formatter: '{value} 亿',
+        },
       },
       yAxis: {
+        ...CHART_AXIS_COMMON,
         type: 'category',
+        inverse: true,
         data: flows.map((flow) => flow.name),
-        axisLabel: { color: CHART_COLORS.text },
+        axisLabel: {
+          ...CHART_AXIS_COMMON.axisLabel,
+          color: CHART_COLORS.text,
+        },
         axisLine: { show: false },
         axisTick: { show: false },
+        splitLine: { show: false },
       },
       series: [
         {
@@ -54,7 +72,7 @@ export function MarketPage() {
             value: Number((flow.net_inflow / 1e8).toFixed(2)),
             itemStyle: {
               color: flow.net_inflow >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative,
-              borderRadius: 6,
+              borderRadius: flow.net_inflow >= 0 ? [0, 6, 6, 0] : [6, 0, 0, 6],
             },
           })),
         },
@@ -102,6 +120,24 @@ export function MarketPage() {
 
   return (
     <div className="container stack" style={{ gap: 16 }}>
+      <Card title="三步价值投资工作流" extra={<Tag color="blue">新手快速上手</Tag>}>
+        <div className="stack" style={{ gap: 12 }}>
+          <p className="workflow-steps">
+            ① 搜公司查排雷与估值水位 → ② 加入自选设好价格击球区 → ③
+            买入前走反方质询，留下时间胶囊与否证红线
+          </p>
+          <div className="sample-stock-row" role="group" aria-label="快捷示例标的">
+            <span className="small muted">快捷示例标的：</span>
+            {SAMPLE_STOCKS.map((stock) => (
+              <Link key={stock.code} className="sample-stock-chip" to={`/stock/${stock.code}`}>
+                <span className="mono">{stock.code}</span>
+                <span>{stock.name}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </Card>
+
       <Card
         title="市场温度"
         extra={
@@ -130,11 +166,15 @@ export function MarketPage() {
               <Metric
                 label="股债性价比"
                 value={`${fmtNum(data.temperature.equity_bond_spread, 2)}%`}
-                sub="EP − 国债"
+                sub="EP − 国债（越高股票越占优）"
                 tone={data.temperature.equity_bond_spread > 0 ? 'up' : 'down'}
               />
             </div>
             <p className="hero-comment">{data.temperature.comment}</p>
+            <p className="small muted">
+              市场冷暖提示：温度偏冷代表全市场估值分位较低；股债性价比（ERP = 股票盈利收益率 EP −
+              十年国债收益率）越高，说明权益资产相对国债越具配置价值。
+            </p>
           </div>
         </div>
       </Card>
@@ -162,30 +202,36 @@ export function MarketPage() {
         </Card>
 
         <Card title="净流入排行">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>行业</th>
-                <th style={{ textAlign: 'right' }}>涨跌幅</th>
-                <th style={{ textAlign: 'right' }}>净流入</th>
-                <th style={{ textAlign: 'right' }}>公司数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.hot_industries.map((flow) => (
-                <tr key={flow.name}>
-                  <td>{flow.name}</td>
-                  <td className={`num ${chgClass(flow.change_pct)}`}>{fmtPct(flow.change_pct)}</td>
-                  <td className={`num ${chgClass(flow.net_inflow)}`}>
-                    {fmtMoney(flow.net_inflow)}
-                  </td>
-                  <td className="num muted">
-                    {flow.companies !== null && flow.companies !== undefined ? flow.companies : '—'}
-                  </td>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>行业</th>
+                  <th style={{ textAlign: 'right' }}>涨跌幅</th>
+                  <th style={{ textAlign: 'right' }}>净流入</th>
+                  <th style={{ textAlign: 'right' }}>公司数</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.hot_industries.map((flow) => (
+                  <tr key={flow.name}>
+                    <td>{flow.name}</td>
+                    <td className={`num ${chgClass(flow.change_pct)}`}>
+                      {fmtPct(flow.change_pct)}
+                    </td>
+                    <td className={`num ${chgClass(flow.net_inflow)}`}>
+                      {fmtMoney(flow.net_inflow)}
+                    </td>
+                    <td className="num muted">
+                      {flow.companies !== null && flow.companies !== undefined
+                        ? flow.companies
+                        : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       </div>
 

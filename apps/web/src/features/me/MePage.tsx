@@ -239,7 +239,7 @@ export function MePage() {
         title="投资账户"
         extra={<Tag color={PLAN_COLOR[user.plan_tier]}>{user.plan_tier.toUpperCase()}</Tag>}
       >
-        <div className="row">
+        <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
           <div className="stack" style={{ gap: 2 }}>
             <strong>{user.display_name}</strong>
             <span className="small muted mono">{user.email ?? user.phone ?? '—'}</span>
@@ -424,61 +424,63 @@ export function MePage() {
             hint="在上方录入股票代码和击球区阈值，建立自己的观察愿望单。"
           />
         ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>代码</th>
-                <th>名称 / 行业</th>
-                <th>击球区阈值</th>
-                <th>备注</th>
-                <th style={{ textAlign: 'right' }}>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {watchlistQuery.data.map((item) => (
-                <tr key={item.code}>
-                  <td>
-                    <Link className="mono link-accent" to={`/stock/${item.code}`}>
-                      {item.code}
-                    </Link>
-                  </td>
-                  <td>
-                    <div>{item.name}</div>
-                    {item.industry ? <div className="small muted">{item.industry}</div> : null}
-                  </td>
-                  <td>{renderThresholdBadges(item)}</td>
-                  <td className="soft">
-                    {item.note ? item.note : <span className="muted">—</span>}
-                  </td>
-                  <td>
-                    <div className="table-actions">
-                      <button type="button" className="btn-ghost" onClick={() => startEdit(item)}>
-                        编辑
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-danger"
-                        disabled={
-                          removeMutation.isPending && removeMutation.variables === item.code
-                        }
-                        onClick={() => {
-                          removeMutation.mutate(item.code, {
-                            onSuccess: () => {
-                              if (editingCode === item.code) {
-                                resetForm()
-                              }
-                            },
-                          })
-                        }}
-                      >
-                        删除
-                      </button>
-                    </div>
-                  </td>
+          <div className="table-wrap">
+            <table className="table watchlist-table">
+              <thead>
+                <tr>
+                  <th>代码</th>
+                  <th>名称 / 行业</th>
+                  <th>击球区阈值</th>
+                  <th>备注</th>
+                  <th style={{ textAlign: 'right' }}>操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {watchlistQuery.data.map((item) => (
+                  <tr key={item.code}>
+                    <td className="watchlist-cell-nowrap">
+                      <Link className="mono link-accent" to={`/stock/${item.code}`}>
+                        {item.code}
+                      </Link>
+                    </td>
+                    <td className="watchlist-cell-name">
+                      <div>{item.name}</div>
+                      {item.industry ? <div className="small muted">{item.industry}</div> : null}
+                    </td>
+                    <td className="watchlist-cell-thresholds">{renderThresholdBadges(item)}</td>
+                    <td className="soft">
+                      {item.note ? item.note : <span className="muted">—</span>}
+                    </td>
+                    <td className="watchlist-cell-nowrap">
+                      <div className="table-actions">
+                        <button type="button" className="btn-ghost" onClick={() => startEdit(item)}>
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-danger"
+                          disabled={
+                            removeMutation.isPending && removeMutation.variables === item.code
+                          }
+                          onClick={() => {
+                            removeMutation.mutate(item.code, {
+                              onSuccess: () => {
+                                if (editingCode === item.code) {
+                                  resetForm()
+                                }
+                              },
+                            })
+                          }}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 

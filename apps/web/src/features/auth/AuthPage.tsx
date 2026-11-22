@@ -14,21 +14,28 @@ const PLAN_COLOR: Record<PlanTier, 'gray' | 'blue' | 'green'> = {
   ai_plus: 'green',
 }
 
-function extractRedirectPath(state: unknown): string {
+function isSafeLocalRedirect(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
+}
+
+function extractRedirectPath(state: unknown, search: string): string {
   if (state !== null && typeof state === 'object' && 'from' in state) {
     const from = state.from
-    if (typeof from === 'string' && from.startsWith('/')) {
+    if (isSafeLocalRedirect(from)) {
       return from
     }
     if (
       from !== null &&
       typeof from === 'object' &&
       'pathname' in from &&
-      typeof from.pathname === 'string' &&
-      from.pathname.startsWith('/')
+      isSafeLocalRedirect(from.pathname)
     ) {
       return from.pathname
     }
+  }
+  const queryRedirect = new URLSearchParams(search).get('redirect')
+  if (isSafeLocalRedirect(queryRedirect)) {
+    return queryRedirect
   }
   return '/me'
 }
@@ -37,7 +44,7 @@ export function AuthPage({ initialMode = 'login' }: { initialMode?: AuthMode }) 
   const { user, isAuthLoading, login, register } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const redirectTo = extractRedirectPath(location.state)
+  const redirectTo = extractRedirectPath(location.state, location.search)
 
   const [mode, setMode] = useState<AuthMode>(initialMode)
   const [email, setEmail] = useState('')

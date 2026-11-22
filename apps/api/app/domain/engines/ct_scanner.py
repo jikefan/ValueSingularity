@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from app.domain.engines._helpers import (
     finite_or_none,
+    is_financial_institution,
     report_interest_debt_yuan,
     safe_pct,
     sort_reports_asc,
@@ -38,12 +39,12 @@ def _check_dual_high_cash_debt(
     meta: StockMetaRecord | None,
 ) -> CtCheckItem:
     threshold = "货币资金/总资产 ≥ 25% 且有息负债/总资产 ≥ 20%（红灯）；双 ≥ 15%（黄灯）"
-    if meta is not None and meta.industry_sw1 in {"银行", "非银金融"}:
+    if is_financial_institution(meta):
         return CtCheckItem(
             rule_id="dual_high_cash_debt",
             title="存贷双高扫描",
             status="na",
-            summary="金融行业资产负债表结构特殊，不适用常规存贷双高指标。",
+            summary="金融行业结构特殊 — 不适用常规存贷双高指标（吸储与同业负债属主营金融负债）。",
             threshold=threshold,
             value_text="不适用",
             evidences=[],
@@ -205,8 +206,23 @@ def _check_stalled_cip(reports: Sequence[StockAnnualReport]) -> CtCheckItem:
     )
 
 
-def _check_ocf_profit_divergence(reports: Sequence[StockAnnualReport]) -> CtCheckItem:
+def _check_ocf_profit_divergence(
+    reports: Sequence[StockAnnualReport],
+    meta: StockMetaRecord | None = None,
+) -> CtCheckItem:
     threshold = "近3年累计经营现金流/归母净利润 < 0.5（红灯）；< 0.8（黄灯）"
+    if is_financial_institution(meta):
+        return CtCheckItem(
+            rule_id="ocf_profit_divergence",
+            title="现金流与利润背离",
+            status="na",
+            summary=(
+                "金融行业结构特殊 — 不适用传统净现比指标（存贷款及同业资金变动计入经营现金流）。"
+            ),
+            threshold=threshold,
+            value_text="不适用",
+            evidences=[],
+        )
     evidences: list[CtRuleEvidence] = []
     paired: list[tuple[int, float, float]] = []
 
@@ -298,12 +314,12 @@ def _check_receivable_inventory_bloat(
     threshold = (
         "(应收+存货)/营收 ≥ 80% 且占总资产 ≥ 35%，或增速显著背离（红灯）；占营收 ≥ 50%（黄灯）"
     )
-    if meta is not None and meta.industry_sw1 in {"银行", "非银金融"}:
+    if is_financial_institution(meta):
         return CtCheckItem(
             rule_id="receivable_inventory_bloat",
             title="应收与存货膨胀",
             status="na",
-            summary="金融行业不适用传统应收账款与存货周转指标。",
+            summary="金融行业结构特殊 — 不适用传统应收账款与存货周转指标。",
             threshold=threshold,
             value_text="不适用",
             evidences=[],
@@ -676,7 +692,7 @@ def scan_financial_ct(
     checks = [
         _check_dual_high_cash_debt(ordered, meta),
         _check_stalled_cip(ordered),
-        _check_ocf_profit_divergence(ordered),
+        _check_ocf_profit_divergence(ordered, meta),
         _check_receivable_inventory_bloat(ordered, meta),
         _check_goodwill_overhang(ordered),
         _check_shareholder_pledge(pledge),

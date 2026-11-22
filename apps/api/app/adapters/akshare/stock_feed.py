@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -41,6 +42,193 @@ _VALID_DIVIDEND_PROGRESS = frozenset({"实施分配", "股东大会通过"})
 _VALID_REPURCHASE_PROGRESS = frozenset({"完成实施", "实施中"})
 _PLEDGE_LOOKBACK_WEEKS = 5
 _VALUATION_MAX_LAG_DAYS = 10
+# CNInfo endpoints invoke py_mini_racer.MiniRacer; V8 aborts on macOS if entered concurrently.
+_CNINFO_V8_LOCK = threading.Lock()
+
+_SW1_CANONICAL_SET = frozenset(
+    {
+        "农林牧渔",
+        "基础化工",
+        "钢铁",
+        "有色金属",
+        "电子",
+        "汽车",
+        "家用电器",
+        "食品饮料",
+        "纺织服饰",
+        "轻工制造",
+        "医药生物",
+        "公用事业",
+        "交通运输",
+        "房地产",
+        "商贸零售",
+        "社会服务",
+        "银行",
+        "非银金融",
+        "综合",
+        "建筑材料",
+        "建筑装饰",
+        "电力设备",
+        "机械设备",
+        "国防军工",
+        "计算机",
+        "传媒",
+        "通信",
+        "煤炭",
+        "石油石化",
+        "环保",
+        "美容护理",
+    }
+)
+_IT_SECTOR_GUARD: tuple[str, ...] = (
+    "软件",
+    "信息技术",
+    "计算机",
+    "IT",
+    "大数据",
+    "云计算",
+    "网络安全",
+    "人工智能",
+    "金融科技",
+    "金融信息",
+    "互联网金融",
+)
+_COMPUTER_TRIGGERS: tuple[str, ...] = (
+    "软件",
+    "信息技术",
+    "计算机应用",
+    "计算机整机",
+    "垂直应用软件",
+    "横向通用软件",
+    "IT服务",
+    "金融IT",
+    "证券IT",
+    "银行IT",
+    "金融信息",
+    "互联网金融",
+    "大数据",
+    "云计算",
+    "网络安全",
+    "人工智能",
+    "服务器",
+)
+_BANK_TRIGGERS: tuple[str, ...] = (
+    "货币金融服务",
+    "银行业",
+    "商业银行",
+    "农商银行",
+    "农商行",
+    "吸收公众存款",
+    "银行产品",
+    "银行",
+)
+_NONBANK_FIN_TRIGGERS: tuple[str, ...] = (
+    "保险",
+    "人寿",
+    "财险",
+    "再保险",
+    "资本市场",
+    "证券",
+    "信托",
+    "期货",
+    "多元金融",
+    "其他金融业",
+)
+_CSRC_BROAD_SECTORS: dict[str, str] = {
+    "计算机、通信和其他电子设备制造业": "电子",
+}
+_SECTOR_KEYWORD_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("计算机", _COMPUTER_TRIGGERS),
+    (
+        "电子",
+        (
+            "半导体",
+            "集成电路",
+            "芯片",
+            "晶圆",
+            "印制电路板",
+            "PCB",
+            "光学光电子",
+            "面板",
+            "显示器件",
+            "消费电子",
+            "电子元件",
+            "电子制造",
+        ),
+    ),
+    (
+        "食品饮料",
+        (
+            "茅台酒",
+            "系列酒",
+            "白酒",
+            "啤酒",
+            "葡萄酒",
+            "黄酒",
+            "酿酒",
+            "酒业",
+            "酒、饮料",
+            "乳制品",
+            "调味品",
+            "食品饮料",
+            "食品、饮料",
+            "饮料制造",
+            "制茶",
+        ),
+    ),
+    ("汽车", ("整车", "乘用车", "商用车", "汽车业务", "汽车制造", "汽车销售")),
+    (
+        "电力设备",
+        (
+            "动力电池",
+            "锂电池",
+            "储能",
+            "光伏",
+            "风电",
+            "逆变器",
+            "电气设备",
+            "电气机械",
+            "输变电",
+            "电网设备",
+            "电力设备",
+        ),
+    ),
+    ("汽车", ("新能源汽车", "汽车零部件", "汽车")),
+    (
+        "医药生物",
+        ("医药", "制药", "中药", "生物制品", "医疗器械", "医疗服务", "创新药", "化学药"),
+    ),
+    ("家用电器", ("家用电器", "空调", "冰箱", "洗衣机", "厨电", "小家电")),
+    ("通信", ("通信设备", "电信", "5G", "光模块", "光通信")),
+    ("煤炭", ("煤炭",)),
+    ("石油石化", ("石油", "石化", "炼化", "油气")),
+    ("公用事业", ("电力、热力", "火力发电", "水力发电", "核电", "水务", "燃气")),
+    ("房地产", ("房地产", "物业开发")),
+    ("交通运输", ("航空运输", "航运", "港口", "铁路运输", "公路运输", "快递", "仓储物流")),
+    ("有色金属", ("有色金属", "黄金", "铜", "铝", "稀土", "锂矿")),
+    ("钢铁", ("钢铁", "特钢")),
+    ("基础化工", ("基础化工", "化学原料", "化学制品", "化肥", "农药", "聚氨酯")),
+    ("机械设备", ("工程机械", "通用设备", "专用设备", "工业机器人", "数控机床")),
+    ("国防军工", ("国防军工", "航空航天", "军工", "兵器", "船舶制造")),
+    ("建筑材料", ("建筑材料", "水泥", "玻璃")),
+    ("建筑装饰", ("建筑装饰", "工程施工", "建筑工程")),
+    ("农林牧渔", ("农林牧渔", "生猪养殖", "畜牧", "饲料", "种植业")),
+    ("传媒", ("传媒", "出版", "影视", "游戏", "广告营销")),
+    ("商贸零售", ("商贸零售", "百货", "超市", "专业连锁")),
+    ("社会服务", ("社会服务", "酒店", "旅游", "餐饮", "教育")),
+    ("美容护理", ("美容护理", "化妆品", "护肤")),
+    ("环保", ("环保", "污水处理", "固废")),
+    ("轻工制造", ("轻工制造", "造纸", "包装印刷", "家居")),
+    ("纺织服饰", ("纺织服饰", "服装", "纺织")),
+)
+_LEGACY_INDUSTRY_STANDARDS: dict[str, int] = {
+    "申银万国行业分类标准(旧)": 0,
+    "中证行业分类标准(旧)": 1,
+    "巨潮行业分类标准": 2,
+    "巨潮行业分类标准(旧)": 3,
+    "中国上市公司协会上市公司行业分类标准": 4,
+    "证监会行业分类标准（2012）": 5,
+}
 
 
 def _lookup_backward(
@@ -78,6 +266,198 @@ def _first_str(row: dict[str, Any], *keys: str) -> str | None:
                 text = str(raw).strip()
                 if text:
                     return text
+    return None
+
+
+def _earliest_trigger_pos(text: str, triggers: tuple[str, ...]) -> int | None:
+    positions = [pos for kw in triggers if (pos := text.find(kw)) >= 0]
+    return min(positions) if positions else None
+
+
+def normalize_canonical_sector(
+    text: str | None,
+    *,
+    name_hint: str | None = None,
+) -> str | None:
+    """Map CNInfo / CSI / CSRC / THS industry descriptions onto canonical SW1 sector names."""
+    cleaned = text.strip() if text else ""
+    if not cleaned or cleaned in _CSRC_BROAD_SECTORS:
+        return None
+    if cleaned in _SW1_CANONICAL_SET:
+        return cleaned
+
+    upper = cleaned.upper()
+    has_it_guard = any(kw in upper for kw in _IT_SECTOR_GUARD)
+
+    if not has_it_guard:
+        bank_pos = _earliest_trigger_pos(cleaned, _BANK_TRIGGERS)
+        nonbank_pos = _earliest_trigger_pos(cleaned, _NONBANK_FIN_TRIGGERS)
+        if bank_pos is not None and (nonbank_pos is None or bank_pos <= nonbank_pos):
+            return "银行"
+        if nonbank_pos is not None:
+            return "非银金融"
+
+    for sector, triggers in _SECTOR_KEYWORD_RULES:
+        if any(kw in upper for kw in triggers):
+            return sector
+
+    if not has_it_guard and cleaned in {"金融", "金融业", "金融服务", "金融地产"}:
+        if name_hint and any(kw in name_hint for kw in ("银行", "农商行")):
+            return "银行"
+        return "非银金融"
+    return None
+
+
+def _normalize_csi_row(
+    row: dict[str, Any], *, name_hint: str | None = None
+) -> tuple[str | None, str | None]:
+    cat1 = _first_str(row, "行业门类")
+    cat2 = _first_str(row, "行业次类")
+    cat3 = _first_str(row, "行业大类")
+    cat4 = _first_str(row, "行业中类")
+    joined = " ".join(part for part in (cat1, cat2, cat3, cat4) if part)
+    upper = joined.upper()
+    has_it_guard = any(kw in upper for kw in _IT_SECTOR_GUARD)
+
+    if not has_it_guard:
+        if any(part and "银行" in part for part in (cat2, cat3, cat4)):
+            bank_sub = cat3 or cat2 or "银行"
+            return "银行", bank_sub[:64]
+        if any(kw in joined for kw in ("保险", "资本市场", "证券", "信托", "多元金融", "金融")):
+            non_bank_sub = cat2 or cat3 or cat1
+            return "非银金融", non_bank_sub[:64] if non_bank_sub else None
+
+    for part in (cat4, cat3, cat2, cat1):
+        sector = normalize_canonical_sector(part, name_hint=name_hint)
+        if sector is not None:
+            fallback_sub = cat3 or cat2
+            return sector, fallback_sub[:64] if fallback_sub else None
+    return None, None
+
+
+def parse_cninfo_industry_change(
+    df: pd.DataFrame,
+    *,
+    name_hint: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Extract latest SW1/SW2 or normalized CSI sector from stock_industry_change_cninfo."""
+    if df.empty or "分类标准" not in df.columns:
+        return None, None
+
+    sw_rows: list[tuple[date, int, dict[str, Any]]] = []
+    csi_rows: list[tuple[date, int, dict[str, Any]]] = []
+    legacy_rows: list[tuple[int, date, int, dict[str, Any]]] = []
+
+    for idx, raw in enumerate(df.to_dict(orient="records")):
+        row = {str(k): v for k, v in raw.items()}
+        std = _first_str(row, "分类标准")
+        if not std:
+            continue
+        vary_date = coerce_date(row.get("变更日期")) or date.min
+        if std == "申银万国行业分类标准":
+            if _first_str(row, "行业门类"):
+                sw_rows.append((vary_date, idx, row))
+        elif std == "中证行业分类标准":
+            csi_rows.append((vary_date, idx, row))
+        elif std in _LEGACY_INDUSTRY_STANDARDS:
+            legacy_rows.append((-_LEGACY_INDUSTRY_STANDARDS[std], vary_date, idx, row))
+
+    if sw_rows:
+        _, _, latest_sw = max(sw_rows, key=lambda item: (item[0], item[1]))
+        sw1 = _first_str(latest_sw, "行业门类")
+        sw2 = _first_str(latest_sw, "行业次类")
+        return (sw1[:64] if sw1 else None), (sw2[:64] if sw2 else None)
+
+    if csi_rows:
+        _, _, latest_csi = max(csi_rows, key=lambda item: (item[0], item[1]))
+        resolved_name = name_hint or _first_str(latest_csi, "新证券简称", "机构名称")
+        sw1, sw2 = _normalize_csi_row(latest_csi, name_hint=resolved_name)
+        if sw1 is not None:
+            return sw1, sw2
+
+    if legacy_rows:
+        legacy_rows.sort(key=lambda item: (item[0], item[1], item[2]), reverse=True)
+        for _, _, _, row in legacy_rows:
+            resolved_name = name_hint or _first_str(row, "新证券简称", "机构名称")
+            for key in ("行业中类", "行业大类", "行业次类", "行业门类"):
+                sector = normalize_canonical_sector(_first_str(row, key), name_hint=resolved_name)
+                if sector is not None:
+                    sub = _first_str(row, "行业次类")
+                    std_name = _first_str(row, "分类标准")
+                    kept_sub = sub[:64] if sub and std_name == "申银万国行业分类标准(旧)" else None
+                    return sector, kept_sub
+
+    return None, None
+
+
+def parse_cninfo_ipo_list_date(df: pd.DataFrame) -> date | None:
+    """Extract listing date from stock_ipo_summary_cninfo."""
+    if df.empty or "上市日期" not in df.columns:
+        return None
+    for row in df.to_dict(orient="records"):
+        parsed = coerce_date(row.get("上市日期"))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def parse_cninfo_profile(
+    df: pd.DataFrame,
+    *,
+    name_hint: str | None = None,
+) -> tuple[str | None, str | None, date | None]:
+    """Extract sector, optional sub-sector, and listing date from stock_profile_cninfo."""
+    if df.empty:
+        return None, None, None
+
+    raw = df.to_dict(orient="records")[0]
+    row = {str(k): v for k, v in raw.items()}
+    list_date = coerce_date(row.get("上市日期"))
+    resolved_name = name_hint or _first_str(row, "A股简称", "公司名称")
+
+    raw_ind = _first_str(row, "所属行业")
+    main_biz = _first_str(row, "主营业务")
+    biz_scope = _first_str(row, "经营范围")
+
+    sw1 = normalize_canonical_sector(raw_ind, name_hint=resolved_name)
+    if sw1 is None and main_biz:
+        sw1 = normalize_canonical_sector(main_biz, name_hint=resolved_name)
+    if sw1 is None and raw_ind in _CSRC_BROAD_SECTORS:
+        sw1 = _CSRC_BROAD_SECTORS[raw_ind]
+    if sw1 is None and biz_scope:
+        sw1 = normalize_canonical_sector(biz_scope, name_hint=resolved_name)
+
+    sw2: str | None = None
+    if sw1 == "非银金融" and raw_ind:
+        if "保险" in raw_ind:
+            sw2 = "保险"
+        elif "资本市场" in raw_ind or "证券" in raw_ind:
+            sw2 = "证券"
+        elif "多元金融" in raw_ind or "其他金融" in raw_ind:
+            sw2 = "多元金融"
+    elif sw1 == "银行" and raw_ind:
+        sw2 = "银行"
+
+    return sw1, sw2, list_date
+
+
+def parse_ths_zyjs_sector(
+    df: pd.DataFrame,
+    *,
+    name_hint: str | None = None,
+) -> str | None:
+    """Infer canonical SW1 sector from stock_zyjs_ths main business description."""
+    if df.empty:
+        return None
+    raw = df.to_dict(orient="records")[0]
+    row = {str(k): v for k, v in raw.items()}
+    for key in ("所属行业", "主营业务", "产品类型", "产品名称", "经营范围"):
+        text = _first_str(row, key)
+        if not text:
+            continue
+        sector = normalize_canonical_sector(text, name_hint=name_hint)
+        if sector is not None:
+            return sector
     return None
 
 
@@ -772,6 +1152,105 @@ class AkshareStockFactFeed:
             logger.warning("新浪增发记录获取跳过 (%s): %s", code, exc)
             return []
 
+    async def _safe_profile_df(
+        self,
+        code: str,
+        source_name: str,
+        fn: Callable[[], pd.DataFrame],
+        *,
+        serialized: bool = False,
+    ) -> pd.DataFrame | None:
+        def _invoke() -> pd.DataFrame:
+            if serialized:
+                with _CNINFO_V8_LOCK:
+                    return fn()
+            return fn()
+
+        try:
+            ak_timeout = (min(5.0, self._timeout_seconds), self._timeout_seconds)
+            ak.set_timeout(ak_timeout)
+            return await asyncio.wait_for(
+                asyncio.to_thread(_invoke),
+                timeout=self._timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("个股档案辅助接口 %s 跳过 (%s): %s", source_name, code, exc)
+            return None
+
+    async def _fetch_stock_profile_meta(
+        self,
+        code: str,
+        name: str | None = None,
+        *,
+        as_of: date | None = None,
+    ) -> tuple[str | None, str | None, date | None]:
+        end_str = (as_of or datetime.now(SHANGHAI_TZ).date()).strftime("%Y%m%d")
+
+        def _call_ind_change() -> pd.DataFrame:
+            try:
+                return ak.stock_industry_change_cninfo(
+                    symbol=code, start_date="19900101", end_date=end_str
+                )
+            except TypeError:
+                return ak.stock_industry_change_cninfo(symbol=code)
+
+        ind_df = await self._safe_profile_df(
+            code,
+            "stock_industry_change_cninfo",
+            _call_ind_change,
+            serialized=True,
+        )
+        ipo_df = await self._safe_profile_df(
+            code,
+            "stock_ipo_summary_cninfo",
+            lambda: ak.stock_ipo_summary_cninfo(symbol=code),
+            serialized=True,
+        )
+
+        name_hint = name
+        if name_hint is None and ind_df is not None and not ind_df.empty:
+            for row in ind_df.to_dict(orient="records"):
+                row_str = {str(k): v for k, v in row.items()}
+                name_hint = _first_str(row_str, "新证券简称", "机构名称")
+                if name_hint:
+                    break
+
+        sw1, sw2 = (
+            parse_cninfo_industry_change(ind_df, name_hint=name_hint)
+            if ind_df is not None
+            else (None, None)
+        )
+        list_date = parse_cninfo_ipo_list_date(ipo_df) if ipo_df is not None else None
+
+        if sw1 is None or list_date is None:
+            profile_df = await self._safe_profile_df(
+                code,
+                "stock_profile_cninfo",
+                lambda: ak.stock_profile_cninfo(symbol=code),
+                serialized=True,
+            )
+            if profile_df is not None:
+                p_sw1, p_sw2, p_list_date = parse_cninfo_profile(profile_df, name_hint=name_hint)
+                if sw1 is None and p_sw1 is not None:
+                    sw1 = p_sw1
+                    if sw2 is None:
+                        sw2 = p_sw2
+                if list_date is None and p_list_date is not None:
+                    list_date = p_list_date
+
+        if sw1 is None:
+            zyjs_df = await self._safe_profile_df(
+                code,
+                "stock_zyjs_ths",
+                lambda: ak.stock_zyjs_ths(symbol=code),
+            )
+            if zyjs_df is not None:
+                sw1 = parse_ths_zyjs_sector(zyjs_df, name_hint=name_hint)
+
+        return sw1, sw2, list_date
+
     async def fetch_stock_bundle(self, code: str, *, as_of: date | None = None) -> StockFactBundle:
         exchange = infer_exchange(code)
         if exchange is None:
@@ -781,13 +1260,15 @@ class AkshareStockFactFeed:
         resolved_as_of = as_of or bars[-1].trade_date
 
         reports = await self._fetch_statements(code, exchange=exchange, as_of=resolved_as_of)
-        dividends, repurchases, pledge, add_stocks = await asyncio.gather(
+        dividends, repurchases, pledge, add_stocks, profile_meta = await asyncio.gather(
             self._fetch_dividends(code, as_of=resolved_as_of),
             self._get_repurchases_for_code(code, as_of=resolved_as_of),
             self._get_pledge_for_code(code, anchor_date=resolved_as_of),
             self._fetch_add_stock(code, as_of=resolved_as_of),
+            self._fetch_stock_profile_meta(code, None, as_of=resolved_as_of),
         )
         cf_financings = extract_cf_equity_financings(code, reports)
+        profile_sw1, profile_sw2, profile_list_date = profile_meta
 
         return StockFactBundle(
             code=code,
@@ -799,4 +1280,7 @@ class AkshareStockFactFeed:
             repurchases=repurchases,
             pledge=pledge,
             equity_financings=[*cf_financings, *add_stocks],
+            profile_industry_sw1=profile_sw1,
+            profile_industry_sw2=profile_sw2,
+            profile_list_date=profile_list_date,
         )

@@ -9,6 +9,7 @@ import { Tag } from '../../components/ui/Tag'
 import {
   AI_EXECUTION_MODE_META,
   formatFalsifyRuleLine,
+  getAiSourceSectionLabel,
   type AiRequestMode,
 } from '../../lib/aiLabels'
 import { getAuthEpoch } from '../../lib/api'
@@ -884,6 +885,10 @@ function StockDecisionTabContent({
                     <div className="notice-box notice-warn" role="status">
                       已回退规则引擎，当前展示确定性反方质询。
                     </div>
+                  ) : daResult.mode === 'deterministic' ? (
+                    <p className="small muted" role="status">
+                      当前由本地确定性规则引擎生成（零 AI 额度消耗，免费使用）
+                    </p>
                   ) : null}
 
                   <div className="da-challenge-list">
@@ -914,7 +919,7 @@ function StockDecisionTabContent({
                                   key={`${fact.label}-${fact.source_section}-${factIdx}`}
                                   className="da-fact-chip mono"
                                 >
-                                  {`${fact.label}: ${fact.value_text} · ${fact.source_section}`}
+                                  {`${fact.label}: ${fact.value_text} · ${getAiSourceSectionLabel(fact.source_section)}`}
                                 </span>
                               ))}
                             </div>
@@ -1079,7 +1084,7 @@ export function StockDecisionTab({
             hint={
               <Link
                 className="btn-primary mt-16"
-                to="/login"
+                to={`/login?redirect=${encodeURIComponent(`/stock/${stock.code}`)}`}
                 state={{ from: `/stock/${stock.code}` }}
               >
                 前往登录 / 注册

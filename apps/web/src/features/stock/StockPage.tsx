@@ -8,7 +8,7 @@ import { ApiError, api } from '../../lib/api'
 import { useAuth } from '../../lib/authContext'
 import { queryKeys } from '../../lib/queryKeys'
 import { useStockSnapshot } from '../../lib/useStockAnalysis'
-import { useAddWatchlist, useWatchlist } from '../../lib/useWatchlist'
+import { useAddWatchlist, useRemoveWatchlist, useWatchlist } from '../../lib/useWatchlist'
 import type { StockSnapshotPayload } from '../../types/api'
 import { StockCtTab } from './StockCtTab'
 import { StockDecisionTab } from './StockDecisionTab'
@@ -76,6 +76,7 @@ function StockPageContent({ code }: { code: string }) {
   const snapshotQuery = useStockSnapshot(code, Boolean(stock?.snapshot_available))
   const watchlistQuery = useWatchlist(Boolean(user))
   const addWatchlistMutation = useAddWatchlist()
+  const removeWatchlistMutation = useRemoveWatchlist()
 
   if (stockQuery.isPending || (!stockQuery.data && stockQuery.isFetching)) {
     return (
@@ -97,12 +98,17 @@ function StockPageContent({ code }: { code: string }) {
               hint={
                 <span className="stack" style={{ gap: 10, alignItems: 'center' }}>
                   <span>
-                    本地元数据表 <code className="mono">stock_meta</code> 尚未收录该代码，请运行{' '}
-                    <code className="mono">python -m app.cli.sync</code> 同步全市场基础信息。
+                    本地股票池暂未收录该 6 位代码，请确认代码是否正确或返回市场概览重新搜索。
                   </span>
                   <Link className="btn-ghost" to="/">
                     返回市场概览
                   </Link>
+                  <details className="small muted">
+                    <summary style={{ cursor: 'pointer' }}>管理员离线同步命令</summary>
+                    <div className="mt-8">
+                      <code className="mono">python -m app.cli.sync</code>
+                    </div>
+                  </details>
                 </span>
               }
             />
@@ -142,7 +148,11 @@ function StockPageContent({ code }: { code: string }) {
     ? addWatchlistMutation.error instanceof Error
       ? addWatchlistMutation.error.message
       : '加入自选失败'
-    : null
+    : removeWatchlistMutation.isError
+      ? removeWatchlistMutation.error instanceof Error
+        ? removeWatchlistMutation.error.message
+        : '移出自选失败'
+      : null
 
   const isSnapshot404 =
     snapshotQuery.isError &&
@@ -163,11 +173,12 @@ function StockPageContent({ code }: { code: string }) {
             hint={
               <span className="stack" style={{ gap: 12, alignItems: 'center' }}>
                 <span>
-                  该标的深度财务与估值快照尚未同步，请运行{' '}
-                  <code className="mono">{`python -m app.cli.sync_stocks --codes ${currentStock.code}`}</code>{' '}
-                  生成本地快照。
+                  该标的暂未生成深度财报与历史估值快照，暂不展示图表与排雷数据；您仍可在「风险排雷」使用年报口径对比，或在「投资决策」记录笔记。
                 </span>
-                <span className="row" style={{ gap: 8 }}>
+                <span
+                  className="row"
+                  style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}
+                >
                   <button
                     type="button"
                     className="btn-primary"
@@ -179,6 +190,12 @@ function StockPageContent({ code }: { code: string }) {
                     打开同业对比
                   </Link>
                 </span>
+                <details className="small muted">
+                  <summary style={{ cursor: 'pointer' }}>管理员离线同步命令</summary>
+                  <div className="mt-8">
+                    <code className="mono">{`python -m app.cli.sync_stocks --codes ${currentStock.code}`}</code>
+                  </div>
+                </details>
               </span>
             }
           />
@@ -251,8 +268,8 @@ function StockPageContent({ code }: { code: string }) {
             </div>
           </div>
 
-          <div className="stack" style={{ gap: 8, alignItems: 'flex-end' }}>
-            <div className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div className="stack stock-header-actions" style={{ gap: 8 }}>
+            <div className="row stock-header-action-row" style={{ gap: 8, flexWrap: 'wrap' }}>
               <Link className="btn-ghost" to={`/compare?codes=${stock.code}`}>
                 同业对比
               </Link>
@@ -262,34 +279,54 @@ function StockPageContent({ code }: { code: string }) {
                   <span className="small muted">加载自选状态...</span>
                 ) : isInWatchlist ? (
                   <>
-                    <Tag color="green">已在自选</Tag>
-                    <Link className="link-accent small" to="/me">
+                    <Tag color="green">已在自选 ✓</Tag>
+                    <Link className="btn-ghost" to="/me">
                       前往配置哨兵
                     </Link>
+                    <button
+                      type="button"
+                      className="btn-danger"
+                      disabled={removeWatchlistMutation.isPending}
+                      onClick={() => {
+                        addWatchlistMutation.reset()
+                        removeWatchlistMutation.mutate(currentStock.code)
+                      }}
+                    >
+                      {removeWatchlistMutation.isPending ? '移除中...' : '移出自选'}
+                    </button>
                   </>
                 ) : (
                   <button
                     type="button"
                     className="btn-primary"
                     disabled={addWatchlistMutation.isPending}
-                    onClick={() =>
+                    onClick={() => {
+                      removeWatchlistMutation.reset()
                       addWatchlistMutation.mutate({
                         code: stock.code,
                         name: stock.name,
                         industry: stock.industry_sw1 ?? null,
                         alert_enabled: false,
                       })
-                    }
+                    }}
                   >
                     {addWatchlistMutation.isPending ? '加入中...' : '加入自选愿望单'}
                   </button>
                 )
               ) : !isAuthLoading ? (
-                <Link className="btn-ghost" to="/login" state={{ from: `/stock/${stock.code}` }}>
+                <Link
+                  className="btn-ghost"
+                  to={`/login?redirect=${encodeURIComponent(`/stock/${currentStock.code}`)}`}
+                  state={{ from: `/stock/${currentStock.code}` }}
+                >
                   登录后加入自选
                 </Link>
               ) : null}
             </div>
+
+            {user && !isWatchlistChecking && !isInWatchlist ? (
+              <span className="small muted">加入后可在「我的」配置到价自动提醒</span>
+            ) : null}
 
             {watchlistError ? (
               <div className="inline-error" role="alert">

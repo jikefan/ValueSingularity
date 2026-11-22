@@ -223,6 +223,41 @@ export function getFalsifyMetricLabel(metric: string): string {
   return FALSIFY_METRIC_LABELS[canonical] ?? FALSIFY_METRIC_LABELS[normalized] ?? canonical
 }
 
+const FALSIFY_METRIC_UNITS: Readonly<Record<string, string>> = {
+  ...Object.fromEntries(
+    FALSIFY_METRIC_OPTIONS.flatMap((opt) => (opt.unit ? [[opt.value, opt.unit]] : [])),
+  ),
+  pe_percentile_5y: '%',
+  gross_margin_latest_pct: '%',
+  deduct_net_profit_yuan: '元',
+  net_cash_yuan: '元',
+  rd_ratio_pct: '%',
+  net_cash_to_mv_pct: '%',
+  shareholder_yield_pct: '%',
+  revenue_cagr_3y_pct: '%',
+  revenue_cagr_5y_pct: '%',
+  profit_cagr_5y_pct: '%',
+}
+
+export function getFalsifyMetricUnit(metric: string): string {
+  const canonical = canonicalizeFalsifyMetric(metric)
+  if (!canonical) {
+    return ''
+  }
+  const normalized = canonical.toLowerCase().replace(/[-\s]+/g, '_')
+  const explicit = FALSIFY_METRIC_UNITS[canonical] ?? FALSIFY_METRIC_UNITS[normalized]
+  if (explicit !== undefined) {
+    return explicit
+  }
+  if (normalized.endsWith('_pct')) {
+    return '%'
+  }
+  if (normalized.endsWith('_yuan')) {
+    return '元'
+  }
+  return ''
+}
+
 export const FALSIFY_RULE_PRESETS: ReadonlyArray<{
   label: string
   rule: FalsifyRule

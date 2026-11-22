@@ -6,6 +6,7 @@ import { Tag } from '../../components/ui/Tag'
 import { formatNum, formatPct, formatSignedPct, qualityTone } from '../../lib/format'
 import { JOURNAL_ACTION_META } from '../../lib/journalLabels'
 import { useJournalLedger } from '../../lib/useJournal'
+import type { JournalEntryComparison } from '../../types/api'
 
 function winRateTone(value: number | null | undefined): 'tone-good' | 'tone-bad' | '' {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -14,9 +15,33 @@ function winRateTone(value: number | null | undefined): 'tone-good' | 'tone-bad'
   return value >= 50 ? 'tone-good' : 'tone-bad'
 }
 
+function isFirstDayFlatItem(item: JournalEntryComparison): boolean {
+  return (
+    item.days_held === 0 &&
+    (item.stock_return_pct ?? 0) === 0 &&
+    (item.excess_return_pct === null ||
+      item.excess_return_pct === undefined ||
+      item.excess_return_pct === 0)
+  )
+}
+
 export function DecisionLedgerPanel({ enabled }: { enabled: boolean }) {
   const ledgerQuery = useJournalLedger(enabled)
   const report = ledgerQuery.data
+  const comparableItems =
+    report?.items.filter(
+      (item) => item.stock_return_pct !== null && item.stock_return_pct !== undefined,
+    ) ?? []
+  const isFirstDayFlatOnly =
+    report !== undefined &&
+    report.comparable_count > 0 &&
+    report.win_rate_pct === 0 &&
+    comparableItems.length > 0 &&
+    comparableItems.every(isFirstDayFlatItem)
+  const winRateLabel =
+    report?.avg_excess_return_pct === null || report?.avg_excess_return_pct === undefined
+      ? '绝对收益胜率'
+      : '跑赢沪深 300 胜率'
 
   return (
     <Card
@@ -53,14 +78,18 @@ export function DecisionLedgerPanel({ enabled }: { enabled: boolean }) {
               sub="已匹配入场价与当前快照"
             />
             <Metric
-              label="跑赢沪深 300 胜率"
+              label={winRateLabel}
               value={
                 report.win_rate_pct !== null && report.win_rate_pct !== undefined
                   ? formatPct(report.win_rate_pct, 1)
                   : '—'
               }
-              tone={winRateTone(report.win_rate_pct)}
-              sub={`胜 ${report.win_count} / 可比 ${report.comparable_count}`}
+              tone={isFirstDayFlatOnly ? '' : winRateTone(report.win_rate_pct)}
+              sub={
+                isFirstDayFlatOnly
+                  ? '首日平价入库，待下一交易日收市后计算胜负'
+                  : `胜 ${report.win_count} / 可比 ${report.comparable_count}`
+              }
             />
             <Metric
               label="平均标的收益"
@@ -104,27 +133,39 @@ export function DecisionLedgerPanel({ enabled }: { enabled: boolean }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {report.by_emotion.map((row) => (
-                      <tr key={row.emotion}>
-                        <td>
-                          <Tag color={row.emotion === '未标注' ? 'gray' : 'blue'}>
-                            {row.emotion}
-                          </Tag>
-                        </td>
-                        <td className="num">{`${row.total_count} / ${row.comparable_count}`}</td>
-                        <td className={`num ${winRateTone(row.win_rate_pct)}`}>
-                          {row.win_rate_pct !== null && row.win_rate_pct !== undefined
-                            ? formatPct(row.win_rate_pct, 1)
-                            : '—'}
-                        </td>
-                        <td className={`num ${qualityTone(row.avg_stock_return_pct)}`}>
-                          {formatSignedPct(row.avg_stock_return_pct, 2)}
-                        </td>
-                        <td className={`num ${qualityTone(row.avg_excess_return_pct)}`}>
-                          {formatSignedPct(row.avg_excess_return_pct, 2)}
-                        </td>
-                      </tr>
-                    ))}
+                    {report.by_emotion.map((row) => {
+                      const emotionItems = comparableItems.filter(
+                        (item) => (item.emotion?.trim() || '未标注') === row.emotion,
+                      )
+                      const isRowFirstDayFlat =
+                        row.comparable_count > 0 &&
+                        row.win_rate_pct === 0 &&
+                        emotionItems.length > 0 &&
+                        emotionItems.every(isFirstDayFlatItem)
+                      return (
+                        <tr key={row.emotion}>
+                          <td>
+                            <Tag color={row.emotion === '未标注' ? 'gray' : 'blue'}>
+                              {row.emotion}
+                            </Tag>
+                          </td>
+                          <td className="num">{`${row.total_count} / ${row.comparable_count}`}</td>
+                          <td
+                            className={`num ${isRowFirstDayFlat ? '' : winRateTone(row.win_rate_pct)}`}
+                          >
+                            {row.win_rate_pct !== null && row.win_rate_pct !== undefined
+                              ? formatPct(row.win_rate_pct, 1)
+                              : '—'}
+                          </td>
+                          <td className={`num ${qualityTone(row.avg_stock_return_pct)}`}>
+                            {formatSignedPct(row.avg_stock_return_pct, 2)}
+                          </td>
+                          <td className={`num ${qualityTone(row.avg_excess_return_pct)}`}>
+                            {formatSignedPct(row.avg_excess_return_pct, 2)}
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

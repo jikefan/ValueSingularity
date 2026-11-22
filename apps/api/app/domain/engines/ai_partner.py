@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 
-from app.domain.engines._helpers import finite_or_none
+from app.domain.engines._helpers import finite_or_none, is_financial_institution
 from app.domain.engines.sentinel_radar import canonicalize_metric
 from app.domain.models import (
     CitedMetricFact,
@@ -609,19 +609,6 @@ _ACTION_LABELS: dict[JournalAction, str] = {
 }
 
 
-def _is_financial_sector(
-    meta: StockMetaRecord,
-    snapshot: StockSnapshotPayload | None,
-) -> bool:
-    sw1 = meta.industry_sw1 or (snapshot.industry_sw1 if snapshot is not None else None)
-    sw2 = meta.industry_sw2 or (snapshot.industry_sw2 if snapshot is not None else None)
-    if sw1 in {"银行", "非银金融", "金融", "保险", "证券", "多元金融"}:
-        return True
-    if sw2 in {"银行", "保险", "证券", "多元金融"}:
-        return True
-    return bool(not sw1 and any(kw in meta.name for kw in ("银行", "保险", "证券", "人寿", "财险")))
-
-
 def _ct_challenge_for_check(
     check: CtCheckItem,
     snapshot: StockSnapshotPayload,
@@ -966,7 +953,10 @@ def _build_snapshot_candidates(
     reason: str,
     falsify_condition: str,
 ) -> list[tuple[int, str, DevilsAdvocateChallenge]]:
-    is_financial = _is_financial_sector(meta, snapshot)
+    industry_hint = (
+        (snapshot.industry_sw1 or snapshot.industry_sw2) if snapshot is not None else None
+    )
+    is_financial = is_financial_institution(meta, industry_hint=industry_hint)
     candidates: list[tuple[int, str, DevilsAdvocateChallenge]] = []
     for check in snapshot.financial_ct.checks:
         built = _ct_challenge_for_check(check, snapshot, is_financial=is_financial)

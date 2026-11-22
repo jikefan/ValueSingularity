@@ -176,7 +176,7 @@ describe('App global stock search', () => {
     expect(await screen.findByRole('heading', { name: '贵州茅台' })).toBeInTheDocument()
   })
 
-  it('renders TopNav cleanly without search props', () => {
+  it('renders TopNav cleanly without search props or dead persona placeholder', () => {
     render(
       <MemoryRouter>
         <TopNav />
@@ -185,6 +185,7 @@ describe('App global stock search', () => {
 
     expect(screen.getByLabelText('搜索股票')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '登录 / 注册' })).toBeInTheDocument()
+    expect(screen.queryByText('中性分析师')).not.toBeInTheDocument()
   })
 
   it('closes dropdown on outside click, handles empty/error states, and navigates on Enter via first result', async () => {

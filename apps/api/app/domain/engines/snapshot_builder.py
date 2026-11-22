@@ -10,6 +10,7 @@ from app.domain.engines._helpers import (
     clamp_score,
     compute_cagr_pct,
     finite_or_none,
+    is_financial_institution,
     percentile_rank,
     report_fcf_yuan,
     report_interest_debt_yuan,
@@ -382,7 +383,7 @@ def _build_moat_section(
         if roic_pct is not None
         else 50
     )
-    is_financial = meta is not None and meta.industry_sw1 in {"银行", "非银金融"}
+    is_financial = is_financial_institution(meta)
     if is_financial:
         fortress_score = 65
         fortress_summary = "金融行业资产负债结构以资本充足率与拨备覆盖率为核心指标。"
@@ -488,6 +489,7 @@ def _build_radar_and_bear_cases(
     moat: MoatSection,
     growth: GrowthSection,
     ocf_to_profit_5y_pct: float | None,
+    is_financial: bool = False,
 ) -> RadarScoreSection:
     latest_net_margin = next(
         (t.net_margin_pct for t in reversed(trends) if t.net_margin_pct is not None), None
@@ -514,7 +516,11 @@ def _build_radar_and_bear_cases(
     )
 
     latest_net_cash = trends[-1].net_cash_yuan if trends else None
-    balance_base = 80.0 if (latest_net_cash is not None and latest_net_cash >= 0) else 55.0
+    balance_base = (
+        65.0
+        if is_financial
+        else (80.0 if (latest_net_cash is not None and latest_net_cash >= 0) else 55.0)
+    )
     balance_sheet = clamp_score(balance_base - ct.red_count * 18.0 - ct.yellow_count * 7.0)
 
     cov = shareholder_return.fcf_coverage_ratio
@@ -608,6 +614,16 @@ def build_stock_snapshot(
     generated_at: datetime | None = None,
 ) -> StockSnapshotPayload:
     """Assemble the complete precomputed StockSnapshotPayload from meta and fact bundle."""
+    meta_updates: dict[str, object] = {}
+    if bundle.profile_industry_sw1 is not None and bundle.profile_industry_sw1 != meta.industry_sw1:
+        meta_updates["industry_sw1"] = bundle.profile_industry_sw1
+    if bundle.profile_industry_sw2 is not None and bundle.profile_industry_sw2 != meta.industry_sw2:
+        meta_updates["industry_sw2"] = bundle.profile_industry_sw2
+    if bundle.profile_list_date is not None and bundle.profile_list_date != meta.list_date:
+        meta_updates["list_date"] = bundle.profile_list_date
+    effective_meta = meta.model_copy(update=meta_updates) if meta_updates else meta
+    is_financial = is_financial_institution(effective_meta)
+
     ordered_reports = sort_reports_asc(bundle.annual_reports)
     ordered_bars = _dedup_bars_asc(bundle.daily_bars, as_of=bundle.as_of)
 
@@ -616,7 +632,7 @@ def build_stock_snapshot(
 
     trends = _build_annual_trends(ordered_reports)
     growth = _build_growth_section(ordered_reports, trends)
-    ct_section = scan_financial_ct(ordered_reports, bundle.pledge, meta=meta)
+    ct_section = scan_financial_ct(ordered_reports, bundle.pledge, meta=effective_meta)
     shareholder_return = analyze_shareholder_return(
         ordered_reports,
         bundle.dividends,
@@ -625,7 +641,9 @@ def build_stock_snapshot(
         latest_market_cap_yuan=latest_mcap,
         as_of=bundle.as_of,
     )
-    reverse_dcf = compute_reverse_dcf(ordered_reports, market_cap_yuan=latest_mcap, meta=meta)
+    reverse_dcf = compute_reverse_dcf(
+        ordered_reports, market_cap_yuan=latest_mcap, meta=effective_meta
+    )
     valuation = _build_valuation_section(
         ordered_bars,
         growth,
@@ -648,7 +666,7 @@ def build_stock_snapshot(
         trends,
         growth,
         ocf_to_profit_5y_pct,
-        meta=meta,
+        meta=effective_meta,
     )
     radar = _build_radar_and_bear_cases(
         trends=trends,
@@ -659,9 +677,9 @@ def build_stock_snapshot(
         moat=moat,
         growth=growth,
         ocf_to_profit_5y_pct=ocf_to_profit_5y_pct,
+        is_financial=is_financial,
     )
 
-    is_financial = meta.industry_sw1 in {"银行", "非银金融"}
     net_cash_to_mv_pct: float | None = None
     if (
         not is_financial
@@ -713,10 +731,10 @@ def build_stock_snapshot(
         )
 
     peer_metrics = PeerBenchmarkMetrics(
-        code=meta.code,
-        name=meta.name,
-        exchange=meta.exchange,
-        industry_sw1=meta.industry_sw1,
+        code=effective_meta.code,
+        name=effective_meta.name,
+        exchange=effective_meta.exchange,
+        industry_sw1=effective_meta.industry_sw1,
         as_of=bundle.as_of,
         close=valuation.close,
         total_mv_yuan=valuation.total_mv_yuan,
@@ -741,11 +759,11 @@ def build_stock_snapshot(
 
     return StockSnapshotPayload(
         schema_version=1,
-        code=meta.code,
-        name=meta.name,
-        exchange=meta.exchange,
-        industry_sw1=meta.industry_sw1,
-        industry_sw2=meta.industry_sw2,
+        code=effective_meta.code,
+        name=effective_meta.name,
+        exchange=effective_meta.exchange,
+        industry_sw1=effective_meta.industry_sw1,
+        industry_sw2=effective_meta.industry_sw2,
         as_of=bundle.as_of,
         generated_at=generated_at if generated_at is not None else datetime.now(UTC),
         data_source=bundle.data_source,

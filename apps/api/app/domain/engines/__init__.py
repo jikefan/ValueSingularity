@@ -1,5 +1,6 @@
 """Pure Phase 2 and Phase 3 calculation engines."""
 
+from app.domain.engines._helpers import is_financial_institution
 from app.domain.engines.ai_partner import (
     COMPLIANCE_NOTICE,
     build_deterministic_challenges,
@@ -47,6 +48,7 @@ __all__ = [
     "dcf_present_value",
     "evaluate_entry_falsify",
     "evaluate_user_alerts",
+    "is_financial_institution",
     "scan_financial_ct",
     "solve_implied_fcf_cagr_pct",
     "trim_snapshot_context",

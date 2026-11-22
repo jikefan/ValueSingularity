@@ -35,9 +35,11 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
       },
       legend: {
         ...CHART_LEGEND_COMMON,
+        top: 0,
+        type: 'scroll',
         data: ['PE (TTM)', '总市值（亿元）'],
       },
-      grid: { left: 12, right: 14, top: 38, bottom: 10, containLabel: true },
+      grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
       xAxis: {
         ...CHART_AXIS_COMMON,
         type: 'category',
@@ -48,12 +50,14 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
           ...CHART_AXIS_COMMON,
           type: 'value',
           name: 'PE (TTM)',
+          nameGap: 14,
           nameTextStyle: { color: CHART_COLORS.muted },
         },
         {
           ...CHART_AXIS_COMMON,
           type: 'value',
           name: '市值(亿)',
+          nameGap: 14,
           nameTextStyle: { color: CHART_COLORS.muted },
           splitLine: { show: false },
         },
@@ -125,14 +129,14 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
             sub={`当前股息率 ${formatPct(valuation.dividend_yield_pct, 2)}`}
           />
         </div>
-        {formulaNotes.valuation_percentiles || formulaNotes.graham ? (
-          <div className="small muted mt-16 stack" style={{ gap: 4 }}>
-            {formulaNotes.valuation_percentiles ? (
-              <p>{formulaNotes.valuation_percentiles}</p>
-            ) : null}
-            {formulaNotes.graham ? <p>{formulaNotes.graham}</p> : null}
-          </div>
-        ) : null}
+        <div className="small muted mt-16 stack" style={{ gap: 4 }}>
+          <p>
+            小白提示：格雷厄姆公式偏重静态净资产，对茅台等高 ROE
+            轻资产/品牌公司天然偏保守，负值不代表高估，建议结合 10 年 PE 分位与逆向 DCF 交叉评估。
+          </p>
+          {formulaNotes.valuation_percentiles ? <p>{formulaNotes.valuation_percentiles}</p> : null}
+          {formulaNotes.graham ? <p>{formulaNotes.graham}</p> : null}
+        </div>
       </Card>
 
       <Card title="历史 PE(TTM) 与总市值走势">

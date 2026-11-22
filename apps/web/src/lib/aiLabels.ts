@@ -8,6 +8,7 @@ import type {
 import {
   FALSIFY_OP_LABEL,
   getFalsifyMetricLabel,
+  getFalsifyMetricUnit,
   isMultiPeriodFalsifyMetric,
 } from './journalLabels'
 
@@ -54,11 +55,34 @@ export function getAiQuotaTagMeta(quota: AiQuotaStatus): {
   }
 }
 
+export function getAiSourceSectionLabel(section: string): string {
+  const trimmed = section.trim()
+  if (!trimmed) {
+    return ''
+  }
+  return (
+    AI_SOURCE_SECTION_LABELS[trimmed] ?? AI_SOURCE_SECTION_LABELS[trimmed.toLowerCase()] ?? trimmed
+  )
+}
+
+const AI_SOURCE_SECTION_LABELS: Readonly<Record<string, string>> = {
+  radar: '五维雷达',
+  valuation: '估值',
+  moat: '护城河',
+  financial_ct: '财务排雷',
+  shareholder_return: '股东回报',
+  reverse_dcf: '逆向DCF',
+  growth: '增长引擎',
+  metadata: '基础信息',
+  user_draft: '投资理由',
+}
+
 export function formatFalsifyRuleLine(rule: FalsifyRule): string {
   const label = getFalsifyMetricLabel(rule.metric)
   const op = FALSIFY_OP_LABEL[rule.op] ?? rule.op
+  const unit = getFalsifyMetricUnit(rule.metric)
   const periods = isMultiPeriodFalsifyMetric(rule.metric)
     ? Math.min(40, Math.max(1, Math.trunc(rule.periods) || 1))
     : 1
-  return `${label} ${op} ${rule.value}（连续 ${periods} 期）`
+  return `${label} ${op} ${rule.value}${unit}（连续 ${periods} 期）`
 }

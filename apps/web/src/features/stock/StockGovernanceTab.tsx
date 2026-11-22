@@ -24,6 +24,13 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
   )
   const seriesDesc = useMemo(() => [...seriesAsc].reverse(), [seriesAsc])
 
+  const asOfYear = /^\d{4}/.test(snapshot.as_of)
+    ? Number(snapshot.as_of.slice(0, 4))
+    : new Date(snapshot.as_of).getUTCFullYear()
+  const latestSeriesYear = seriesAsc[seriesAsc.length - 1]?.year ?? null
+  const hasPartialCurrentYear =
+    latestSeriesYear !== null && Number.isFinite(asOfYear) && latestSeriesYear === asOfYear
+
   const barOption = useMemo<ChartOption>(
     () => ({
       tooltip: {
@@ -33,18 +40,23 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
       },
       legend: {
         ...CHART_LEGEND_COMMON,
+        top: 0,
+        type: 'scroll',
         data: ['现金分红', '股份回购', '股权再融资', '股东净回报'],
       },
-      grid: { left: 12, right: 14, top: 38, bottom: 10, containLabel: true },
+      grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
       xAxis: {
         ...CHART_AXIS_COMMON,
         type: 'category',
-        data: seriesAsc.map((point) => String(point.year)),
+        data: seriesAsc.map((point) =>
+          point.year === asOfYear ? `${point.year}(年内)` : String(point.year),
+        ),
       },
       yAxis: {
         ...CHART_AXIS_COMMON,
         type: 'value',
         name: '亿元',
+        nameGap: 14,
         nameTextStyle: { color: CHART_COLORS.muted },
       },
       series: [
@@ -81,7 +93,7 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
         },
       ],
     }),
-    [seriesAsc],
+    [asOfYear, seriesAsc],
   )
 
   return (
@@ -138,7 +150,12 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
         {seriesAsc.length === 0 ? (
           <EmptyBlock title="暂无年度股东回报明细" />
         ) : (
-          <Chart option={barOption} height={280} ariaLabel="股东净回报柱状图" />
+          <>
+            <Chart option={barOption} height={280} ariaLabel="股东净回报柱状图" />
+            {hasPartialCurrentYear ? (
+              <p className="small muted mt-8">含本年度截至目前公告的分红/回购进度，年度尚未收官</p>
+            ) : null}
+          </>
         )}
       </Card>
 
@@ -159,7 +176,9 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
               <tbody>
                 {seriesDesc.map((point) => (
                   <tr key={point.year}>
-                    <td className="mono">{point.year}</td>
+                    <td className="mono">
+                      {point.year === asOfYear ? `${point.year}(年内)` : point.year}
+                    </td>
                     <td className="num">{formatNum(toYi(point.dividend_yuan), 2)}</td>
                     <td className="num">{formatNum(toYi(point.repurchase_yuan), 2)}</td>
                     <td className="num">{formatNum(toYi(point.equity_financing_yuan), 2)}</td>

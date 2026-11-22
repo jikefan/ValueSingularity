@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ScoreRing } from '../../components/ui/ScoreRing'
 import { AuthProvider } from '../../lib/AuthProvider'
 import { setAccessToken } from '../../lib/api'
+import type { ChartOption } from '../../lib/charts'
 import { createQueryClient } from '../../lib/queryClient'
 import type {
   AiPreferences,
@@ -24,8 +25,15 @@ import type {
 } from '../../types/api'
 import { StockPage } from './StockPage'
 
+const capturedChartOptions = new Map<string, ChartOption>()
+
 vi.mock('../../lib/charts', () => ({
-  Chart: ({ ariaLabel }: { ariaLabel?: string }) => <div role="img" aria-label={ariaLabel} />,
+  Chart: ({ ariaLabel, option }: { ariaLabel?: string; option: ChartOption }) => {
+    if (ariaLabel) {
+      capturedChartOptions.set(ariaLabel, option)
+    }
+    return <div role="img" aria-label={ariaLabel} />
+  },
 }))
 
 const SAMPLE_USER: UserProfile = {
@@ -517,6 +525,7 @@ function renderStockPage(initialEntry = '/stock/600519') {
 describe('StockPage', () => {
   afterEach(() => {
     cleanup()
+    capturedChartOptions.clear()
     setAccessToken(null)
     vi.restoreAllMocks()
   })
@@ -545,6 +554,10 @@ describe('StockPage', () => {
       'href',
       '/compare?codes=600519',
     )
+    expect(screen.getByRole('link', { name: '登录后加入自选' })).toHaveAttribute(
+      'href',
+      '/login?redirect=%2Fstock%2F600519',
+    )
 
     const tabs = screen.getAllByRole('tab')
     expect(tabs).toHaveLength(9)
@@ -557,6 +570,11 @@ describe('StockPage', () => {
     expect(await screen.findByRole('img', { name: '十年财务趋势图' })).toBeInTheDocument()
     expect(screen.getByText('1,740.00')).toBeInTheDocument()
     expect(screen.getByText('32.50%')).toBeInTheDocument()
+    expect(capturedChartOptions.get('十年财务趋势图')).toMatchObject({
+      grid: { top: 56 },
+      legend: { top: 0, type: 'scroll' },
+      yAxis: [{ nameGap: 14 }, { nameGap: 14 }],
+    })
 
     fireEvent.click(screen.getByRole('tab', { name: '护城河' }))
     expect(await screen.findByText('定价权与毛利率护城河')).toBeInTheDocument()
@@ -564,6 +582,14 @@ describe('StockPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '估值' }))
     expect(await screen.findByRole('img', { name: '历史估值走势图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('历史估值走势图')).toMatchObject({
+      grid: { top: 56 },
+      legend: { top: 0, type: 'scroll' },
+      yAxis: [{ nameGap: 14 }, { nameGap: 14 }],
+    })
+    expect(
+      screen.getByText(/小白提示：格雷厄姆公式偏重静态净资产，对茅台等高 ROE/),
+    ).toBeInTheDocument()
     expect(screen.getByText('Reverse DCF 逆向估值反推器')).toBeInTheDocument()
     expect(screen.getAllByText('+8.42%')).toHaveLength(2)
     expect(screen.getByText('+14.80%')).toBeInTheDocument()
@@ -573,6 +599,11 @@ describe('StockPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '增长引擎' }))
     expect(await screen.findByRole('img', { name: '盈利能力与研发投入趋势图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('盈利能力与研发投入趋势图')).toMatchObject({
+      grid: { top: 56 },
+      legend: { top: 0, type: 'scroll' },
+      yAxis: { nameGap: 14 },
+    })
     expect(screen.getByText('15.20%')).toBeInTheDocument()
     expect(screen.getByText('3.26%')).toBeInTheDocument()
 
@@ -585,6 +616,14 @@ describe('StockPage', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '治理' }))
     expect(await screen.findByRole('img', { name: '股东净回报柱状图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('股东净回报柱状图')).toMatchObject({
+      grid: { top: 56 },
+      legend: { top: 0, type: 'scroll' },
+      yAxis: { nameGap: 14 },
+    })
+    expect(
+      screen.queryByText('含本年度截至目前公告的分红/回购进度，年度尚未收官'),
+    ).not.toBeInTheDocument()
     expect(screen.getByText('现金回馈充裕')).toBeInTheDocument()
     expect(screen.getByText('1.32x')).toBeInTheDocument()
 
@@ -675,6 +714,10 @@ describe('StockPage', () => {
     expect(await screen.findByRole('heading', { name: '*ST样本' })).toBeInTheDocument()
     expect(screen.getByText('基础元数据')).toBeInTheDocument()
     expect(screen.getByText('公司画像尚无深度分析快照')).toBeInTheDocument()
+    expect(
+      screen.getByText(/该标的暂未生成深度财报与历史估值快照，暂不展示图表与排雷数据/),
+    ).toBeInTheDocument()
+    expect(screen.getByText('管理员离线同步命令')).toBeInTheDocument()
     expect(screen.getByText('python -m app.cli.sync_stocks --codes 000999')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '前往投资决策' }))
@@ -822,10 +865,12 @@ describe('StockPage', () => {
     renderStockPage('/stock/600519')
 
     const addWatchlistBtn = await screen.findByRole('button', { name: '加入自选愿望单' })
+    expect(screen.getByText('加入后可在「我的」配置到价自动提醒')).toBeInTheDocument()
     fireEvent.click(addWatchlistBtn)
 
-    expect(await screen.findByText('已在自选')).toBeInTheDocument()
+    expect(await screen.findByText('已在自选 ✓')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '前往配置哨兵' })).toHaveAttribute('href', '/me')
+    expect(screen.getByRole('button', { name: '移出自选' })).toBeInTheDocument()
     expect(postWatchlistCalled).toBe(true)
     expect(putWatchlistCalled).toBe(false)
     expect(watchlistPayload).toEqual({
@@ -884,20 +929,23 @@ describe('StockPage', () => {
     expect(deletedEntryId).toBe(42)
   })
 
-  it('shows 已在自选 badge and sentinel link without firing PUT or POST when stock is already in watchlist', async () => {
+  it('shows 已在自选 ✓ badge, sentinel link, and supports removing from watchlist via DELETE without firing PUT/POST', async () => {
     let writeCalled = false
-    const configuredItem: WatchlistItem = {
-      code: '600519',
-      name: '贵州茅台',
-      industry: '白酒',
-      note: '长期跟踪',
-      target_price: 1400,
-      target_pe_percentile: 20,
-      target_dividend_yield: 3.5,
-      alert_enabled: true,
-      added_at: '2026-11-22T00:00:00Z',
-      updated_at: '2026-11-22T00:00:00Z',
-    }
+    let watchlistState: WatchlistItem[] = [
+      {
+        code: '600519',
+        name: '贵州茅台',
+        industry: '白酒',
+        note: '长期跟踪',
+        target_price: 1400,
+        target_pe_percentile: 20,
+        target_dividend_yield: 3.5,
+        alert_enabled: true,
+        added_at: '2026-11-22T00:00:00Z',
+        updated_at: '2026-11-22T00:00:00Z',
+      },
+    ]
+    let deletedCode: string | null = null
 
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const request = asRequest(input)
@@ -913,7 +961,12 @@ describe('StockPage', () => {
         return Promise.resolve(jsonResponse(SAMPLE_SNAPSHOT, 200))
       }
       if (url.pathname === '/api/watchlist' && request.method === 'GET') {
-        return Promise.resolve(jsonResponse([configuredItem], 200))
+        return Promise.resolve(jsonResponse(watchlistState, 200))
+      }
+      if (url.pathname === '/api/watchlist/600519' && request.method === 'DELETE') {
+        deletedCode = '600519'
+        watchlistState = []
+        return Promise.resolve(new Response(null, { status: 204 }))
       }
       if (url.pathname === '/api/journal' && request.method === 'GET') {
         return Promise.resolve(jsonResponse([], 200))
@@ -932,10 +985,14 @@ describe('StockPage', () => {
 
     renderStockPage('/stock/600519')
 
-    expect(await screen.findByText('已在自选')).toBeInTheDocument()
+    expect(await screen.findByText('已在自选 ✓')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '前往配置哨兵' })).toHaveAttribute('href', '/me')
     expect(screen.queryByRole('button', { name: '加入自选愿望单' })).not.toBeInTheDocument()
     expect(writeCalled).toBe(false)
+
+    fireEvent.click(screen.getByRole('button', { name: '移出自选' }))
+    expect(await screen.findByRole('button', { name: '加入自选愿望单' })).toBeInTheDocument()
+    expect(deletedCode).toBe('600519')
   })
 
   it('uses quality polarity for ScoreRing and fundamental metrics instead of price up/down colors', async () => {
@@ -1188,8 +1245,8 @@ describe('StockPage', () => {
           title: '估值与逆向隐含增速约束',
           thesis: '当前 PE 仍高于绝对深度折价区间，需核查长期现金流增速。',
           cited_facts: [
-            { label: 'PE(TTM)', value_text: '22.10', source_section: '估值截面' },
-            { label: '隐含FCF增速', value_text: '+8.42%', source_section: '逆向DCF' },
+            { label: 'PE(TTM)', value_text: '22.10', source_section: 'valuation' },
+            { label: '隐含FCF增速', value_text: '+8.42%', source_section: 'reverse_dcf' },
           ],
           suggested_falsify_rule: {
             metric: 'roe',
@@ -1202,7 +1259,10 @@ describe('StockPage', () => {
           index: 2,
           title: '渠道库存与两金增速背离',
           thesis: '存货增速略高于营收增速，需持续跟踪批价与去库节奏。',
-          cited_facts: [{ label: '增速差', value_text: '+4.2%', source_section: '财务CT' }],
+          cited_facts: [
+            { label: '增速差', value_text: '+4.2%', source_section: 'financial_ct' },
+            { label: '综合评分', value_text: '89', source_section: 'radar' },
+          ],
           suggested_falsify_rule: {
             metric: 'ocf_to_profit_5y_pct',
             op: 'lt',
@@ -1318,8 +1378,10 @@ describe('StockPage', () => {
     expect(await screen.findByText('#1 估值与逆向隐含增速约束')).toBeInTheDocument()
     expect(screen.getByText('#2 渠道库存与两金增速背离')).toBeInTheDocument()
     expect(screen.getByText('#3 宏观商务消费需求扰动')).toBeInTheDocument()
-    expect(screen.getByText('PE(TTM): 22.10 · 估值截面')).toBeInTheDocument()
+    expect(screen.getByText('PE(TTM): 22.10 · 估值')).toBeInTheDocument()
     expect(screen.getByText('隐含FCF增速: +8.42% · 逆向DCF')).toBeInTheDocument()
+    expect(screen.getByText('增速差: +4.2% · 财务排雷')).toBeInTheDocument()
+    expect(screen.getByText('综合评分: 89 · 五维雷达')).toBeInTheDocument()
     expect(screen.getByText('规则回退 · deterministic_fallback')).toBeInTheDocument()
     expect(screen.getByText(/外部模型超时，已自动回退规则引擎/)).toBeInTheDocument()
     expect(screen.getByText(/仅供投资复盘，不构成买卖建议/)).toBeInTheDocument()
@@ -1348,7 +1410,7 @@ describe('StockPage', () => {
     expect(screen.getByLabelText('规则 1 条件')).toHaveValue('lt')
     expect(screen.getByLabelText('规则 1 阈值')).toHaveValue(12)
     expect(screen.getByLabelText('规则 1 连续期数')).toHaveValue(2)
-    expect(screen.getByLabelText('否证条件')).toHaveValue('ROE < 12（连续 2 期）')
+    expect(screen.getByLabelText('否证条件')).toHaveValue('ROE < 12%（连续 2 期）')
     expect(firstAdoptBtn).toBeDisabled()
     expect(firstAdoptBtn).toHaveTextContent('已采纳')
 
@@ -1356,7 +1418,7 @@ describe('StockPage', () => {
     fireEvent.click(secondAdoptBtn)
     expect(screen.getByLabelText('规则 2 指标')).toHaveValue('ocf_to_profit_5y_pct')
     expect(screen.getByLabelText('规则 2 阈值')).toHaveValue(80)
-    expect(screen.getByLabelText('否证条件')).toHaveValue('ROE < 12（连续 2 期）')
+    expect(screen.getByLabelText('否证条件')).toHaveValue('ROE < 12%（连续 2 期）')
     expect(secondAdoptBtn).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '移除规则 2' }))
     expect(secondAdoptBtn).not.toBeDisabled()
@@ -1384,7 +1446,7 @@ describe('StockPage', () => {
         name: '贵州茅台',
         action: 'buy',
         reason: '现金流稳健，分红率具备吸引力',
-        falsify_condition: 'ROE < 12（连续 2 期）',
+        falsify_condition: 'ROE < 12%（连续 2 期）',
         price: null,
         max_drawdown: null,
         emotion: null,
@@ -1849,6 +1911,9 @@ describe('StockPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '智能推演 (auto)' }))
     fireEvent.click(screen.getByRole('button', { name: '运行 MD&A 口径对比' }))
     expect(await screen.findByText('纯规则对比完成。')).toBeInTheDocument()
+    expect(
+      screen.getByText('当前由本地确定性规则引擎生成（零 AI 额度消耗，免费使用）'),
+    ).toBeInTheDocument()
     expect(mdaRequests[0]?.mode).toBe('rule_only')
     expect(screen.getByText(/不消耗每日 AI 额度/)).toBeInTheDocument()
 
@@ -1919,7 +1984,10 @@ describe('StockPage', () => {
     resolvePendingDa(jsonResponse(daFallbackChallengeResponse, 200))
 
     // Non-multi-period pb_percentile renders periods=1 in preview and adopts canonical pb_percentile_10y with periods=1.
-    expect(await screen.findByText('建议红线：10年PB分位 ≥ 85（连续 1 期）')).toBeInTheDocument()
+    expect(await screen.findByText('建议红线：10年PB分位 ≥ 85%（连续 1 期）')).toBeInTheDocument()
+    expect(
+      screen.getByText('当前由本地确定性规则引擎生成（零 AI 额度消耗，免费使用）'),
+    ).toBeInTheDocument()
     expect(screen.queryByRole('region', { name: '买入前理性安检门确认' })).not.toBeInTheDocument()
     expect(daRequests[2]?.mode).toBe('rule_only')
 
@@ -1963,5 +2031,53 @@ describe('StockPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: '估值' }))
     fireEvent.click(screen.getByRole('tab', { name: '投资决策' }))
     expect(screen.queryByText('#1 PB分位过高提醒')).not.toBeInTheDocument()
+  })
+
+  it('annotates current-year partial shareholder return series with (年内) label and YTD note', async () => {
+    const partialYearSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      as_of: '2026-11-20',
+      shareholder_return: {
+        ...SAMPLE_SNAPSHOT.shareholder_return,
+        series: [
+          ...SAMPLE_SNAPSHOT.shareholder_return.series,
+          {
+            year: 2026,
+            dividend_yuan: 3.1e10,
+            repurchase_yuan: 1.5e9,
+            equity_financing_yuan: 0,
+            net_return_yuan: 3.25e10,
+            fcf_yuan: 4.5e10,
+          },
+        ],
+      },
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(partialYearSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600519')
+    fireEvent.click(await screen.findByRole('tab', { name: '治理' }))
+
+    expect(
+      await screen.findByText('含本年度截至目前公告的分红/回购进度，年度尚未收官'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('2026(年内)')).toBeInTheDocument()
+
+    const governanceChart = capturedChartOptions.get('股东净回报柱状图')
+    expect(governanceChart?.xAxis).toMatchObject({
+      data: ['2024', '2025', '2026(年内)'],
+    })
   })
 })

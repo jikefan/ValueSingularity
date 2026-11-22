@@ -56,7 +56,12 @@ class MarketRepository(Protocol):
 
 
 class StockMetaRepository(Protocol):
-    async def upsert_many(self, items: Sequence[StockMetaRecord]) -> int:
+    async def upsert_many(
+        self,
+        items: Sequence[StockMetaRecord],
+        *,
+        deactivate_missing: bool = True,
+    ) -> int:
         """Upsert platform-shared stock metadata and return affected count."""
         ...
 

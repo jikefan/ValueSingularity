@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from app.domain.engines._helpers import (
     compute_cagr_pct,
     finite_or_none,
+    is_financial_institution,
     report_fcf_yuan,
     report_net_cash_yuan,
     sort_reports_asc,
@@ -136,10 +137,13 @@ def compute_reverse_dcf(
         else None
     )
 
-    if meta is not None and meta.industry_sw1 in {"银行", "非银金融"}:
+    if is_financial_institution(meta):
         return ReverseDcfSection(
             solvable=False,
-            note="金融行业资产负债结构特殊，暂不适用企业自由现金流逆向 DCF 模型。",
+            note=(
+                "金融行业受存贷款净现金流波动影响，"
+                "传统自由现金流贴现与净现金假设失真，建议采用 PB / ROE 与股息率估值"
+            ),
             market_cap_yuan=clean_mcap,
             enterprise_value_yuan=None,
             net_cash_yuan=None,

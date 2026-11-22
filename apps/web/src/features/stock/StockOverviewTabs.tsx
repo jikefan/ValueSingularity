@@ -203,9 +203,11 @@ export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayloa
       },
       legend: {
         ...CHART_LEGEND_COMMON,
+        top: 0,
+        type: 'scroll',
         data: ['营业收入', '归母净利润', '自由现金流', 'ROE (%)'],
       },
-      grid: { left: 12, right: 14, top: 38, bottom: 10, containLabel: true },
+      grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
       xAxis: {
         ...CHART_AXIS_COMMON,
         type: 'category',
@@ -216,12 +218,14 @@ export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayloa
           ...CHART_AXIS_COMMON,
           type: 'value',
           name: '亿元',
+          nameGap: 14,
           nameTextStyle: { color: CHART_COLORS.muted },
         },
         {
           ...CHART_AXIS_COMMON,
           type: 'value',
           name: 'ROE %',
+          nameGap: 14,
           nameTextStyle: { color: CHART_COLORS.muted },
           splitLine: { show: false },
         },
@@ -393,9 +397,11 @@ export function StockGrowthTab({ snapshot }: { snapshot: StockSnapshotPayload })
       },
       legend: {
         ...CHART_LEGEND_COMMON,
+        top: 0,
+        type: 'scroll',
         data: ['毛利率 (%)', '净利率 (%)', '研发费用率 (%)'],
       },
-      grid: { left: 12, right: 14, top: 38, bottom: 10, containLabel: true },
+      grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
       xAxis: {
         ...CHART_AXIS_COMMON,
         type: 'category',
@@ -405,6 +411,7 @@ export function StockGrowthTab({ snapshot }: { snapshot: StockSnapshotPayload })
         ...CHART_AXIS_COMMON,
         type: 'value',
         name: '%',
+        nameGap: 14,
         nameTextStyle: { color: CHART_COLORS.muted },
       },
       series: [

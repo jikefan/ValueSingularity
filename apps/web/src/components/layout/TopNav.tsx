@@ -234,10 +234,6 @@ export function TopNav({
 
         <span className="spacer" />
 
-        <button type="button" className="persona-chip" title="AI 陪伴人格（待接入）">
-          中性分析师
-        </button>
-
         {user ? (
           <span className="nav-user">
             <span className="soft small">{user.display_name}</span>

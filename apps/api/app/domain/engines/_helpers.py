@@ -5,7 +5,83 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from app.domain.models import StockAnnualReport
+from app.domain.models import StockAnnualReport, StockMetaRecord
+
+_FINANCIAL_EXACT_CATEGORIES = frozenset({"银行", "非银金融", "金融", "金融业"})
+_FINANCIAL_INDUSTRY_KEYWORDS: tuple[str, ...] = (
+    "货币金融服务",
+    "银行业",
+    "银行",
+    "农商行",
+    "保险",
+    "证券",
+    "资本市场",
+    "信托",
+    "多元金融",
+    "期货",
+    "其他金融业",
+)
+_IT_BLOCK_KEYWORDS: tuple[str, ...] = (
+    "软件",
+    "信息",
+    "IT",
+    "科技",
+    "计算机",
+    "互联网",
+    "数据",
+    "网络",
+    "电子",
+)
+_FINANCIAL_NAME_SUFFIXES: tuple[str, ...] = (
+    "银行",
+    "农商行",
+    "人寿",
+    "财险",
+    "再保险",
+    "信托",
+    "期货",
+    "证券",
+)
+_FINANCIAL_NAME_CONTAINS: tuple[str, ...] = ("商业银行", "农商银行", "保险")
+
+
+def _contains_it_keyword(text: str) -> bool:
+    upper = text.upper()
+    return any(kw in upper for kw in _IT_BLOCK_KEYWORDS)
+
+
+def _matches_financial_industry(text: str) -> bool:
+    cleaned = text.strip()
+    if not cleaned or _contains_it_keyword(cleaned):
+        return False
+    if cleaned in _FINANCIAL_EXACT_CATEGORIES:
+        return True
+    return any(kw in cleaned for kw in _FINANCIAL_INDUSTRY_KEYWORDS)
+
+
+def is_financial_institution(
+    meta: StockMetaRecord | None,
+    industry_hint: str | None = None,
+) -> bool:
+    """Detect banks, insurers, brokerages, and non-bank financials without IT false positives."""
+    sw1 = meta.industry_sw1.strip() if meta is not None and meta.industry_sw1 else ""
+    sw2 = meta.industry_sw2.strip() if meta is not None and meta.industry_sw2 else ""
+    hint = industry_hint.strip() if industry_hint else ""
+
+    for candidate in (sw1, hint, sw2):
+        if _matches_financial_industry(candidate):
+            return True
+
+    # Fall back to company name only when industry classification is genuinely absent.
+    if sw1 or hint or sw2 or meta is None:
+        return False
+
+    name = meta.name.strip()
+    if not name or _contains_it_keyword(name):
+        return False
+    return name.endswith(_FINANCIAL_NAME_SUFFIXES) or any(
+        kw in name for kw in _FINANCIAL_NAME_CONTAINS
+    )
 
 
 def finite_or_none(value: float | None, ndigits: int | None = None) -> float | None:

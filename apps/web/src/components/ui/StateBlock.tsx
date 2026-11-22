@@ -14,7 +14,7 @@ export function EmptyBlock({ title, hint }: { title: string; hint?: ReactNode })
   return (
     <div className="state">
       <p>{title}</p>
-      {hint ? <p className="small mt-8">{hint}</p> : null}
+      {hint ? <div className="small mt-8">{hint}</div> : null}
     </div>
   )
 }

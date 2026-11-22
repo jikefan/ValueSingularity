@@ -40,10 +40,28 @@ class StockSyncService:
         meta = metas[0]
 
         bundle = await self._feed.fetch_stock_bundle(code, as_of=as_of)
+
+        meta_updates: dict[str, object] = {}
+        if (
+            bundle.profile_industry_sw1 is not None
+            and bundle.profile_industry_sw1 != meta.industry_sw1
+        ):
+            meta_updates["industry_sw1"] = bundle.profile_industry_sw1
+        if (
+            bundle.profile_industry_sw2 is not None
+            and bundle.profile_industry_sw2 != meta.industry_sw2
+        ):
+            meta_updates["industry_sw2"] = bundle.profile_industry_sw2
+        if bundle.profile_list_date is not None and bundle.profile_list_date != meta.list_date:
+            meta_updates["list_date"] = bundle.profile_list_date
+        enriched_meta = meta.model_copy(update=meta_updates) if meta_updates else meta
+
         # Build and validate full snapshot before mutating Parquet or PostgreSQL.
-        snapshot = build_stock_snapshot(meta, bundle)
+        snapshot = build_stock_snapshot(enriched_meta, bundle)
 
         await self._fact_store.write_stock_facts(bundle)
+        if meta_updates:
+            await self._stock_meta_repo.upsert_many([enriched_meta], deactivate_missing=False)
         await self._snapshot_repo.save_snapshot(snapshot)
 
         return StockSyncSummary(

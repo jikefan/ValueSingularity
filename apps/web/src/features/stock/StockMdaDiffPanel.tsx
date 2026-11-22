@@ -359,6 +359,10 @@ function StockMdaDiffPanelContent({
               <div className="notice-box notice-warn" role="status">
                 已回退规则引擎，当前展示确定性对比结果。
               </div>
+            ) : result.mode === 'deterministic' ? (
+              <p className="small muted" role="status">
+                当前由本地确定性规则引擎生成（零 AI 额度消耗，免费使用）
+              </p>
             ) : null}
 
             <div className="notice-box stack" style={{ gap: 8 }}>
@@ -481,7 +485,11 @@ export function StockMdaDiffPanel({ code, stockName, snapshotAvailable }: StockM
         <EmptyBlock
           title="登录后对比连续两期年报管理层讨论与财务口径变化"
           hint={
-            <Link className="btn-primary mt-16" to="/login" state={{ from: `/stock/${code}` }}>
+            <Link
+              className="btn-primary mt-16"
+              to={`/login?redirect=${encodeURIComponent(`/stock/${code}`)}`}
+              state={{ from: `/stock/${code}` }}
+            >
               前往登录 / 注册
             </Link>
           }

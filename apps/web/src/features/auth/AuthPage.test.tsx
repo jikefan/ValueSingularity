@@ -33,7 +33,9 @@ function asRequest(input: RequestInfo | URL): Request {
   throw new Error('Expected Request instance')
 }
 
-function renderAuthRoute(initialEntry = '/login') {
+function renderAuthRoute(
+  initialEntry: string | { pathname: string; search?: string; state?: unknown } = '/login',
+) {
   const client = createQueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -48,6 +50,7 @@ function renderAuthRoute(initialEntry = '/login') {
             <Route path="/login" element={<AuthPage />} />
             <Route path="/register" element={<AuthPage initialMode="register" />} />
             <Route path="/me" element={<div>我的页面已跳转</div>} />
+            <Route path="/stock/:code" element={<div>个股目标页已跳转</div>} />
           </Routes>
         </MemoryRouter>
       </AuthProvider>
@@ -234,5 +237,65 @@ describe('AuthPage', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(screen.getByTestId('auth-user')).toHaveTextContent('fresh@example.com')
+  })
+
+  it('redirects via ?redirect= query param or location.state.from and rejects external URLs', async () => {
+    const tokenResponse: TokenResponse = {
+      access_token: 'redirect-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    const queryView = renderAuthRoute('/login?redirect=%2Fstock%2F600519')
+    fireEvent.change(await screen.findByLabelText('邮箱'), {
+      target: { value: 'investor@example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'password123' } })
+    fireEvent.click(screen.getByRole('button', { name: '立即登录' }))
+    expect(await screen.findByText('个股目标页已跳转')).toBeInTheDocument()
+    queryView.unmount()
+    setAccessToken(null)
+
+    const protocolRelativeView = renderAuthRoute('/login?redirect=//evil.com')
+    fireEvent.change(await screen.findByLabelText('邮箱'), {
+      target: { value: 'investor@example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'password123' } })
+    fireEvent.click(screen.getByRole('button', { name: '立即登录' }))
+    expect(await screen.findByText('我的页面已跳转')).toBeInTheDocument()
+    protocolRelativeView.unmount()
+    setAccessToken(null)
+
+    const externalUrlView = renderAuthRoute('/login?redirect=https://evil.com')
+    fireEvent.change(await screen.findByLabelText('邮箱'), {
+      target: { value: 'investor@example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'password123' } })
+    fireEvent.click(screen.getByRole('button', { name: '立即登录' }))
+    expect(await screen.findByText('我的页面已跳转')).toBeInTheDocument()
+    externalUrlView.unmount()
+    setAccessToken(null)
+
+    renderAuthRoute({ pathname: '/login', state: { from: '/stock/600036' } })
+    fireEvent.change(await screen.findByLabelText('邮箱'), {
+      target: { value: 'investor@example.com' },
+    })
+    fireEvent.change(screen.getByLabelText('密码'), { target: { value: 'password123' } })
+    fireEvent.click(screen.getByRole('button', { name: '立即登录' }))
+    expect(await screen.findByText('个股目标页已跳转')).toBeInTheDocument()
   })
 })

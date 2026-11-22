@@ -256,7 +256,11 @@ describe('MePage', () => {
     expect(screen.getByText('PRO')).toBeInTheDocument()
     expect(screen.getByText('哨兵开启')).toBeInTheDocument()
     expect(screen.getByText('目标价 ≤ 1,400.00')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '600519' })).toHaveAttribute('href', '/stock/600519')
+    const watchlistLink = screen.getByRole('link', { name: '600519' })
+    expect(watchlistLink).toHaveAttribute('href', '/stock/600519')
+    const watchlistTable = watchlistLink.closest('table')
+    expect(watchlistTable).toHaveClass('watchlist-table')
+    expect(watchlistTable?.parentElement).toHaveClass('table-wrap')
 
     fireEvent.change(screen.getByLabelText('股票代码'), { target: { value: '000858' } })
     fireEvent.change(screen.getByLabelText('股票名称'), { target: { value: '五粮液' } })
@@ -719,6 +723,149 @@ describe('MePage', () => {
     expect(screen.getByText('未触发')).toBeInTheDocument()
     expect(screen.getByText('已触发否证')).toBeInTheDocument()
     expect(screen.getByText('ct_red_count >= 1 (当前 1)')).toBeInTheDocument()
+  })
+
+  it('uses 绝对收益胜率 with neutral tone for first-day flat ledger entries, while keeping tone-bad for real losses', async () => {
+    const firstDayFlatItem = {
+      id: 601,
+      code: '600519',
+      name: '贵州茅台',
+      action: 'buy' as const,
+      emotion: '冷静',
+      created_at: '2026-11-22T09:00:00Z',
+      entry_price: 1520,
+      current_price: 1520,
+      stock_return_pct: 0.0,
+      entry_benchmark_price: null,
+      current_benchmark_price: null,
+      benchmark_return_pct: null,
+      excess_return_pct: null,
+      entry_pe_ttm: 22.1,
+      current_pe_ttm: 22.1,
+      entry_score: 89,
+      current_score: 89,
+      days_held: 0,
+      falsify_triggered: false,
+      falsify_triggers: [],
+    }
+
+    const firstDayFlatLedger: DecisionLedgerReport = {
+      total_entries: 1,
+      comparable_count: 1,
+      win_count: 0,
+      win_rate_pct: 0.0,
+      avg_stock_return_pct: 0.0,
+      avg_excess_return_pct: null,
+      pass_count: 0,
+      pass_avoided_loss_count: 0,
+      current_benchmark_code: '000300',
+      current_benchmark_price: null,
+      benchmark_as_of: null,
+      by_emotion: [
+        {
+          emotion: '冷静',
+          total_count: 1,
+          comparable_count: 1,
+          win_count: 0,
+          win_rate_pct: 0.0,
+          avg_stock_return_pct: 0.0,
+          avg_excess_return_pct: null,
+        },
+      ],
+      by_action: [],
+      items: [firstDayFlatItem],
+    }
+
+    const realLossLedger: DecisionLedgerReport = {
+      ...firstDayFlatLedger,
+      avg_stock_return_pct: -8.5,
+      avg_excess_return_pct: -6.2,
+      current_benchmark_price: 3980.5,
+      benchmark_as_of: '2026-11-22',
+      by_emotion: [
+        {
+          emotion: '冷静',
+          total_count: 1,
+          comparable_count: 1,
+          win_count: 0,
+          win_rate_pct: 0.0,
+          avg_stock_return_pct: -8.5,
+          avg_excess_return_pct: -6.2,
+        },
+      ],
+      items: [
+        {
+          ...firstDayFlatItem,
+          current_price: 1390.8,
+          stock_return_pct: -8.5,
+          entry_benchmark_price: 4074.2,
+          current_benchmark_price: 3980.5,
+          benchmark_return_pct: -2.3,
+          excess_return_pct: -6.2,
+          days_held: 12,
+        },
+      ],
+    }
+
+    let currentLedger = firstDayFlatLedger
+    const tokenResponse: TokenResponse = {
+      access_token: 'active-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/journal/ledger' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(currentLedger, 200))
+      }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return Promise.resolve(emptyPhase3)
+      }
+      return Promise.resolve(
+        jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
+      )
+    })
+
+    const flatView = renderMePage()
+
+    expect(await screen.findByText('绝对收益胜率')).toBeInTheDocument()
+    expect(screen.queryByText('跑赢沪深 300 胜率')).not.toBeInTheDocument()
+    expect(screen.getByText('首日平价入库，待下一交易日收市后计算胜负')).toBeInTheDocument()
+    const flatWinMetric = screen
+      .getByText('绝对收益胜率')
+      .parentElement?.querySelector('.metric-value')
+    expect(flatWinMetric).toHaveTextContent('0.0%')
+    expect(flatWinMetric).not.toHaveClass('tone-bad')
+    const emotionWinCell = screen.getAllByText('0.0%')[1]
+    expect(emotionWinCell).not.toHaveClass('tone-bad')
+    flatView.unmount()
+    setAccessToken(null)
+
+    currentLedger = realLossLedger
+    renderMePage()
+
+    expect(await screen.findByText('跑赢沪深 300 胜率')).toBeInTheDocument()
+    expect(screen.getByText('胜 0 / 可比 1')).toBeInTheDocument()
+    const lossWinMetric = screen
+      .getByText('跑赢沪深 300 胜率')
+      .parentElement?.querySelector('.metric-value')
+    expect(lossWinMetric).toHaveTextContent('0.0%')
+    expect(lossWinMetric).toHaveClass('tone-bad')
+    const lossEmotionWinCell = screen.getAllByText('0.0%')[1]
+    expect(lossEmotionWinCell).toHaveClass('tone-bad')
   })
 
   it('triggers manual Sentinel scan, updates alerts radar, and manages webhook preferences including 422 and clear', async () => {

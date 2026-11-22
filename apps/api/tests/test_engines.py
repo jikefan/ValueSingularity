@@ -12,6 +12,7 @@ from app.domain.engines import (
     build_stock_snapshot,
     compute_reverse_dcf,
     dcf_present_value,
+    is_financial_institution,
     scan_financial_ct,
     solve_implied_fcf_cagr_pct,
 )
@@ -718,7 +719,8 @@ def test_financial_sector_exemptions_and_lease_debt_consistency() -> None:
     ]
     dcf_bank = compute_reverse_dcf(reports, market_cap_yuan=2000e8, meta=bank_meta)
     assert dcf_bank.solvable is False
-    assert "金融行业资产负债结构特殊" in dcf_bank.note
+    assert "传统自由现金流贴现与净现金假设失真" in dcf_bank.note
+    assert "PB / ROE" in dcf_bank.note
     assert dcf_bank.net_cash_yuan is None
     assert dcf_bank.enterprise_value_yuan is None
     assert dcf_bank.base_fcf_yuan is None
@@ -849,3 +851,109 @@ def test_ct_scanner_latest_report_none_stalled_cip_zero_fixed_and_goodwill_edge_
     ct_gw_assets = scan_financial_ct([gw_no_equity], None)
     gw_assets_check = next(c for c in ct_gw_assets.checks if c.rule_id == "goodwill_overhang")
     assert gw_assets_check.status == "red"
+
+
+def test_is_financial_institution_and_bank_snapshot_exemptions() -> None:
+    cmb_no_ind = StockMetaRecord(code="600036", name="招商银行", exchange="SH", industry_sw1=None)
+    pab_no_ind = StockMetaRecord(code="000001", name="平安银行", exchange="SZ", industry_sw1=None)
+    insurer_no_ind = StockMetaRecord(
+        code="601628", name="中国人寿", exchange="SH", industry_sw1=None
+    )
+    broker_no_ind = StockMetaRecord(
+        code="600030", name="中信证券", exchange="SH", industry_sw1=None
+    )
+    rural_bank = StockMetaRecord(code="601825", name="沪农商行", exchange="SH", industry_sw1=None)
+
+    assert is_financial_institution(cmb_no_ind) is True
+    assert is_financial_institution(pab_no_ind) is True
+    assert is_financial_institution(insurer_no_ind) is True
+    assert is_financial_institution(broker_no_ind) is True
+    assert is_financial_institution(rural_bank) is True
+
+    assert is_financial_institution(None, "货币金融服务") is True
+    assert is_financial_institution(None, "资本市场服务") is True
+    assert is_financial_institution(None, "多元金融") is True
+
+    fintech = StockMetaRecord(code="300033", name="金融科技", exchange="SZ", industry_sw1=None)
+    bank_sw = StockMetaRecord(code="300001", name="银行软件", exchange="SZ", industry_sw1=None)
+    it_bank_name = StockMetaRecord(
+        code="600570", name="银行业商业银行", exchange="SH", industry_sw1="计算机"
+    )
+    assert is_financial_institution(fintech) is False
+    assert is_financial_institution(bank_sw) is False
+    assert is_financial_institution(it_bank_name) is False
+    assert is_financial_institution(None, "金融科技") is False
+    assert is_financial_institution(None, "银行软件") is False
+    assert is_financial_institution(None, "软件和信息技术服务业") is False
+
+    bank_reports = [
+        _make_report(
+            y,
+            code="600036",
+            monetary_funds=800e8,
+            short_loan=600e8,
+            long_loan=200e8,
+            ocf=-250e8 if y % 2 == 0 else 100e8,
+            net_profit=450e8,
+            receivable=900e8,
+            inventory=0.0,
+            goodwill=0.0,
+            total_assets=2000e8,
+        )
+        for y in range(2021, 2026)
+    ]
+    as_of = date(2026, 11, 20)
+    bundle = StockFactBundle(
+        code="600036",
+        as_of=as_of,
+        data_source="akshare",
+        daily_bars=[
+            StockDailyBar(
+                code="600036",
+                trade_date=as_of,
+                open=38.0,
+                high=39.0,
+                low=37.5,
+                close=38.5,
+                total_mv_yuan=9500e8,
+                pe_ttm=6.5,
+                pb=0.9,
+            )
+        ],
+        annual_reports=bank_reports,
+        dividends=[],
+        repurchases=[],
+        pledge=None,
+        equity_financings=[],
+    )
+
+    # Even before industry_sw1 is populated, bank name triggers full financial exemptions.
+    snap_by_name = build_stock_snapshot(
+        cmb_no_ind, bundle, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+    )
+    ct_by_id = {c.rule_id: c for c in snap_by_name.financial_ct.checks}
+    for rule_id in ("dual_high_cash_debt", "ocf_profit_divergence", "receivable_inventory_bloat"):
+        assert ct_by_id[rule_id].status == "na"
+        assert "金融行业结构特殊" in ct_by_id[rule_id].summary
+        assert ct_by_id[rule_id].value_text == "不适用"
+    assert snap_by_name.reverse_dcf.solvable is False
+    assert "PB / ROE" in snap_by_name.reverse_dcf.note
+    assert snap_by_name.peer_metrics.net_cash_to_mv_pct is None
+    fortress = next(d for d in snap_by_name.moat.dimensions if d.key == "balance_fortress")
+    assert fortress.score == 65
+    assert snap_by_name.radar.balance_sheet == 65
+
+    # Bundle profile metadata propagates into snapshot when meta lacks industry_sw1/sw2.
+    bundle_with_profile = bundle.model_copy(
+        update={
+            "profile_industry_sw1": "银行",
+            "profile_industry_sw2": "股份制银行Ⅱ",
+            "profile_list_date": date(2002, 4, 9),
+        }
+    )
+    snap_propagated = build_stock_snapshot(
+        cmb_no_ind, bundle_with_profile, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+    )
+    assert snap_propagated.industry_sw1 == "银行"
+    assert snap_propagated.industry_sw2 == "股份制银行Ⅱ"
+    assert snap_propagated.peer_metrics.industry_sw1 == "银行"

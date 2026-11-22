@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 from collections.abc import AsyncIterator, Sequence
 from datetime import date, datetime
 from pathlib import Path
@@ -20,9 +22,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.adapters.akshare.stock_feed import (
     AkshareStockFactFeed,
     parse_annual_reports,
+    parse_cninfo_industry_change,
+    parse_cninfo_ipo_list_date,
+    parse_cninfo_profile,
     parse_daily_bars,
     parse_dividends,
     parse_repurchases,
+    parse_ths_zyjs_sector,
 )
 from app.adapters.duckdb.stock_store import DuckDBStockFactStore
 from app.adapters.postgres.market import PostgresStockMetaRepository
@@ -149,6 +155,30 @@ def _sample_bundle(code: str = "600519", as_of: date = date(2026, 11, 20)) -> St
                 amount_yuan=5e8,
             )
         ],
+    )
+
+
+def _sample_bank_bundle(code: str = "600036", as_of: date = date(2026, 11, 20)) -> StockFactBundle:
+    base = _sample_bundle(code, as_of)
+    bank_reports = [
+        report.model_copy(
+            update={
+                "short_loan_yuan": 600e8,
+                "long_loan_yuan": 200e8,
+                "ocf_yuan": -250e8 if report.report_year % 2 == 0 else 100e8,
+                "accounts_receivable_yuan": 900e8,
+                "note_accounts_rece_yuan": 900e8,
+            }
+        )
+        for report in base.annual_reports
+    ]
+    return base.model_copy(
+        update={
+            "annual_reports": bank_reports,
+            "profile_industry_sw1": "银行",
+            "profile_industry_sw2": "股份制银行Ⅱ",
+            "profile_list_date": date(2002, 4, 9),
+        }
     )
 
 
@@ -362,6 +392,25 @@ async def test_akshare_stock_feed_alignment_caching_and_edge_cases(
             ]
         )
 
+    def fake_industry_change(symbol: str = "600519", **_kwargs: object) -> pd.DataFrame:
+        if symbol != "600519":
+            return pd.DataFrame()
+        return pd.DataFrame(
+            [
+                {
+                    "分类标准": "申银万国行业分类标准",
+                    "变更日期": "2021-12-13",
+                    "行业门类": "食品饮料",
+                    "行业次类": "白酒Ⅱ",
+                }
+            ]
+        )
+
+    def fake_ipo_summary(symbol: str = "600519") -> pd.DataFrame:
+        if symbol != "600519":
+            return pd.DataFrame()
+        return pd.DataFrame([{"上市日期": "2001-08-27"}])
+
     monkeypatch.setattr(ak, "stock_zh_a_hist_sina", fake_sina)
     monkeypatch.setattr(ak, "stock_zh_a_hist_tx", fake_tx)
     monkeypatch.setattr(ak, "stock_zh_valuation_baidu", fake_baidu)
@@ -372,6 +421,10 @@ async def test_akshare_stock_feed_alignment_caching_and_edge_cases(
     monkeypatch.setattr(ak, "stock_repurchase_em", fake_repurchase)
     monkeypatch.setattr(ak, "stock_gpzy_pledge_ratio_em", fake_pledge)
     monkeypatch.setattr(ak, "stock_add_stock", fake_add_stock)
+    monkeypatch.setattr(ak, "stock_industry_change_cninfo", fake_industry_change)
+    monkeypatch.setattr(ak, "stock_ipo_summary_cninfo", fake_ipo_summary)
+    monkeypatch.setattr(ak, "stock_profile_cninfo", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "stock_zyjs_ths", lambda **_kwargs: pd.DataFrame())
 
     feed = AkshareStockFactFeed(timeout_seconds=5.0, max_attempts=1, retry_wait_seconds=0.0)
 
@@ -398,6 +451,9 @@ async def test_akshare_stock_feed_alignment_caching_and_edge_cases(
     assert bundle_sina.pledge is not None
     assert bundle_sina.pledge.pledge_ratio_pct == 0.0
     assert bundle_sina.pledge.trade_date == date(2026, 11, 13)
+    assert bundle_sina.profile_industry_sw1 == "食品饮料"
+    assert bundle_sina.profile_industry_sw2 == "白酒Ⅱ"
+    assert bundle_sina.profile_list_date == date(2001, 8, 27)
     assert any(
         f.source == "cash_flow" and f.amount_yuan == pytest.approx(7e8)
         for f in bundle_sina.equity_financings
@@ -658,6 +714,50 @@ async def test_pg_stock_snapshot_upsert_and_api_routes(tmp_path: Path) -> None:
             ):
                 resp = await client.get("/api/stocks/compare", params={"codes": bad_codes})
                 assert resp.status_code == 422, f"Expected 422 for codes={bad_codes!r}"
+
+            # StockSyncService enriches null stock_meta profile fields and exempts bank snapshot.
+            bundle_600036 = _sample_bank_bundle("600036", date(2026, 11, 20))
+
+            class _BankFeed:
+                async def fetch_stock_bundle(
+                    self, code: str, *, as_of: date | None = None
+                ) -> StockFactBundle:
+                    return bundle_600036
+
+            meta_600036 = StockMetaRecord(code="600036", name="招商银行", exchange="SH")
+            async with testing_session() as session:
+                meta_repo = PostgresStockMetaRepository(session)
+                await meta_repo.upsert_many([meta_600036], deactivate_missing=False)
+                sync_service = StockSyncService(
+                    feed=_BankFeed(),
+                    fact_store=DuckDBStockFactStore(tmp_path),
+                    stock_meta_repo=meta_repo,
+                    snapshot_repo=PostgresStockSnapshotRepository(session),
+                )
+                await sync_service.sync_stock("600036")
+
+                enriched = {
+                    item.code: item for item in await meta_repo.list_by_codes(["600036", "600519"])
+                }
+                assert enriched["600036"].industry_sw1 == "银行"
+                assert enriched["600036"].industry_sw2 == "股份制银行Ⅱ"
+                assert enriched["600036"].list_date == date(2002, 4, 9)
+                assert enriched["600519"].is_active is True
+
+            bank_snap_resp = await client.get("/api/stocks/600036/snapshot")
+            assert bank_snap_resp.status_code == 200
+            bank_snap = bank_snap_resp.json()
+            assert bank_snap["industry_sw1"] == "银行"
+            assert bank_snap["industry_sw2"] == "股份制银行Ⅱ"
+            assert bank_snap["reverse_dcf"]["solvable"] is False
+            assert bank_snap["peer_metrics"]["net_cash_to_mv_pct"] is None
+            bank_ct = {c["rule_id"]: c for c in bank_snap["financial_ct"]["checks"]}
+            for rule_id in (
+                "dual_high_cash_debt",
+                "ocf_profit_divergence",
+                "receivable_inventory_bloat",
+            ):
+                assert bank_ct[rule_id]["status"] == "na"
     finally:
         app.dependency_overrides.clear()
         await engine.dispose()
@@ -820,6 +920,10 @@ async def test_akshare_stock_feed_merges_10y_1y_baidu_backward_without_lookahead
     monkeypatch.setattr(ak, "stock_repurchase_em", lambda: pd.DataFrame())
     monkeypatch.setattr(ak, "stock_gpzy_pledge_ratio_em", lambda **_kwargs: pd.DataFrame())
     monkeypatch.setattr(ak, "stock_add_stock", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "stock_industry_change_cninfo", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "stock_ipo_summary_cninfo", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "stock_profile_cninfo", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "stock_zyjs_ths", lambda **_kwargs: pd.DataFrame())
 
     feed = AkshareStockFactFeed(timeout_seconds=5.0, max_attempts=1, retry_wait_seconds=0.0)
     bundle = await feed.fetch_stock_bundle("600519", as_of=date(2026, 11, 20))
@@ -1200,3 +1304,273 @@ async def test_notice_date_lookahead_excluded_in_feed_and_store(tmp_path: Path) 
     assert loaded_mar.repurchases == [
         r for r in full_bundle.repurchases if r.event_date <= date(2026, 3, 1)
     ]
+
+
+def test_profile_parsers_extract_canonical_sw_sectors_and_ipo_dates() -> None:
+    ind_sw_df = pd.DataFrame(
+        [
+            {
+                "分类标准": "申银万国行业分类标准",
+                "变更日期": "2014-01-01",
+                "行业门类": "轻工制造",
+                "行业次类": "包装印刷",
+            },
+            {
+                "分类标准": "申银万国行业分类标准",
+                "变更日期": "2021-12-13",
+                "行业门类": "食品饮料",
+                "行业次类": "白酒Ⅱ",
+            },
+        ]
+    )
+    assert parse_cninfo_industry_change(ind_sw_df) == ("食品饮料", "白酒Ⅱ")
+
+    ind_csi_bank = pd.DataFrame(
+        [
+            {
+                "分类标准": "中证行业分类标准",
+                "变更日期": "2023-06-01",
+                "行业门类": "金融",
+                "行业次类": "银行",
+                "行业大类": "银行业",
+                "行业中类": "商业银行",
+            }
+        ]
+    )
+    assert parse_cninfo_industry_change(ind_csi_bank, name_hint="招商银行") == ("银行", "银行业")
+
+    ind_csi_auto = pd.DataFrame(
+        [
+            {
+                "分类标准": "中证行业分类标准",
+                "变更日期": "2023-06-01",
+                "行业门类": "可选消费",
+                "行业次类": "汽车与汽车零部件",
+                "行业大类": "汽车",
+                "行业中类": "乘用车",
+            }
+        ]
+    )
+    assert parse_cninfo_industry_change(ind_csi_auto) == ("汽车", "汽车")
+
+    assert parse_cninfo_ipo_list_date(pd.DataFrame([{"上市日期": "2002-04-09"}])) == date(
+        2002, 4, 9
+    )
+    assert parse_cninfo_ipo_list_date(pd.DataFrame()) is None
+
+    assert parse_cninfo_profile(
+        pd.DataFrame(
+            [
+                {
+                    "A股简称": "招商银行",
+                    "所属行业": "金融业-货币金融服务",
+                    "上市日期": "2002-04-09",
+                }
+            ]
+        )
+    ) == ("银行", "银行", date(2002, 4, 9))
+    assert parse_cninfo_profile(
+        pd.DataFrame(
+            [
+                {
+                    "A股简称": "贵州茅台",
+                    "所属行业": "制造业-酒、饮料和精制茶制造业",
+                    "主营业务": "茅台酒及系列酒的生产与销售",
+                    "上市日期": "2001-08-27",
+                }
+            ]
+        )
+    ) == ("食品饮料", None, date(2001, 8, 27))
+    assert parse_cninfo_profile(
+        pd.DataFrame(
+            [
+                {
+                    "A股简称": "上汽集团",
+                    "所属行业": "制造业-汽车制造业",
+                    "主营业务": "整车与乘用车研发制造",
+                    "上市日期": "1997-11-25",
+                }
+            ]
+        )
+    ) == ("汽车", None, date(1997, 11, 25))
+
+    assert (
+        parse_ths_zyjs_sector(
+            pd.DataFrame([{"所属行业": "银行", "主营业务": "商业银行业务，吸收公众存款"}])
+        )
+        == "银行"
+    )
+    assert (
+        parse_ths_zyjs_sector(
+            pd.DataFrame([{"所属行业": "食品饮料", "主营业务": "高端白酒酿造与销售"}])
+        )
+        == "食品饮料"
+    )
+    assert (
+        parse_ths_zyjs_sector(
+            pd.DataFrame([{"所属行业": "汽车整车", "主营业务": "乘用车及商用车制造"}])
+        )
+        == "汽车"
+    )
+    assert (
+        parse_ths_zyjs_sector(pd.DataFrame([{"主营业务": "金融科技与银行IT软件服务"}])) == "计算机"
+    )
+
+
+async def test_akshare_stock_feed_serializes_cninfo_v8_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guard = threading.Lock()
+    active = 0
+    max_active = 0
+    called: list[str] = []
+
+    def _track(endpoint: str) -> pd.DataFrame:
+        nonlocal active, max_active
+        with guard:
+            active += 1
+            max_active = max(max_active, active)
+            called.append(endpoint)
+        try:
+            time.sleep(0.02)
+            return pd.DataFrame()
+        finally:
+            with guard:
+                active -= 1
+
+    monkeypatch.setattr(
+        ak,
+        "stock_industry_change_cninfo",
+        lambda **_kwargs: _track("stock_industry_change_cninfo"),
+    )
+    monkeypatch.setattr(
+        ak,
+        "stock_ipo_summary_cninfo",
+        lambda **_kwargs: _track("stock_ipo_summary_cninfo"),
+    )
+    monkeypatch.setattr(
+        ak,
+        "stock_profile_cninfo",
+        lambda **_kwargs: _track("stock_profile_cninfo"),
+    )
+    monkeypatch.setattr(ak, "stock_zyjs_ths", lambda **_kwargs: pd.DataFrame())
+
+    feed = AkshareStockFactFeed(timeout_seconds=5.0, max_attempts=1, retry_wait_seconds=0.0)
+    await asyncio.gather(
+        feed._fetch_stock_profile_meta("600036", as_of=date(2026, 11, 20)),
+        feed._fetch_stock_profile_meta("600519", as_of=date(2026, 11, 20)),
+    )
+
+    assert max_active == 1
+    assert called.count("stock_industry_change_cninfo") == 2
+    assert called.count("stock_ipo_summary_cninfo") == 2
+    assert called.count("stock_profile_cninfo") == 2
+
+
+async def test_stock_sync_service_enriches_meta_and_exempts_600036_bank_snapshot(
+    tmp_path: Path,
+) -> None:
+    meta_600036 = StockMetaRecord(code="600036", name="招商银行", exchange="SH")
+    meta_600519 = StockMetaRecord(
+        code="600519", name="贵州茅台", exchange="SH", industry_sw1="食品饮料"
+    )
+    bank_bundle = _sample_bank_bundle("600036", date(2026, 11, 20))
+
+    class _BankFeed:
+        async def fetch_stock_bundle(
+            self, code: str, *, as_of: date | None = None
+        ) -> StockFactBundle:
+            assert code == "600036"
+            return bank_bundle
+
+    class _MemMetaRepo:
+        def __init__(self) -> None:
+            self.items: dict[str, StockMetaRecord] = {
+                meta_600036.code: meta_600036,
+                meta_600519.code: meta_600519,
+            }
+            self.deactivate_flags: list[bool] = []
+
+        async def upsert_many(
+            self,
+            items: Sequence[StockMetaRecord],
+            *,
+            deactivate_missing: bool = True,
+        ) -> int:
+            self.deactivate_flags.append(deactivate_missing)
+            for item in items:
+                self.items[item.code] = item
+            if deactivate_missing:
+                active_codes = {item.code for item in items}
+                for code, rec in list(self.items.items()):
+                    if code not in active_codes:
+                        self.items[code] = rec.model_copy(update={"is_active": False})
+            return len(items)
+
+        async def search(self, query: str, *, limit: int = 10) -> list[StockMetaRecord]:
+            return []
+
+        async def get_detail(self, code: str) -> StockDetail | None:
+            return None
+
+        async def get_name(self, code: str) -> str | None:
+            rec = self.items.get(code)
+            return rec.name if rec is not None else None
+
+        async def list_by_codes(self, codes: Sequence[str]) -> list[StockMetaRecord]:
+            return [self.items[c] for c in codes if c in self.items]
+
+        async def list_watched_codes(self, *, limit: int | None = None) -> list[str]:
+            return []
+
+        async def list_active_codes(self, *, limit: int | None = None) -> list[str]:
+            return [c for c, rec in sorted(self.items.items()) if rec.is_active]
+
+    class _MemSnapshotRepo:
+        def __init__(self) -> None:
+            self.rows: dict[str, StockSnapshotPayload] = {}
+
+        async def get_snapshot(self, code: str) -> StockSnapshotPayload | None:
+            return self.rows.get(code)
+
+        async def get_snapshots_for_compare(
+            self, codes: Sequence[str]
+        ) -> dict[str, StockSnapshotPayload]:
+            return {c: self.rows[c] for c in codes if c in self.rows}
+
+        async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
+            self.rows[snapshot.code] = snapshot
+
+    meta_repo = _MemMetaRepo()
+    snap_repo = _MemSnapshotRepo()
+    service = StockSyncService(
+        feed=_BankFeed(),
+        fact_store=DuckDBStockFactStore(tmp_path),
+        stock_meta_repo=meta_repo,
+        snapshot_repo=snap_repo,
+    )
+
+    summary = await service.sync_stock("600036")
+    assert summary.code == "600036"
+
+    persisted_meta = meta_repo.items["600036"]
+    assert persisted_meta.industry_sw1 == "银行"
+    assert persisted_meta.industry_sw2 == "股份制银行Ⅱ"
+    assert persisted_meta.list_date == date(2002, 4, 9)
+    assert meta_repo.deactivate_flags == [False]
+    assert meta_repo.items["600519"].is_active is True
+
+    persisted_snap = await snap_repo.get_snapshot("600036")
+    assert persisted_snap is not None
+    assert persisted_snap.industry_sw1 == "银行"
+    assert persisted_snap.industry_sw2 == "股份制银行Ⅱ"
+    assert persisted_snap.peer_metrics.industry_sw1 == "银行"
+    assert persisted_snap.peer_metrics.net_cash_to_mv_pct is None
+    assert persisted_snap.reverse_dcf.solvable is False
+    assert "PB / ROE" in persisted_snap.reverse_dcf.note
+    assert persisted_snap.radar.balance_sheet == 65
+    ct_by_id = {c.rule_id: c for c in persisted_snap.financial_ct.checks}
+    for rule_id in ("dual_high_cash_debt", "ocf_profit_divergence", "receivable_inventory_bloat"):
+        assert ct_by_id[rule_id].status == "na"
+        assert "金融行业结构特殊" in ct_by_id[rule_id].summary
+        assert ct_by_id[rule_id].value_text == "不适用"

@@ -658,6 +658,9 @@ class StockFactBundle(BaseModel):
     repurchases: list[StockRepurchaseRecord]
     pledge: StockPledgeSnapshot | None = None
     equity_financings: list[StockEquityFinancingRecord]
+    profile_industry_sw1: str | None = None
+    profile_industry_sw2: str | None = None
+    profile_list_date: date | None = None
 
 
 class CtRuleEvidence(BaseModel):

@@ -56,6 +56,7 @@ export function Chart({ option, height = 260, ariaLabel, className }: ChartProps
   useEffect(() => {
     chartRef.current?.setOption(
       {
+        animation: false,
         textStyle: { fontFamily: CHART_FONT_FAMILY, color: CHART_COLORS.text },
         ...option,
       },

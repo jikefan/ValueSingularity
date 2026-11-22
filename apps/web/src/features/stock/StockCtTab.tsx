@@ -45,7 +45,14 @@ export function StockCtTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
           </span>
         }
       >
-        {formulaNotes.ct_scanner ? <p className="small muted">{formulaNotes.ct_scanner}</p> : null}
+        {formulaNotes.ct_scanner ? (
+          <p className="small muted">{formulaNotes.ct_scanner}</p>
+        ) : (
+          <p className="small muted">
+            自动扫描存贷双高、在建工程长期挂账、现金流背离、两金膨胀、商誉减值、股权质押与审计意见 7
+            大风险维度。
+          </p>
+        )}
       </Card>
 
       {ct.checks.length === 0 ? (

@@ -269,18 +269,6 @@ p {
   flex: 1;
 }
 
-.persona-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border: 1px solid var(--line-soft);
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--soft);
-  background: transparent;
-}
-
 .nav-user {
   display: inline-flex;
   align-items: center;
@@ -1056,6 +1044,64 @@ p {
   overflow-x: auto;
 }
 
+.watchlist-table {
+  min-width: 660px;
+}
+
+.watchlist-table th,
+.watchlist-cell-nowrap,
+.watchlist-cell-thresholds,
+.watchlist-cell-thresholds .tag {
+  white-space: nowrap;
+}
+
+.watchlist-cell-name {
+  min-width: 108px;
+}
+
+.workflow-steps {
+  color: var(--soft);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.sample-stock-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sample-stock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--ink-2);
+  transition:
+    border-color 0.15s,
+    color 0.15s,
+    background 0.15s;
+}
+
+.sample-stock-chip:hover {
+  border-color: var(--electric);
+  color: var(--white);
+  background: var(--panel-2);
+}
+
+.stock-header-actions {
+  align-items: flex-end;
+}
+
+.stock-header-action-row {
+  justify-content: flex-end;
+}
+
 .notice-box {
   padding: 12px 14px;
   border: 1px solid var(--line-soft);
@@ -1365,6 +1411,12 @@ p {
   }
   .brand-text {
     display: none;
+  }
+  .stock-header-actions {
+    align-items: flex-start;
+  }
+  .stock-header-action-row {
+    justify-content: flex-start;
   }
 }
 
