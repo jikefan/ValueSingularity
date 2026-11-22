@@ -106,4 +106,21 @@ describe('MarketPage', () => {
     expect(screen.getByText('半导体')).toBeInTheDocument()
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
+
+  it('renders em dash when industry flow companies count is null', async () => {
+    const overviewWithMissingCompanies: MarketOverview = {
+      ...SAMPLE_OVERVIEW,
+      hot_industries: [
+        { name: '半导体', change_pct: 2.41, net_inflow: 3.12e9, companies: null },
+        { name: '银行', change_pct: -0.35, net_inflow: -6.1e8, companies: 42 },
+      ],
+    }
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(overviewWithMissingCompanies))
+
+    renderMarketPage()
+
+    expect(await screen.findByText('半导体')).toBeInTheDocument()
+    expect(screen.getByText('—')).toBeInTheDocument()
+    expect(screen.getByText('42')).toBeInTheDocument()
+  })
 })

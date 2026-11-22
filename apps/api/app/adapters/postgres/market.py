@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import String, all_, bindparam, func, select, update
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +51,7 @@ class PostgresMarketRepository:
                     "payload": payload,
                     "updated_at": now,
                 },
+                where=(MarketSnapshot.as_of <= snapshot.as_of),
             )
         )
         try:
@@ -64,7 +66,12 @@ class PostgresStockMetaRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def upsert_many(self, items: Sequence[StockMetaRecord]) -> int:
+    async def upsert_many(
+        self,
+        items: Sequence[StockMetaRecord],
+        *,
+        deactivate_missing: bool = True,
+    ) -> int:
         if not items:
             return 0
 
@@ -95,15 +102,31 @@ class PostgresStockMetaRepository:
                     set_={
                         "name": stmt.excluded.name,
                         "exchange": stmt.excluded.exchange,
-                        "industry_sw1": stmt.excluded.industry_sw1,
-                        "industry_sw2": stmt.excluded.industry_sw2,
-                        "list_date": stmt.excluded.list_date,
+                        "industry_sw1": func.coalesce(
+                            stmt.excluded.industry_sw1, StockMeta.industry_sw1
+                        ),
+                        "industry_sw2": func.coalesce(
+                            stmt.excluded.industry_sw2, StockMeta.industry_sw2
+                        ),
+                        "list_date": func.coalesce(stmt.excluded.list_date, StockMeta.list_date),
                         "is_st": stmt.excluded.is_st,
                         "is_active": stmt.excluded.is_active,
                         "updated_at": now,
                     },
                 )
                 await self._session.execute(stmt)
+
+            if deactivate_missing:
+                active_codes = [item.code for item in ordered]
+                await self._session.execute(
+                    update(StockMeta)
+                    .where(
+                        StockMeta.is_active.is_(True),
+                        StockMeta.code
+                        != all_(bindparam("active_codes", value=active_codes, type_=ARRAY(String))),
+                    )
+                    .values(is_active=False, updated_at=now)
+                )
             await self._session.commit()
         except Exception:
             await self._session.rollback()

@@ -14,7 +14,15 @@ from zoneinfo import ZoneInfo
 
 import akshare as ak
 import pandas as pd
-from tenacity import AsyncRetrying, stop_after_attempt, wait_exponential, wait_none
+from akshare.exceptions import RateLimitError
+from akshare.utils.http import Push2RateLimitError
+from tenacity import (
+    AsyncRetrying,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+    wait_none,
+)
 
 from app.domain.errors import MarketFeedUnavailableError
 from app.domain.market_math import subtract_years
@@ -245,6 +253,7 @@ def parse_macro_history(
     bond_df: pd.DataFrame,
     *,
     as_of: date | None = None,
+    max_staleness_days: int = 45,
 ) -> list[MacroRateRow]:
     if not {"date", "middlePETTM"} <= set(pe_df.columns):
         raise MarketFeedUnavailableError("stock_a_ttm_lyr", "缺少 date/middlePETTM 列")
@@ -278,8 +287,36 @@ def parse_macro_history(
 
     pe_rows = sorted(pe_by_date.items())
     bond_rows = sorted(bond_by_date.items())
-    bond_dates = [d for d, _ in bond_rows]
+    latest_pe_date = pe_rows[-1][0]
+    latest_bond_date = bond_rows[-1][0]
 
+    if as_of is not None:
+        if (as_of - latest_pe_date).days > max_staleness_days:
+            raise MarketFeedUnavailableError(
+                "stock_a_ttm_lyr",
+                (
+                    f"全市场 PE 数据过旧（最新 {latest_pe_date.isoformat()}，"
+                    f"滞后于 {as_of.isoformat()} 超过 {max_staleness_days} 天）"
+                ),
+            )
+        if (as_of - latest_bond_date).days > max_staleness_days:
+            raise MarketFeedUnavailableError(
+                "bond_zh_us_yield_em",
+                (
+                    f"十年国债收益率数据过旧（最新 {latest_bond_date.isoformat()}，"
+                    f"滞后于 {as_of.isoformat()} 超过 {max_staleness_days} 天）"
+                ),
+            )
+    if abs((latest_pe_date - latest_bond_date).days) > max_staleness_days:
+        raise MarketFeedUnavailableError(
+            "macro_rates",
+            (
+                f"全市场 PE({latest_pe_date.isoformat()}) 与国债收益率"
+                f"({latest_bond_date.isoformat()}) 最新日期差距超过 {max_staleness_days} 天"
+            ),
+        )
+
+    bond_dates = [d for d, _ in bond_rows]
     merged: dict[date, MacroRateRow] = {}
     for pe_date, pe_val in pe_rows:
         idx = bisect_right(bond_dates, pe_date) - 1
@@ -292,14 +329,8 @@ def parse_macro_history(
             market_pe_median=pe_val,
         )
 
-    latest_pe_date, latest_pe_val = pe_rows[-1]
-    latest_bond_date, latest_bond_val = bond_rows[-1]
-    anchor_date = max(latest_pe_date, latest_bond_date)
-    merged[anchor_date] = MacroRateRow(
-        trade_date=anchor_date,
-        cn_10y_bond_yield=latest_bond_val,
-        market_pe_median=latest_pe_val,
-    )
+    if not merged:
+        raise MarketFeedUnavailableError("macro_rates", "PE 与国债收益率日期区间无有效交集")
 
     return [merged[d] for d in sorted(merged)]
 
@@ -371,7 +402,7 @@ def parse_industry_flows_em(df: pd.DataFrame) -> list[IndustryFlow]:
         name = str(raw_name).strip()
         change_pct = _coerce_float(row.get("今日涨跌幅"))
         net_inflow_yuan = _coerce_float(row.get("今日主力净流入-净额"))
-        companies = _coerce_int(row.get("公司家数"))
+        companies = _coerce_int(row.get("公司家数")) if "公司家数" in row else None
         if not name or change_pct is None or net_inflow_yuan is None:
             continue
         flows.append(
@@ -379,7 +410,7 @@ def parse_industry_flows_em(df: pd.DataFrame) -> list[IndustryFlow]:
                 name=name,
                 change_pct=change_pct,
                 net_inflow=net_inflow_yuan,
-                companies=max(0, companies or 0),
+                companies=max(0, companies) if companies is not None else None,
             )
         )
 
@@ -397,8 +428,11 @@ class AkshareMarketFeed:
         self._timeout_seconds = timeout_seconds
         self._max_attempts = max(1, max_attempts)
         self._retry_wait_seconds = max(0.0, retry_wait_seconds)
+        self._ak_timeout = (min(5.0, self._timeout_seconds), self._timeout_seconds)
+        ak.set_timeout(self._ak_timeout)
 
     async def _run_call(self, source_name: str, fn: Callable[[], T]) -> T:
+        ak.set_timeout(self._ak_timeout)
         wait_strategy = (
             wait_exponential(
                 multiplier=self._retry_wait_seconds,
@@ -412,6 +446,7 @@ class AkshareMarketFeed:
             async for attempt in AsyncRetrying(
                 stop=stop_after_attempt(self._max_attempts),
                 wait=wait_strategy,
+                retry=retry_if_not_exception_type((Push2RateLimitError, RateLimitError)),
                 reraise=True,
             ):
                 with attempt:
@@ -422,7 +457,8 @@ class AkshareMarketFeed:
         except MarketFeedUnavailableError:
             raise
         except Exception as exc:
-            detail = f"{exc.__class__.__name__}: {exc}"
+            msg = str(exc).strip()
+            detail = f"{exc.__class__.__name__}: {msg}" if msg else exc.__class__.__name__
             raise MarketFeedUnavailableError(source_name, detail) from exc
         raise MarketFeedUnavailableError(source_name, "未知采集失败")
 
@@ -484,14 +520,27 @@ class AkshareMarketFeed:
         )
         trade_calendar = parse_trade_calendar(cal_df)
 
-        if as_of is not None:
-            resolved_as_of = as_of
-        else:
-            shanghai_today = datetime.now(_SHANGHAI_TZ).date()
-            open_until_today = [
-                entry.trade_date for entry in trade_calendar if entry.trade_date <= shanghai_today
-            ]
-            resolved_as_of = max(open_until_today) if open_until_today else shanghai_today
+        shanghai_today = datetime.now(_SHANGHAI_TZ).date()
+        open_dates = {
+            entry.trade_date
+            for entry in trade_calendar
+            if entry.is_open and entry.trade_date <= shanghai_today
+        }
+        if not open_dates:
+            raise MarketFeedUnavailableError(
+                "calendar_trade_date_hist_sina",
+                f"交易日历缺少 {shanghai_today.isoformat()} 及之前的开市日期",
+            )
+        latest_open = max(open_dates)
+        if as_of is not None and as_of != latest_open:
+            raise MarketFeedUnavailableError(
+                "market_sync",
+                (
+                    f"实时行情源仅支持同步最近交易日 {latest_open.isoformat()}，"
+                    f"不支持历史回补 --date={as_of.isoformat()}"
+                ),
+            )
+        resolved_as_of = latest_open
 
         stock_df = await self._run_call("stock_info_a_code_name", ak.stock_info_a_code_name)
         stock_list = parse_stock_list(stock_df)

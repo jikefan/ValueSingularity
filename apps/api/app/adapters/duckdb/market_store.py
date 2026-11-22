@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import os
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsRichComparison
 
 from app.domain.market_math import subtract_years
 from app.domain.models import (
@@ -82,6 +87,7 @@ def _atomic_write_parquet(target: Path, table: pa.Table) -> None:
     tmp_path = Path(tmp_name)
     try:
         pq.write_table(table, tmp_path, compression="snappy")
+        os.chmod(tmp_path, 0o644)
         os.replace(tmp_path, target)
     except Exception:
         if tmp_path.exists():
@@ -96,6 +102,85 @@ def _read_existing_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _normalize_stock_row(row: dict[str, Any]) -> dict[str, Any]:
+    list_date_raw = row.get("list_date")
+    return {
+        "code": str(row["code"]),
+        "name": str(row["name"]),
+        "exchange": str(row["exchange"]),
+        "industry_sw1": str(row["industry_sw1"]) if row.get("industry_sw1") is not None else None,
+        "industry_sw2": str(row["industry_sw2"]) if row.get("industry_sw2") is not None else None,
+        "list_date": _coerce_date(list_date_raw) if list_date_raw is not None else None,
+        "is_st": bool(row["is_st"]),
+        "is_active": bool(row["is_active"]),
+    }
+
+
+def _merge_stock_meta_row(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(incoming)
+    for col in ("industry_sw1", "industry_sw2", "list_date"):
+        if merged.get(col) is None and existing.get(col) is not None:
+            merged[col] = existing[col]
+    return merged
+
+
+def _normalize_trade_calendar_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {"trade_date": _coerce_date(row["trade_date"]), "is_open": bool(row["is_open"])}
+
+
+def _normalize_index_daily_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "code": str(row["code"]),
+        "trade_date": _coerce_date(row["trade_date"]),
+        "close": float(row["close"]),
+        "change_pct": float(row["change_pct"]),
+        "pe_ttm": float(row["pe_ttm"]) if row["pe_ttm"] is not None else None,
+        "pb": float(row["pb"]) if row["pb"] is not None else None,
+        "turnover": float(row["turnover"]) if row["turnover"] is not None else None,
+    }
+
+
+def _normalize_macro_rate_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "trade_date": _coerce_date(row["trade_date"]),
+        "cn_10y_bond_yield": float(row["cn_10y_bond_yield"]),
+        "market_pe_median": float(row["market_pe_median"]),
+    }
+
+
+def _upsert_parquet[K](
+    path: Path,
+    schema: pa.Schema,
+    incoming: Sequence[BaseModel],
+    *,
+    normalize_existing: Callable[[dict[str, Any]], dict[str, Any]],
+    key_of: Callable[[dict[str, Any]], K],
+    sort_key: Callable[[K], SupportsRichComparison],
+    merge_existing: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
+    deactivate_missing: bool = False,
+    skip_if_empty_and_exists: bool = False,
+) -> None:
+    if skip_if_empty_and_exists and not incoming and path.exists():
+        return
+
+    merged: dict[K, dict[str, Any]] = {}
+    for raw in _read_existing_rows(path):
+        row = normalize_existing(raw)
+        if deactivate_missing and incoming:
+            row["is_active"] = False
+        merged[key_of(row)] = row
+
+    for item in incoming:
+        new_row = item.model_dump(mode="python")
+        key = key_of(new_row)
+        if merge_existing is not None and key in merged:
+            new_row = merge_existing(merged[key], new_row)
+        merged[key] = new_row
+
+    ordered = [merged[k] for k in sorted(merged, key=sort_key)]
+    _atomic_write_parquet(path, pa.Table.from_pylist(ordered, schema=schema))
+
+
 def _sync_write_meta_facts(
     meta_dir: Path,
     *,
@@ -104,65 +189,48 @@ def _sync_write_meta_facts(
     index_daily: Sequence[IndexDailyRow],
     macro_rates: Sequence[MacroRateRow],
 ) -> None:
-    stock_by_code = {item.code: item.model_dump(mode="python") for item in stock_list}
-    ordered_stocks = [stock_by_code[code] for code in sorted(stock_by_code)]
-    _atomic_write_parquet(
-        meta_dir / "stock_list.parquet",
-        pa.Table.from_pylist(ordered_stocks, schema=STOCK_LIST_SCHEMA),
-    )
-
-    cal_path = meta_dir / "trade_calendar.parquet"
-    cal_by_date: dict[date, dict[str, Any]] = {}
-    for row in _read_existing_rows(cal_path):
-        d = _coerce_date(row["trade_date"])
-        cal_by_date[d] = {"trade_date": d, "is_open": bool(row["is_open"])}
-    for cal_entry in trade_calendar:
-        cal_by_date[cal_entry.trade_date] = cal_entry.model_dump(mode="python")
-    ordered_cal = [cal_by_date[d] for d in sorted(cal_by_date)]
-    _atomic_write_parquet(
-        cal_path,
-        pa.Table.from_pylist(ordered_cal, schema=TRADE_CALENDAR_SCHEMA),
-    )
-
-    index_path = meta_dir / "index_daily.parquet"
-    index_by_key: dict[tuple[str, date], dict[str, Any]] = {}
-    for row in _read_existing_rows(index_path):
-        key = (str(row["code"]), _coerce_date(row["trade_date"]))
-        index_by_key[key] = {
-            "code": key[0],
-            "trade_date": key[1],
-            "close": float(row["close"]),
-            "change_pct": float(row["change_pct"]),
-            "pe_ttm": float(row["pe_ttm"]) if row["pe_ttm"] is not None else None,
-            "pb": float(row["pb"]) if row["pb"] is not None else None,
-            "turnover": float(row["turnover"]) if row["turnover"] is not None else None,
-        }
-    for idx_row in index_daily:
-        index_by_key[(idx_row.code, idx_row.trade_date)] = idx_row.model_dump(mode="python")
-    ordered_index = [
-        index_by_key[k] for k in sorted(index_by_key, key=lambda pair: (pair[1], pair[0]))
-    ]
-    _atomic_write_parquet(
-        index_path,
-        pa.Table.from_pylist(ordered_index, schema=INDEX_DAILY_SCHEMA),
-    )
-
-    macro_path = meta_dir / "macro_rates.parquet"
-    macro_by_date: dict[date, dict[str, Any]] = {}
-    for row in _read_existing_rows(macro_path):
-        d = _coerce_date(row["trade_date"])
-        macro_by_date[d] = {
-            "trade_date": d,
-            "cn_10y_bond_yield": float(row["cn_10y_bond_yield"]),
-            "market_pe_median": float(row["market_pe_median"]),
-        }
-    for macro_row in macro_rates:
-        macro_by_date[macro_row.trade_date] = macro_row.model_dump(mode="python")
-    ordered_macro = [macro_by_date[d] for d in sorted(macro_by_date)]
-    _atomic_write_parquet(
-        macro_path,
-        pa.Table.from_pylist(ordered_macro, schema=MACRO_RATES_SCHEMA),
-    )
+    meta_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = meta_dir / ".sync.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            _upsert_parquet(
+                meta_dir / "stock_list.parquet",
+                STOCK_LIST_SCHEMA,
+                stock_list,
+                normalize_existing=_normalize_stock_row,
+                key_of=lambda r: str(r["code"]),
+                sort_key=lambda code: code,
+                merge_existing=_merge_stock_meta_row,
+                deactivate_missing=True,
+                skip_if_empty_and_exists=True,
+            )
+            _upsert_parquet(
+                meta_dir / "trade_calendar.parquet",
+                TRADE_CALENDAR_SCHEMA,
+                trade_calendar,
+                normalize_existing=_normalize_trade_calendar_row,
+                key_of=lambda r: _coerce_date(r["trade_date"]),
+                sort_key=lambda d: d,
+            )
+            _upsert_parquet(
+                meta_dir / "index_daily.parquet",
+                INDEX_DAILY_SCHEMA,
+                index_daily,
+                normalize_existing=_normalize_index_daily_row,
+                key_of=lambda r: (str(r["code"]), _coerce_date(r["trade_date"])),
+                sort_key=lambda pair: (pair[1], pair[0]),
+            )
+            _upsert_parquet(
+                meta_dir / "macro_rates.parquet",
+                MACRO_RATES_SCHEMA,
+                macro_rates,
+                normalize_existing=_normalize_macro_rate_row,
+                key_of=lambda r: _coerce_date(r["trade_date"]),
+                sort_key=lambda d: d,
+            )
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _sync_load_macro_history(

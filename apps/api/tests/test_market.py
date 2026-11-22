@@ -145,6 +145,22 @@ async def test_overview_pg_snapshot_roundtrip_and_update() -> None:
             body2 = resp2.json()
             assert body2["as_of"] == "2026-11-20"
             assert body2["data_source"] == "akshare:index-em"
+
+            older_day = day1.model_copy(
+                update={
+                    "as_of": date(2026, 11, 18),
+                    "data_source": "akshare:stale",
+                    "generated_at": datetime(2026, 11, 18, 9, 35, tzinfo=UTC),
+                }
+            )
+            async with testing_session() as session:
+                await PostgresMarketRepository(session).save_overview(older_day)
+
+            resp_after_older = await client.get("/api/market/overview")
+            assert resp_after_older.status_code == 200
+            body_after_older = resp_after_older.json()
+            assert body_after_older["as_of"] == "2026-11-20"
+            assert body_after_older["data_source"] == "akshare:index-em"
     finally:
         app.dependency_overrides.clear()
         await engine.dispose()

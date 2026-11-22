@@ -6,8 +6,10 @@ Environment variables use the ``VS_`` prefix (see .env.example).
 from pathlib import Path
 from typing import Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class Settings(BaseSettings):
@@ -21,7 +23,7 @@ class Settings(BaseSettings):
     # 集成测试库；为空则跳过涉及数据库的测试
     test_database_url: str | None = None
 
-    data_dir: Path = Path(__file__).resolve().parents[3] / "data/market"
+    data_dir: Path = _REPO_ROOT / "data/market"
     market_sync_timeout_seconds: float = Field(default=20.0, gt=0)
     market_sync_max_attempts: int = Field(default=3, ge=1)
 
@@ -31,6 +33,13 @@ class Settings(BaseSettings):
     refresh_token_ttl_days: int = 14
     refresh_cookie_name: str = "vs_refresh_token"
     cookie_secure: bool = False
+
+    @field_validator("data_dir")
+    @classmethod
+    def _resolve_data_dir(cls, value: Path) -> Path:
+        if not value.is_absolute():
+            return (_REPO_ROOT / value).resolve()
+        return value
 
     @model_validator(mode="after")
     def _validate_prod_secret(self) -> Self:

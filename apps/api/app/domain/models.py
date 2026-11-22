@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+FiniteFloat = Annotated[float, Field(allow_inf_nan=False)]
 StockExchange = Literal["SH", "SZ", "BJ"]
 
 
@@ -37,25 +38,25 @@ class PlanTier(StrEnum):
 class IndexQuote(BaseModel):
     code: str
     name: str
-    price: float
-    change_pct: float = Field(description="涨跌幅，百分数（-1.2 表示 -1.2%）")
+    price: FiniteFloat
+    change_pct: FiniteFloat = Field(description="涨跌幅，百分数（-1.2 表示 -1.2%）")
 
 
 class MarketTemperature(BaseModel):
-    score: float = Field(ge=0, le=100, description="0=冰点，100=过热")
+    score: FiniteFloat = Field(ge=0, le=100, description="0=冰点，100=过热")
     level: TemperatureLevel
-    pe_median: float = Field(description="全市场 PE 中位数")
-    pe_percentile: float = Field(ge=0, le=100, description="历史分位，百分数")
-    bond_yield: float = Field(description="十年国债收益率，百分数")
-    equity_bond_spread: float = Field(description="股债性价比（EP - 国债收益率），百分数")
+    pe_median: FiniteFloat = Field(description="全市场 PE 中位数")
+    pe_percentile: FiniteFloat = Field(ge=0, le=100, description="历史分位，百分数")
+    bond_yield: FiniteFloat = Field(description="十年国债收益率，百分数")
+    equity_bond_spread: FiniteFloat = Field(description="股债性价比（EP - 国债收益率），百分数")
     comment: str
 
 
 class IndustryFlow(BaseModel):
     name: str
-    change_pct: float
-    net_inflow: float = Field(description="净流入，单位：元")
-    companies: int = Field(ge=0)
+    change_pct: FiniteFloat
+    net_inflow: FiniteFloat = Field(description="净流入，单位：元")
+    companies: int | None = Field(default=None, ge=0)
 
 
 class MarketOverview(BaseModel):
@@ -87,17 +88,17 @@ class TradeCalendarEntry(BaseModel):
 class IndexDailyRow(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
     trade_date: date
-    close: float
-    change_pct: float
-    pe_ttm: float | None = None
-    pb: float | None = None
-    turnover: float | None = None
+    close: FiniteFloat
+    change_pct: FiniteFloat
+    pe_ttm: FiniteFloat | None = None
+    pb: FiniteFloat | None = None
+    turnover: FiniteFloat | None = None
 
 
 class MacroRateRow(BaseModel):
     trade_date: date
-    cn_10y_bond_yield: float
-    market_pe_median: float = Field(gt=0)
+    cn_10y_bond_yield: FiniteFloat
+    market_pe_median: FiniteFloat = Field(gt=0)
 
 
 class MarketFeedBundle(BaseModel):
@@ -118,7 +119,7 @@ class SyncSummary(BaseModel):
     trade_calendar_count: int = Field(ge=0)
     index_daily_count: int = Field(ge=0)
     macro_rate_count: int = Field(ge=0)
-    temperature_score: float = Field(ge=0, le=100)
+    temperature_score: FiniteFloat = Field(ge=0, le=100)
     temperature_level: TemperatureLevel
 
 

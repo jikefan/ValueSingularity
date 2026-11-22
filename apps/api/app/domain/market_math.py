@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
 
@@ -57,7 +58,11 @@ def compute_market_temperature(
     cutoff = subtract_years(as_of, lookback_years)
     deduped_by_date: dict[date, MacroRateRow] = {}
     for row in history:
-        if cutoff <= row.trade_date <= as_of and row.market_pe_median > 0:
+        if not (math.isfinite(row.market_pe_median) and math.isfinite(row.cn_10y_bond_yield)):
+            raise ValueError(f"{row.trade_date.isoformat()} 存在非有限宏观估值数值")
+        if row.market_pe_median <= 0:
+            raise ValueError(f"{row.trade_date.isoformat()} 全市场 PE 中位数必须大于 0")
+        if cutoff <= row.trade_date <= as_of:
             deduped_by_date[row.trade_date] = row
 
     if not deduped_by_date:
@@ -66,10 +71,18 @@ def compute_market_temperature(
     ordered = [deduped_by_date[d] for d in sorted(deduped_by_date)]
     latest = ordered[-1]
 
+    # Resample to 1 observation per calendar month so daily syncs do not outweigh older years.
+    by_month: dict[tuple[int, int], MacroRateRow] = {}
+    for row in ordered:
+        by_month[(row.trade_date.year, row.trade_date.month)] = row
+    sampled = list(by_month.values())
+    if sampled[-1].trade_date != latest.trade_date:
+        sampled.append(latest)
+
     ep = 100.0 / latest.market_pe_median
     equity_bond_spread = round(ep - latest.cn_10y_bond_yield, 2)
 
-    pe_values = [row.market_pe_median for row in ordered]
+    pe_values = [row.market_pe_median for row in sampled]
     less_count = sum(1 for value in pe_values if value < latest.market_pe_median)
     equal_count = sum(1 for value in pe_values if value == latest.market_pe_median)
     pe_percentile = round(

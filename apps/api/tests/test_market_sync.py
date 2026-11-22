@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Sequence
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import akshare as ak
@@ -9,7 +10,10 @@ import duckdb
 import pandas as pd
 import pyarrow.parquet as pq
 import pytest
+from akshare.exceptions import RateLimitError
+from akshare.utils.http import Push2RateLimitError
 from httpx import ASGITransport, AsyncClient
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -36,13 +40,15 @@ from app.domain.models import (
     IndustryFlow,
     MacroRateRow,
     MarketFeedBundle,
+    MarketOverview,
+    MarketTemperature,
     StockMetaRecord,
     TemperatureLevel,
     TradeCalendarEntry,
 )
 from app.main import create_app
 from app.services.market_sync import MarketSyncService
-from app.settings import settings
+from app.settings import Settings, settings
 
 
 def _sample_trade_calendar_df() -> pd.DataFrame:
@@ -248,10 +254,51 @@ def test_parse_macro_history_backward_as_of_and_latest_pairing() -> None:
     assert by_date[date(2018, 6, 30)].cn_10y_bond_yield == pytest.approx(3.55)
     # 2024-06-30 PE matches backward to 2024-06-28 bond yield (2.21).
     assert by_date[date(2024, 6, 30)].cn_10y_bond_yield == pytest.approx(2.21)
-    # Latest row on 2026-11-20 pairs latest bond_yield (1.58) with latest middlePETTM (25.0).
-    assert rows[-1].trade_date == date(2026, 11, 20)
-    assert rows[-1].cn_10y_bond_yield == pytest.approx(1.58)
+    # Never fabricates a future 2026-11-20 row when PE only goes up to 2026-11-18.
+    assert rows[-1].trade_date == date(2026, 11, 18)
+    assert rows[-1].cn_10y_bond_yield == pytest.approx(1.62)
     assert rows[-1].market_pe_median == pytest.approx(25.0)
+    assert date(2026, 11, 20) not in by_date
+
+    # When PE is at 2026-11-20 and bond ends at 2026-11-18, backward-pairs latest bond onto PE date.
+    pe_at_as_of = pd.DataFrame(
+        {
+            "date": [date(2024, 6, 30), date(2026, 11, 20)],
+            "middlePETTM": [24.0, 26.5],
+        }
+    )
+    bond_before_as_of = pd.DataFrame(
+        {
+            "日期": [date(2024, 6, 28), date(2026, 11, 18)],
+            "中国国债收益率10年": [2.21, 1.62],
+        }
+    )
+    paired_rows = parse_macro_history(pe_at_as_of, bond_before_as_of, as_of=date(2026, 11, 20))
+    assert paired_rows[-1].trade_date == date(2026, 11, 20)
+    assert paired_rows[-1].cn_10y_bond_yield == pytest.approx(1.62)
+    assert paired_rows[-1].market_pe_median == pytest.approx(26.5)
+
+
+def test_parse_macro_history_rejects_stale_gaps_and_empty_intersection() -> None:
+    stale_pe = pd.DataFrame({"date": [date(2026, 9, 1)], "middlePETTM": [24.0]})
+    fresh_bond = pd.DataFrame({"日期": [date(2026, 11, 18)], "中国国债收益率10年": [1.62]})
+    with pytest.raises(MarketFeedUnavailableError, match="PE"):
+        parse_macro_history(stale_pe, fresh_bond, as_of=date(2026, 11, 20))
+
+    fresh_pe = pd.DataFrame({"date": [date(2026, 11, 18)], "middlePETTM": [24.0]})
+    stale_bond = pd.DataFrame({"日期": [date(2026, 9, 1)], "中国国债收益率10年": [1.62]})
+    with pytest.raises(MarketFeedUnavailableError, match="国债收益率"):
+        parse_macro_history(fresh_pe, stale_bond, as_of=date(2026, 11, 20))
+
+    # Cross-series gap > max_staleness_days rejected even when as_of is None.
+    with pytest.raises(MarketFeedUnavailableError, match="差距超过"):
+        parse_macro_history(stale_pe, fresh_bond, as_of=None)
+
+    # Non-overlapping series within 45 days still produces empty intersection and must fail.
+    early_pe = pd.DataFrame({"date": [date(2026, 11, 1)], "middlePETTM": [24.0]})
+    later_bond = pd.DataFrame({"日期": [date(2026, 11, 10)], "中国国债收益率10年": [1.62]})
+    with pytest.raises(MarketFeedUnavailableError, match="无有效交集"):
+        parse_macro_history(early_pe, later_bond, as_of=date(2026, 11, 20))
 
 
 def test_parse_industry_flows_scales_ths_yi_and_selects_top5_bottom3() -> None:
@@ -276,6 +323,7 @@ def test_parse_industry_flows_scales_ths_yi_and_selects_top5_bottom3() -> None:
     assert len(em_flows) == 8
     assert em_flows[0].net_inflow == pytest.approx(43.12e8)
     assert em_flows[-1].net_inflow == pytest.approx(-19.25e8)
+    assert all(flow.companies is None for flow in em_flows)
 
 
 def test_compute_market_temperature_buckets_and_10y_window() -> None:
@@ -346,6 +394,100 @@ def test_compute_market_temperature_buckets_and_10y_window() -> None:
     assert hot_temp.score >= 80.0
 
 
+def test_compute_market_temperature_normalizes_daily_and_monthly_cadence() -> None:
+    as_of = date(2026, 11, 20)
+    # 9 years of monthly history (108 months) with PE ranging from 20 to 30.
+    monthly_older: list[MacroRateRow] = []
+    for m in range(108):
+        year = 2016 + (11 + m) // 12
+        month = ((11 + m) % 12) + 1
+        monthly_older.append(
+            MacroRateRow(
+                trade_date=date(year, month, 15),
+                cn_10y_bond_yield=2.2,
+                market_pe_median=20.0 + (m % 11),
+            )
+        )
+
+    # Last 12 months (2025-12 .. 2026-11): compare 1 obs/month vs 250 daily rows all at low PE=18.
+    monthly_recent = [
+        MacroRateRow(
+            trade_date=date(2025 + (11 + k) // 12, ((11 + k) % 12) + 1, 20),
+            cn_10y_bond_yield=1.6,
+            market_pe_median=18.0 if k < 11 else 25.0,
+        )
+        for k in range(12)
+    ]
+    daily_recent: list[MacroRateRow] = []
+    cursor = date(2025, 12, 1)
+    while len(daily_recent) < 250 and cursor < as_of:
+        daily_recent.append(
+            MacroRateRow(
+                trade_date=cursor,
+                cn_10y_bond_yield=1.6,
+                market_pe_median=18.0,
+            )
+        )
+        cursor += timedelta(days=1)
+    # Latest observation on each month-end / as_of matches monthly_recent.
+    daily_recent.extend(monthly_recent)
+
+    temp_monthly = compute_market_temperature(as_of, [*monthly_older, *monthly_recent])
+    temp_with_daily = compute_market_temperature(as_of, [*monthly_older, *daily_recent])
+    assert temp_with_daily.pe_percentile == temp_monthly.pe_percentile
+    assert temp_with_daily.score == temp_monthly.score
+
+
+def test_finite_float_and_math_reject_non_finite_values() -> None:
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValidationError):
+            MacroRateRow(
+                trade_date=date(2026, 11, 20), cn_10y_bond_yield=bad, market_pe_median=25.0
+            )
+        with pytest.raises(ValidationError):
+            MacroRateRow(trade_date=date(2026, 11, 20), cn_10y_bond_yield=1.6, market_pe_median=bad)
+        with pytest.raises(ValidationError):
+            IndexQuote(code="000001", name="上证指数", price=bad, change_pct=0.5)
+        with pytest.raises(ValidationError):
+            IndustryFlow(name="半导体", change_pct=0.5, net_inflow=bad, companies=10)
+        with pytest.raises(ValidationError):
+            IndexDailyRow(
+                code="000001", trade_date=date(2026, 11, 20), close=3350.0, change_pct=bad
+            )
+        with pytest.raises(ValidationError):
+            MarketOverview(
+                as_of=date(2026, 11, 20),
+                generated_at=datetime(2026, 11, 20, 9, 30),
+                indices=[IndexQuote(code="000001", name="上证指数", price=3350.0, change_pct=0.5)],
+                temperature=MarketTemperature(
+                    score=bad,
+                    level=TemperatureLevel.COOL,
+                    pe_median=25.0,
+                    pe_percentile=30.0,
+                    bond_yield=1.6,
+                    equity_bond_spread=2.4,
+                    comment="ok",
+                ),
+                hot_industries=[],
+            )
+
+    bad_row = MacroRateRow.model_construct(
+        trade_date=date(2026, 11, 20),
+        cn_10y_bond_yield=float("nan"),
+        market_pe_median=25.0,
+    )
+    with pytest.raises(ValueError, match="非有限"):
+        compute_market_temperature(date(2026, 11, 20), [bad_row])
+
+    non_positive_pe = MacroRateRow.model_construct(
+        trade_date=date(2026, 11, 20),
+        cn_10y_bond_yield=1.6,
+        market_pe_median=0.0,
+    )
+    with pytest.raises(ValueError, match="必须大于 0"):
+        compute_market_temperature(date(2026, 11, 20), [non_positive_pe])
+
+
 async def test_akshare_feed_retries_and_switches_to_fallbacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -397,6 +539,67 @@ async def test_akshare_feed_retries_and_switches_to_fallbacks(
     )
     with pytest.raises(MarketFeedUnavailableError):
         await feed.fetch_market_bundle(as_of=date(2026, 11, 20))
+
+
+async def test_akshare_feed_rejects_historical_backfill_and_rate_limit_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ak, "calendar_trade_date_hist_sina", _sample_trade_calendar_df)
+
+    def _forbidden_endpoint(*_args: object, **_kwargs: object) -> pd.DataFrame:
+        raise AssertionError("Historical date check must reject before spot/stock endpoints")
+
+    monkeypatch.setattr(ak, "stock_info_a_code_name", _forbidden_endpoint)
+    monkeypatch.setattr(ak, "index_zh_spot_sina", _forbidden_endpoint)
+    monkeypatch.setattr(ak, "index_zh_spot_em", _forbidden_endpoint)
+    monkeypatch.setattr(ak, "stock_fund_flow_industry_ths", _forbidden_endpoint)
+
+    feed = AkshareMarketFeed(timeout_seconds=12.0, max_attempts=3, retry_wait_seconds=0.0)
+    assert ak.get_timeout() == (5.0, 12.0)
+
+    with pytest.raises(MarketFeedUnavailableError, match="不支持历史回补 --date=2024-06-28"):
+        await feed.fetch_market_bundle(as_of=date(2024, 6, 28))
+
+    # Push2RateLimitError and RateLimitError must not retry 3x before falling back.
+    monkeypatch.setattr(ak, "stock_info_a_code_name", _sample_stock_df)
+    monkeypatch.setattr(ak, "stock_a_ttm_lyr", _sample_pe_df)
+    monkeypatch.setattr(ak, "bond_zh_us_yield_em", lambda **_kwargs: _sample_bond_df())
+    monkeypatch.setattr(
+        ak, "stock_fund_flow_industry_ths", lambda **_kwargs: _sample_ths_flows_df()
+    )
+
+    push2_calls = 0
+
+    def push2_limited() -> pd.DataFrame:
+        nonlocal push2_calls
+        push2_calls += 1
+        raise Push2RateLimitError("push2 banned")
+
+    def em_index(symbol: str = "上证系列指数") -> pd.DataFrame:
+        return _sample_em_index_sh_df() if symbol == "上证系列指数" else _sample_em_index_sz_df()
+
+    monkeypatch.setattr(ak, "index_zh_spot_sina", push2_limited)
+    monkeypatch.setattr(ak, "index_zh_spot_em", em_index)
+
+    bundle = await feed.fetch_market_bundle(as_of=None)
+    assert push2_calls == 1
+    assert bundle.as_of == date(2026, 11, 20)
+    assert bundle.data_source == "akshare:index-em"
+
+    rate_limit_calls = 0
+
+    def rate_limited() -> pd.DataFrame:
+        nonlocal rate_limit_calls
+        rate_limit_calls += 1
+        raise RateLimitError("429")
+
+    monkeypatch.setattr(ak, "index_zh_spot_sina", rate_limited)
+    await feed.fetch_market_bundle(as_of=date(2026, 11, 20))
+    assert rate_limit_calls == 1
+
+    with pytest.raises(MarketFeedUnavailableError) as exc_info:
+        await feed._run_call("empty_timeout", lambda: (_ for _ in ()).throw(TimeoutError()))
+    assert exc_info.value.detail == "TimeoutError"
 
 
 async def test_duckdb_fact_store_writes_idempotently_and_queries_window(tmp_path: Path) -> None:
@@ -472,6 +675,120 @@ async def test_duckdb_fact_store_writes_idempotently_and_queries_window(tmp_path
         assert cnt == (2,)
     finally:
         con.close()
+
+
+async def test_duckdb_fact_store_preserves_metadata_tracks_delisted_and_locks_concurrency(
+    tmp_path: Path,
+) -> None:
+    store = DuckDBMarketFactStore(tmp_path)
+    initial_stocks = [
+        StockMetaRecord(
+            code="600519",
+            name="贵州茅台",
+            exchange="SH",
+            industry_sw1="食品饮料",
+            industry_sw2="白酒",
+            list_date=date(2001, 8, 27),
+        ),
+        StockMetaRecord(
+            code="000001",
+            name="平安银行",
+            exchange="SZ",
+            industry_sw1="银行",
+            list_date=date(1991, 4, 3),
+        ),
+        StockMetaRecord(code="835185", name="*ST新研", exchange="BJ", is_st=True),
+    ]
+    await store.write_meta_facts(
+        stock_list=initial_stocks,
+        trade_calendar=[TradeCalendarEntry(trade_date=date(2026, 11, 18), is_open=True)],
+        index_daily=[],
+        macro_rates=[],
+    )
+
+    # Empty stock_list must NOT wipe existing stock_list.parquet.
+    await store.write_meta_facts(
+        stock_list=[],
+        trade_calendar=[],
+        index_daily=[],
+        macro_rates=[],
+    )
+    assert pq.read_table(tmp_path / "meta/stock_list.parquet").num_rows == 3
+
+    await store.write_meta_facts(
+        stock_list=[
+            StockMetaRecord(code="600519", name="贵州茅台", exchange="SH"),
+            StockMetaRecord(code="000001", name="平安银行", exchange="SZ"),
+        ],
+        trade_calendar=[],
+        index_daily=[],
+        macro_rates=[],
+    )
+    rows_by_code = {
+        row["code"]: row for row in pq.read_table(tmp_path / "meta/stock_list.parquet").to_pylist()
+    }
+    assert rows_by_code["600519"]["industry_sw1"] == "食品饮料"
+    assert rows_by_code["600519"]["industry_sw2"] == "白酒"
+    assert rows_by_code["600519"]["list_date"] == date(2001, 8, 27)
+    assert rows_by_code["600519"]["is_active"] is True
+    assert rows_by_code["000001"]["industry_sw1"] == "银行"
+    assert rows_by_code["000001"]["list_date"] == date(1991, 4, 3)
+    assert rows_by_code["835185"]["is_active"] is False
+
+    # Concurrent asyncio.gather upserts drop zero dates and set readable 0o644 file permissions.
+    await asyncio.gather(
+        store.write_meta_facts(
+            stock_list=[],
+            trade_calendar=[TradeCalendarEntry(trade_date=date(2026, 11, 19), is_open=True)],
+            index_daily=[
+                IndexDailyRow(
+                    code="000001", trade_date=date(2026, 11, 19), close=3340.0, change_pct=0.1
+                )
+            ],
+            macro_rates=[
+                MacroRateRow(
+                    trade_date=date(2026, 11, 19), cn_10y_bond_yield=1.60, market_pe_median=24.8
+                )
+            ],
+        ),
+        store.write_meta_facts(
+            stock_list=[],
+            trade_calendar=[TradeCalendarEntry(trade_date=date(2026, 11, 20), is_open=True)],
+            index_daily=[
+                IndexDailyRow(
+                    code="000001", trade_date=date(2026, 11, 20), close=3350.0, change_pct=0.3
+                )
+            ],
+            macro_rates=[
+                MacroRateRow(
+                    trade_date=date(2026, 11, 20), cn_10y_bond_yield=1.58, market_pe_median=25.0
+                )
+            ],
+        ),
+    )
+
+    meta_dir = tmp_path / "meta"
+    cal_dates = {
+        r["trade_date"] for r in pq.read_table(meta_dir / "trade_calendar.parquet").to_pylist()
+    }
+    assert cal_dates == {date(2026, 11, 18), date(2026, 11, 19), date(2026, 11, 20)}
+    idx_dates = {
+        r["trade_date"] for r in pq.read_table(meta_dir / "index_daily.parquet").to_pylist()
+    }
+    assert idx_dates == {date(2026, 11, 19), date(2026, 11, 20)}
+    macro_dates = {
+        r["trade_date"] for r in pq.read_table(meta_dir / "macro_rates.parquet").to_pylist()
+    }
+    assert macro_dates == {date(2026, 11, 19), date(2026, 11, 20)}
+
+    for name in (
+        "stock_list.parquet",
+        "trade_calendar.parquet",
+        "index_daily.parquet",
+        "macro_rates.parquet",
+    ):
+        mode = (meta_dir / name).stat().st_mode & 0o777
+        assert (mode & 0o444) == 0o444
 
 
 def _stub_bundle(as_of: date, pe_latest: float = 25.0) -> MarketFeedBundle:
@@ -562,6 +879,34 @@ async def test_market_sync_service_preserves_prior_snapshot_on_feed_failure(tmp_
     assert preserved == first_snapshot
     assert pq.read_table(tmp_path / "meta/macro_rates.parquet").num_rows == 3
 
+    # Uncomputable bundle (no macro history inside 10y window) fails BEFORE mutating Parquet/PG.
+    invalid_bundle = _stub_bundle(date(2038, 1, 5)).model_copy(
+        update={
+            "stock_list": [StockMetaRecord(code="601318", name="中国平安", exchange="SH")],
+            "macro_rates": [],
+        }
+    )
+
+    class _InvalidOverviewFeed:
+        async def fetch_market_bundle(self, as_of: date | None = None) -> MarketFeedBundle:
+            return invalid_bundle
+
+    invalid_service = MarketSyncService(
+        feed=_InvalidOverviewFeed(),
+        fact_store=store,
+        stock_meta_repo=stock_repo,
+        market_repo=market_repo,
+    )
+    with pytest.raises(ValueError, match="宏观估值历史"):
+        await invalid_service.sync(as_of=date(2038, 1, 5))
+
+    assert await market_repo.overview() == first_snapshot
+    assert "601318" not in stock_repo.items
+    persisted_codes = {
+        r["code"] for r in pq.read_table(tmp_path / "meta/stock_list.parquet").to_pylist()
+    }
+    assert persisted_codes == {"600519", "000001", "835185"}
+
 
 async def test_market_sync_service_end_to_end_with_postgres_and_parquet(tmp_path: Path) -> None:
     if not settings.test_database_url:
@@ -643,6 +988,104 @@ async def test_market_sync_service_end_to_end_with_postgres_and_parquet(tmp_path
             after_fail = await client.get("/api/market/overview")
             assert after_fail.status_code == 200
             assert after_fail.json()["as_of"] == "2026-11-20"
+
+        enriched = [
+            StockMetaRecord(
+                code="600519",
+                name="贵州茅台",
+                exchange="SH",
+                industry_sw1="食品饮料",
+                industry_sw2="白酒",
+                list_date=date(2001, 8, 27),
+            ),
+            StockMetaRecord(
+                code="000001",
+                name="平安银行",
+                exchange="SZ",
+                industry_sw1="银行",
+                list_date=date(1991, 4, 3),
+            ),
+            StockMetaRecord(code="835185", name="*ST新研", exchange="BJ", is_st=True),
+        ]
+        feed.should_fail = False
+        feed.bundle = _stub_bundle(date(2026, 11, 20), pe_latest=25.0).model_copy(
+            update={"stock_list": enriched}
+        )
+        async with testing_session() as session:
+            enrich_service = MarketSyncService(
+                feed=feed,
+                fact_store=store,
+                stock_meta_repo=PostgresStockMetaRepository(session),
+                market_repo=PostgresMarketRepository(session),
+            )
+            await enrich_service.sync(as_of=date(2026, 11, 20))
+
+        shrink_bundle = _stub_bundle(date(2026, 11, 21), pe_latest=25.5).model_copy(
+            update={
+                "stock_list": [
+                    StockMetaRecord(code="600519", name="贵州茅台", exchange="SH"),
+                    StockMetaRecord(code="000001", name="平安银行", exchange="SZ"),
+                ]
+            }
+        )
+        feed.bundle = shrink_bundle
+        async with testing_session() as session:
+            service = MarketSyncService(
+                feed=feed,
+                fact_store=store,
+                stock_meta_repo=PostgresStockMetaRepository(session),
+                market_repo=PostgresMarketRepository(session),
+            )
+            await service.sync(as_of=date(2026, 11, 21))
+
+        async with testing_session() as session:
+            pg_rows = {row.code: row for row in (await session.scalars(select(StockMeta))).all()}
+            assert pg_rows["600519"].industry_sw1 == "食品饮料"
+            assert pg_rows["600519"].industry_sw2 == "白酒"
+            assert pg_rows["600519"].list_date == date(2001, 8, 27)
+            assert pg_rows["600519"].is_active is True
+            assert pg_rows["000001"].industry_sw1 == "银行"
+            assert pg_rows["000001"].list_date == date(1991, 4, 3)
+            assert pg_rows["835185"].is_active is False
+
+        pq_rows = {
+            r["code"]: r for r in pq.read_table(tmp_path / "meta/stock_list.parquet").to_pylist()
+        }
+        assert pq_rows["600519"]["industry_sw1"] == "食品饮料"
+        assert pq_rows["600519"]["list_date"] == date(2001, 8, 27)
+        assert pq_rows["835185"]["is_active"] is False
+
+        # Partial enrichment with deactivate_missing=False keeps other active rows active.
+        async with testing_session() as session:
+            await PostgresStockMetaRepository(session).upsert_many(
+                [
+                    StockMetaRecord(
+                        code="000001",
+                        name="平安银行",
+                        exchange="SZ",
+                        industry_sw2="股份制银行",
+                    )
+                ],
+                deactivate_missing=False,
+            )
+            row_600519 = await session.get(StockMeta, "600519")
+            row_000001 = await session.get(StockMeta, "000001")
+            assert row_600519 is not None and row_600519.is_active is True
+            assert row_000001 is not None and row_000001.industry_sw2 == "股份制银行"
     finally:
         app.dependency_overrides.clear()
         await engine.dispose()
+
+
+def test_settings_resolves_relative_data_dir_consistently_across_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    expected = Settings().data_dir
+    monkeypatch.setenv("VS_DATA_DIR", "./data/market")
+    monkeypatch.chdir(tmp_path)
+    assert Settings().data_dir == expected
+
+    custom_abs = tmp_path / "custom-market"
+    monkeypatch.setenv("VS_DATA_DIR", str(custom_abs))
+    assert Settings().data_dir == custom_abs

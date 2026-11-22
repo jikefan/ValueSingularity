@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.domain.market_math import build_market_overview
-from app.domain.models import SyncSummary
+from app.domain.market_math import build_market_overview, subtract_years
+from app.domain.models import MacroRateRow, SyncSummary
 from app.domain.ports import (
     MarketFactStore,
     MarketFeedPort,
@@ -29,16 +29,28 @@ class MarketSyncService:
         self._market_repo = market_repo
 
     async def sync(self, as_of: date | None = None) -> SyncSummary:
-        # Fetch upstream bundle first so feed failures leave existing Parquet & PG snapshots intact.
         bundle = await self._feed.fetch_market_bundle(as_of=as_of)
+
+        # Validate overview against merged macro history before mutating Parquet or PostgreSQL.
+        existing_macro = await self._fact_store.load_macro_history(bundle.as_of, lookback_years=10)
+        cutoff = subtract_years(bundle.as_of, 10)
+        merged_by_date: dict[date, MacroRateRow] = {
+            row.trade_date: row
+            for row in existing_macro
+            if cutoff <= row.trade_date <= bundle.as_of
+        }
+        for row in bundle.macro_rates:
+            if cutoff <= row.trade_date <= bundle.as_of:
+                merged_by_date[row.trade_date] = row
+        macro_history = [merged_by_date[d] for d in sorted(merged_by_date)]
+        overview = build_market_overview(bundle, macro_history)
+
         await self._fact_store.write_meta_facts(
             stock_list=bundle.stock_list,
             trade_calendar=bundle.trade_calendar,
             index_daily=bundle.index_daily,
             macro_rates=bundle.macro_rates,
         )
-        macro_history = await self._fact_store.load_macro_history(bundle.as_of, lookback_years=10)
-        overview = build_market_overview(bundle, macro_history)
         stock_count = await self._stock_meta_repo.upsert_many(bundle.stock_list)
         await self._market_repo.save_overview(overview)
 

@@ -179,7 +179,9 @@ export function MarketPage() {
                   <td className={`num ${chgClass(flow.net_inflow)}`}>
                     {fmtMoney(flow.net_inflow)}
                   </td>
-                  <td className="num muted">{flow.companies}</td>
+                  <td className="num muted">
+                    {flow.companies !== null && flow.companies !== undefined ? flow.companies : '—'}
+                  </td>
                 </tr>
               ))}
             </tbody>

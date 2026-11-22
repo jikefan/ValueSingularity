@@ -68,9 +68,16 @@
             "type": "number"
           },
           "companies": {
-            "minimum": 0.0,
-            "title": "Companies",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companies"
           },
           "name": {
             "title": "Name",
@@ -85,8 +92,7 @@
         "required": [
           "name",
           "change_pct",
-          "net_inflow",
-          "companies"
+          "net_inflow"
         ],
         "title": "IndustryFlow",
         "type": "object"

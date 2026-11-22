@@ -216,7 +216,7 @@ export interface components {
             /** Change Pct */
             change_pct: number;
             /** Companies */
-            companies: number;
+            companies?: number | null;
             /** Name */
             name: string;
             /**
