@@ -1,5 +1,9 @@
 export const queryKeys = {
   health: ['health'] as const,
+  auth: {
+    all: ['auth'] as const,
+    me: () => ['auth', 'me'] as const,
+  },
   market: {
     all: ['market'] as const,
     overview: () => ['market', 'overview'] as const,

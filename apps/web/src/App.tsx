@@ -1,17 +1,29 @@
 import { Route, Routes } from 'react-router-dom'
 import { TopNav } from './components/layout/TopNav'
+import { AuthPage } from './features/auth/AuthPage'
 import { MarketPage } from './features/market/MarketPage'
 import { MePage } from './features/me/MePage'
 import { StockPage } from './features/stock/StockPage'
+import { useAuth } from './lib/authContext'
 
 export function App() {
+  const { user, isAuthLoading, logout } = useAuth()
+
   return (
     <div className="shell">
-      <TopNav />
+      <TopNav
+        user={user}
+        isAuthLoading={isAuthLoading}
+        onLogout={() => {
+          void logout()
+        }}
+      />
       <Routes>
         <Route path="/" element={<MarketPage />} />
         <Route path="/stock/:code" element={<StockPage />} />
         <Route path="/me" element={<MePage />} />
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="/register" element={<AuthPage initialMode="register" />} />
         <Route path="*" element={<MarketPage />} />
       </Routes>
       <footer className="footer">

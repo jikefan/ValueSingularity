@@ -91,21 +91,44 @@ def test_legacy_repositories_directory_removed() -> None:
 def test_domain_layer_isolation() -> None:
     _assert_no_forbidden_imports(
         "domain",
-        ("app.adapters", "app.db", "app.services", "app.api", "sqlalchemy", "fastapi", "akshare"),
+        (
+            "app.adapters",
+            "app.db",
+            "app.services",
+            "app.api",
+            "sqlalchemy",
+            "fastapi",
+            "akshare",
+            "jwt",
+            "pyjwt",
+            "argon2",
+            "pwdlib",
+        ),
     )
 
 
 def test_services_layer_isolation() -> None:
     _assert_no_forbidden_imports(
         "services",
-        ("app.adapters", "app.db", "app.api", "sqlalchemy", "fastapi", "akshare"),
+        (
+            "app.adapters",
+            "app.db",
+            "app.api",
+            "sqlalchemy",
+            "fastapi",
+            "akshare",
+            "jwt",
+            "pyjwt",
+            "argon2",
+            "pwdlib",
+        ),
     )
 
 
 def test_api_routes_layer_isolation() -> None:
     _assert_no_forbidden_imports(
         "api/routes",
-        ("app.adapters", "app.db", "sqlalchemy"),
+        ("app.adapters", "app.db", "sqlalchemy", "jwt", "pyjwt", "argon2", "passlib", "pwdlib"),
     )
 
 

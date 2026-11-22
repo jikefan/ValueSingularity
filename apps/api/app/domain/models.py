@@ -8,8 +8,9 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class TemperatureLevel(StrEnum):
@@ -20,6 +21,14 @@ class TemperatureLevel(StrEnum):
     NEUTRAL = "neutral"
     WARM = "warm"
     HOT = "hot"
+
+
+class PlanTier(StrEnum):
+    """Subscription tier governing feature entitlements."""
+
+    FREE = "free"
+    PRO = "pro"
+    AI_PLUS = "ai_plus"
 
 
 class IndexQuote(BaseModel):
@@ -58,12 +67,76 @@ class Health(BaseModel):
     version: str
 
 
+class UserProfile(BaseModel):
+    id: UUID
+    email: str | None
+    phone: str | None
+    display_name: str
+    plan_tier: PlanTier
+    plan_expires_at: datetime | None = None
+    created_at: datetime
+
+
+class UserAuthRecord(UserProfile):
+    password_hash: str
+    is_active: bool
+
+
+class AuthenticatedUser(BaseModel):
+    id: UUID
+    plan_tier: PlanTier
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
+    display_name: str = Field(min_length=1, max_length=64)
+
+    @field_validator("display_name")
+    @classmethod
+    def _strip_display_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("昵称不能为空")
+        return cleaned
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=1, max_length=128)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: UserProfile
+
+
+class AuthSession(BaseModel):
+    token: TokenResponse
+    raw_refresh_token: str
+
+
+class RefreshTokenRecord(BaseModel):
+    id: UUID
+    user_id: UUID
+    token_hash: str
+    expires_at: datetime
+    revoked_at: datetime | None
+
+
 class WatchlistItem(BaseModel):
     code: str = Field(pattern=r"^\d{6}$")
     name: str
     industry: str | None = None
     note: str | None = None
+    target_price: float | None = None
+    target_pe_percentile: float | None = None
+    target_dividend_yield: float | None = None
+    alert_enabled: bool = False
     added_at: datetime
+    updated_at: datetime
 
 
 class WatchlistUpsert(BaseModel):
@@ -71,3 +144,7 @@ class WatchlistUpsert(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     industry: str | None = None
     note: str | None = None
+    target_price: float | None = Field(default=None, gt=0)
+    target_pe_percentile: float | None = Field(default=None, ge=0, le=100)
+    target_dividend_yield: float | None = Field(default=None, ge=0, le=100)
+    alert_enabled: bool = False

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from app.domain.models import WatchlistItem, WatchlistUpsert
 from app.domain.ports import WatchlistRepository
 
@@ -16,12 +18,12 @@ class WatchlistService:
     def __init__(self, repository: WatchlistRepository) -> None:
         self._repository = repository
 
-    async def list(self) -> list[WatchlistItem]:
-        return await self._repository.list()
+    async def list(self, user_id: UUID) -> list[WatchlistItem]:
+        return await self._repository.list(user_id)
 
-    async def upsert(self, payload: WatchlistUpsert) -> WatchlistItem:
-        return await self._repository.upsert(payload)
+    async def upsert(self, user_id: UUID, payload: WatchlistUpsert) -> WatchlistItem:
+        return await self._repository.upsert(user_id, payload)
 
-    async def remove(self, code: str) -> None:
-        if not await self._repository.remove(code):
+    async def remove(self, user_id: UUID, code: str) -> None:
+        if not await self._repository.remove(user_id, code):
             raise WatchlistNotFoundError(code)
