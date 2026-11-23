@@ -3,12 +3,7 @@ import { Card } from '../../components/ui/Card'
 import { Metric } from '../../components/ui/Metric'
 import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
-import {
-  CHART_AXIS_COMMON,
-  CHART_COLORS,
-  CHART_LEGEND_COMMON,
-  CHART_TOOLTIP_COMMON,
-} from '../../lib/chartTheme'
+import { createChartTheme } from '../../lib/chartTheme'
 import { Chart, type ChartOption } from '../../lib/charts'
 import {
   fmtNum,
@@ -19,46 +14,49 @@ import {
   qualityTone,
   toYi,
 } from '../../lib/format'
+import { useThemeMode } from '../../lib/theme'
 import type { StockSnapshotPayload } from '../../types/api'
 import { buildSensitivityMatrix } from './stockHelpers'
 
 export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
+  const { theme } = useThemeMode()
   const { valuation, reverse_dcf: reverseDcf, formula_notes: formulaNotes } = snapshot
 
   const historyPoints = valuation.history
-  const historyOption = useMemo<ChartOption>(
-    () => ({
+  const historyOption = useMemo<ChartOption>(() => {
+    const { colors, axis, legend, tooltip } = createChartTheme(theme)
+    return {
       tooltip: {
-        ...CHART_TOOLTIP_COMMON,
+        ...tooltip,
         trigger: 'axis',
         axisPointer: { type: 'cross' },
       },
       legend: {
-        ...CHART_LEGEND_COMMON,
+        ...legend,
         top: 0,
         type: 'scroll',
         data: ['PE (TTM)', '总市值（亿元）'],
       },
       grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
       xAxis: {
-        ...CHART_AXIS_COMMON,
+        ...axis,
         type: 'category',
         data: historyPoints.map((point) => point.trade_date),
       },
       yAxis: [
         {
-          ...CHART_AXIS_COMMON,
+          ...axis,
           type: 'value',
           name: 'PE (TTM)',
           nameGap: 14,
-          nameTextStyle: { color: CHART_COLORS.muted },
+          nameTextStyle: { color: colors.muted },
         },
         {
-          ...CHART_AXIS_COMMON,
+          ...axis,
           type: 'value',
           name: '市值(亿)',
           nameGap: 14,
-          nameTextStyle: { color: CHART_COLORS.muted },
+          nameTextStyle: { color: colors.muted },
           splitLine: { show: false },
         },
       ],
@@ -68,8 +66,8 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
           type: 'line',
           smooth: false,
           showSymbol: false,
-          itemStyle: { color: CHART_COLORS.electric },
-          lineStyle: { color: CHART_COLORS.electric, width: 2 },
+          itemStyle: { color: colors.electric },
+          lineStyle: { color: colors.electric, width: 2 },
           data: historyPoints.map((point) => point.pe_ttm ?? null),
         },
         {
@@ -78,14 +76,13 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
           yAxisIndex: 1,
           smooth: false,
           showSymbol: false,
-          itemStyle: { color: CHART_COLORS.positive },
-          lineStyle: { color: CHART_COLORS.positive, width: 2 },
+          itemStyle: { color: colors.positive },
+          lineStyle: { color: colors.positive, width: 2 },
           data: historyPoints.map((point) => toYi(point.total_mv_yuan)),
         },
       ],
-    }),
-    [historyPoints],
-  )
+    }
+  }, [historyPoints, theme])
 
   const matrix = useMemo(
     () => buildSensitivityMatrix(reverseDcf.sensitivity),

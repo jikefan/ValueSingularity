@@ -8,6 +8,7 @@ import { AuthProvider } from './lib/AuthProvider'
 import { setAccessToken } from './lib/api'
 import { createQueryClient } from './lib/queryClient'
 import { queryKeys } from './lib/queryKeys'
+import { THEME_STORAGE_KEY } from './lib/theme'
 import type { MarketOverview, StockDetail, StockMetaRecord } from './types/api'
 
 vi.mock('./lib/charts', () => ({
@@ -98,7 +99,12 @@ describe('App global stock search', () => {
   afterEach(() => {
     cleanup()
     setAccessToken(null)
+    vi.useRealTimers()
     vi.restoreAllMocks()
+    delete document.documentElement.dataset.theme
+    delete document.documentElement.dataset.tone
+    document.documentElement.className = ''
+    window.localStorage.clear()
   })
 
   it('debounces search input, renders matching stocks with tags, and navigates to /stock/600519', async () => {
@@ -183,6 +189,9 @@ describe('App global stock search', () => {
       </MemoryRouter>,
     )
 
+    const brandLink = screen.getByRole('link', { name: /价值奇点/ })
+    expect(brandLink).toHaveAttribute('href', '/')
+    expect(brandLink).toHaveClass('brand')
     expect(screen.getByLabelText('搜索股票')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '登录 / 注册' })).toBeInTheDocument()
     expect(screen.queryByText('中性分析师')).not.toBeInTheDocument()
@@ -362,5 +371,79 @@ describe('App global stock search', () => {
     await waitFor(() => {
       expect(screen.queryByRole('listbox', { name: '搜索结果' })).not.toBeInTheDocument()
     })
+  })
+
+  it('switches and persists document theme when clicking 陶瓷白 and 碳黑 in TopNav', () => {
+    vi.useFakeTimers()
+    try {
+      const { container } = render(
+        <MemoryRouter>
+          <TopNav />
+        </MemoryRouter>,
+      )
+
+      const checkerCells = container.querySelectorAll('.vs-checker > i')
+      expect(checkerCells).toHaveLength(9)
+      expect(container.querySelectorAll('.vs-checker > i.off')).toHaveLength(4)
+      expect(container.querySelectorAll('.vs-checker > i.sig')).toHaveLength(1)
+
+      const darkButton = screen.getByRole('button', { name: '碳黑' })
+      const lightButton = screen.getByRole('button', { name: '陶瓷白' })
+
+      expect(darkButton).toHaveAttribute('aria-pressed', 'true')
+      expect(darkButton).toHaveClass('active')
+      expect(lightButton).toHaveAttribute('aria-pressed', 'false')
+
+      fireEvent.click(lightButton)
+      expect(document.documentElement.dataset.theme).toBe('light')
+      expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light')
+      expect(document.documentElement.classList.contains('theme-anim')).toBe(true)
+      expect(lightButton).toHaveAttribute('aria-pressed', 'true')
+      expect(lightButton).toHaveClass('active')
+      expect(darkButton).toHaveAttribute('aria-pressed', 'false')
+
+      fireEvent.click(lightButton)
+      expect(document.documentElement.classList.contains('theme-anim')).toBe(true)
+
+      vi.advanceTimersByTime(320)
+      expect(document.documentElement.classList.contains('theme-anim')).toBe(false)
+
+      fireEvent.click(darkButton)
+      expect(document.documentElement.dataset.theme).toBe('dark')
+      expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark')
+      expect(document.documentElement.classList.contains('theme-anim')).toBe(true)
+      expect(darkButton).toHaveAttribute('aria-pressed', 'true')
+      expect(darkButton).toHaveClass('active')
+      expect(lightButton).toHaveAttribute('aria-pressed', 'false')
+
+      vi.runAllTimers()
+      expect(document.documentElement.classList.contains('theme-anim')).toBe(false)
+    } finally {
+      vi.runAllTimers()
+      vi.useRealTimers()
+    }
+  })
+
+  it('renders dot-field backdrop inside shell before TopNav', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+
+      if (url.pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (url.pathname === '/api/market/overview') {
+        return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    const { container } = renderApp('/')
+    expect(await screen.findByText('3,218.42')).toBeInTheDocument()
+
+    const shell = container.querySelector('.shell')
+    expect(shell).not.toBeNull()
+    expect(shell?.firstElementChild).toHaveClass('dot-field')
+    expect(shell?.firstElementChild?.nextElementSibling).toHaveClass('topnav')
   })
 })

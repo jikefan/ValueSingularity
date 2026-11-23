@@ -1,30 +1,196 @@
-/* Design tokens — 暗色金融终端风格。改这里，不要散落魔法色值。 */
+/* Dual-theme material tokens: Dark = Carbon Matte, Light = Machined Ceramic.
+   Keep solid <color> tokens separate from <gradient> / <shadow> tokens so SVG attributes (e.g. ScoreRing) always resolve valid paints. */
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #050608;
+  --bg-mesh: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  --ambient-top: radial-gradient(65% 38% at 50% 0%, rgba(31, 208, 122, 0.07), transparent 100%);
+
+  --panel: #111318;
+  --panel-2: #17181c;
+  --card-bg: linear-gradient(180deg, #111318 0%, #0b0d11 100%);
+  --card-border-top: rgba(255, 255, 255, 0.14);
+  --card-border: rgba(255, 255, 255, 0.075);
+  --card-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 24px 48px -12px rgba(0, 0, 0, 0.78);
+
+  --well-bg: #08090c;
+  --well-border: rgba(255, 255, 255, 0.06);
+  --well-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.65);
+
+  --stage-bg: radial-gradient(
+    circle at 50% 48%,
+    rgba(31, 208, 122, 0.09) 0%,
+    #090b0f 68%,
+    #06070a 100%
+  );
+  --nav-bg: rgba(5, 6, 8, 0.82);
+  --hud-bg: rgba(8, 10, 14, 0.78);
+
+  --ink: #ffffff;
+  --ink-2: #a1a8b5;
+  --muted: #818a99;
+  --hair: rgba(255, 255, 255, 0.08);
+  --hair-strong: rgba(255, 255, 255, 0.22);
+  --line: #262b35;
+  --line-soft: var(--hair);
+
+  --signal: #1fd07a;
+  --signal-lime: #c6ff00;
+  --signal-soft: rgba(31, 208, 122, 0.11);
+  --signal-line: rgba(31, 208, 122, 0.28);
+
+  --cobalt: #3b82f6;
+  --cobalt-soft: rgba(59, 130, 246, 0.1);
+  --cobalt-line: rgba(59, 130, 246, 0.26);
+
+  --danger: #f43f5e;
+  --danger-soft: rgba(244, 63, 94, 0.07);
+  --danger-hover: rgba(244, 63, 94, 0.14);
+  --danger-line: rgba(244, 63, 94, 0.22);
+
+  --amber: #f59e0b;
+  --amber-soft: rgba(245, 158, 11, 0.12);
+  --amber-line: rgba(245, 158, 11, 0.32);
+
+  --violet: #a78bfa;
+  --neutral-soft: rgba(255, 255, 255, 0.07);
+
+  --cta-bg: linear-gradient(180deg, #ffffff 0%, #e6e9ef 100%);
+  --cta-ink: #050608;
+  --cta-shadow: 0 1px 0 #ffffff inset, 0 8px 20px -4px rgba(255, 255, 255, 0.18);
+
+  --dropdown-shadow: 0 12px 32px rgba(0, 0, 0, 0.72);
+  --focus-ring: 0 0 0 2px rgba(59, 130, 246, 0.22);
+  --seg-active-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+
+  --active-tone: var(--signal);
+  --active-soft: var(--signal-soft);
+  --active-line: var(--signal-line);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #eef1f5;
+  --bg-mesh: radial-gradient(rgba(15, 23, 42, 0.06) 1px, transparent 1px);
+  --ambient-top: radial-gradient(75% 42% at 50% 0%, #ffffff 0%, rgba(255, 255, 255, 0) 100%);
+
+  --panel: #ffffff;
+  --panel-2: #f3f5f8;
+  --card-bg: linear-gradient(180deg, #ffffff 0%, #fafbfc 100%);
+  --card-border-top: #ffffff;
+  --card-border: rgba(15, 23, 42, 0.09);
+  --card-shadow:
+    0 1px 0 #ffffff inset, 0 1px 2px rgba(15, 23, 42, 0.04),
+    0 14px 32px -10px rgba(15, 23, 42, 0.07);
+
+  --well-bg: #f3f5f8;
+  --well-border: rgba(15, 23, 42, 0.075);
+  --well-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.045), 0 1px 0 #ffffff;
+
+  --stage-bg: radial-gradient(circle at 50% 46%, #ffffff 0%, #f2f5f9 64%, #e6ebf2 100%);
+  --nav-bg: rgba(238, 241, 245, 0.86);
+  --hud-bg: rgba(255, 255, 255, 0.88);
+
+  --ink: #0b0e14;
+  --ink-2: #475569;
+  --muted: #5a6577;
+  --hair: rgba(15, 23, 42, 0.08);
+  --hair-strong: rgba(15, 23, 42, 0.24);
+  --line: #d6dce6;
+  --line-soft: var(--hair);
+
+  --signal: #0a7b48;
+  --signal-lime: #0a7b48;
+  --signal-soft: rgba(10, 123, 72, 0.085);
+  --signal-line: rgba(10, 123, 72, 0.22);
+
+  --cobalt: #1d4ed8;
+  --cobalt-soft: rgba(29, 78, 216, 0.085);
+  --cobalt-line: rgba(29, 78, 216, 0.24);
+
+  --danger: #be123c;
+  --danger-soft: rgba(190, 18, 60, 0.05);
+  --danger-hover: rgba(190, 18, 60, 0.1);
+  --danger-line: rgba(190, 18, 60, 0.18);
+
+  --amber: #92400e;
+  --amber-soft: rgba(146, 64, 14, 0.085);
+  --amber-line: rgba(146, 64, 14, 0.24);
+
+  --violet: #6d28d9;
+  --neutral-soft: rgba(15, 23, 42, 0.06);
+
+  --cta-bg: linear-gradient(180deg, #1e232d 0%, #0b0e14 100%);
+  --cta-ink: #ffffff;
+  --cta-shadow: 0 1px 0 rgba(255, 255, 255, 0.22) inset, 0 8px 18px -4px rgba(11, 14, 20, 0.26);
+
+  --dropdown-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  --focus-ring: 0 0 0 2px rgba(29, 78, 216, 0.18);
+  --seg-active-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+
+  --active-tone: var(--signal);
+  --active-soft: var(--signal-soft);
+  --active-line: var(--signal-line);
+}
+
+:root[data-tone='signal'] {
+  --active-tone: var(--signal);
+  --active-soft: var(--signal-soft);
+  --active-line: var(--signal-line);
+}
+
+:root[data-tone='cobalt'] {
+  --active-tone: var(--cobalt);
+  --active-soft: var(--cobalt-soft);
+  --active-line: var(--cobalt-line);
+}
+
+:root[data-tone='danger'] {
+  --active-tone: var(--danger);
+  --active-soft: var(--danger-soft);
+  --active-line: var(--danger-line);
+}
+
 :root {
-  --ink: #050b11;
-  --ink-2: #071019;
-  --panel: #0c1620;
-  --panel-2: #10202e;
-  --line: #1e2f40;
-  --line-soft: rgba(126, 149, 170, 0.16);
-  --muted: #6e869c;
-  --soft: #9fb4c8;
-  --text: #dbe7f2;
-  --white: #f4f9ff;
-  --accent: #73f0c3;
-  --electric: #59c6ff;
-  --amber: #f6c760;
-  --rose: #ff6b8a;
-  --violet: #b79cff;
-  --green: #4ade80;
-  --red: #f87171;
+  --white: var(--ink);
+  --text: var(--ink);
+  --soft: var(--ink-2);
+  --accent: var(--signal);
+  --electric: var(--cobalt);
+  --rose: var(--danger);
+  --green: var(--signal);
+  --red: var(--danger);
 
   --radius-lg: 22px;
+  --radius-card: 22px;
   --radius: 16px;
+  --radius-well: 16px;
   --radius-sm: 10px;
+  --radius-pill: 999px;
 
-  /* 全部使用本机字体栈，不引外部 CDN */
-  --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
-  --sans: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
 
-  color-scheme: dark;
+  --sans:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', system-ui, sans-serif;
+  --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, ui-monospace, monospace;
+}
+
+/* Applied only after initial mount so first paint never flashes across theme transitions. */
+html.theme-anim,
+html.theme-anim body {
+  transition:
+    background-color 0.22s ease,
+    color 0.22s ease;
 }

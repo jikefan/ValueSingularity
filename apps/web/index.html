@@ -1,10 +1,18 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>价值奇点 · ValueSingularity</title>
     <meta name="description" content="像做生意一样做投资 —— A 股价值挖掘分析平台" />
+    <script>
+      try {
+        document.documentElement.dataset.theme =
+          window.localStorage.getItem('vs_theme') === 'light' ? 'light' : 'dark'
+      } catch {
+        document.documentElement.dataset.theme = 'dark'
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -8,7 +8,8 @@ import {
 import * as echarts from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { useEffect, useRef } from 'react'
-import { CHART_COLORS, CHART_FONT_FAMILY } from './chartTheme'
+import { CHART_FONT_FAMILY, getChartPalette } from './chartTheme'
+import { useThemeMode } from './theme'
 
 // 按需注册，避免把整包 echarts 打进产物。
 echarts.use([
@@ -35,6 +36,8 @@ export type ChartProps = {
 export function Chart({ option, height = 260, ariaLabel, className }: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<echarts.ECharts | null>(null)
+  const { theme } = useThemeMode()
+  const palette = getChartPalette(theme)
 
   useEffect(() => {
     const container = containerRef.current
@@ -57,12 +60,12 @@ export function Chart({ option, height = 260, ariaLabel, className }: ChartProps
     chartRef.current?.setOption(
       {
         animation: false,
-        textStyle: { fontFamily: CHART_FONT_FAMILY, color: CHART_COLORS.text },
+        textStyle: { fontFamily: CHART_FONT_FAMILY, color: palette.text },
         ...option,
       },
       true,
     )
-  }, [option])
+  }, [option, palette.text])
 
   return (
     <div

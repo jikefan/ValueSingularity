@@ -15,24 +15,24 @@ make check        # = 后端 ruff+mypy+OpenAPI校验+pytest + 前端 check:api+e
 
 **后端（`apps/api`）**
 
-| 对象 | 规则 | 例子 |
-|---|---|---|
-| 模块/文件 | snake_case | `watchlist.py` |
-| 类 | PascalCase | `WatchlistService`、`PostgresWatchlistRepository` |
-| 函数/变量 | snake_case | `get_watchlist_service` |
-| 私有 | 前缀下划线 | `_repository` |
-| Pydantic 模型 | 名词、单数 | `MarketOverview`、`WatchlistItem` |
-| 路由函数 | 动词或资源名 | `market_overview`、`health_db` |
+| 对象          | 规则         | 例子                                              |
+| ------------- | ------------ | ------------------------------------------------- |
+| 模块/文件     | snake_case   | `watchlist.py`                                    |
+| 类            | PascalCase   | `WatchlistService`、`PostgresWatchlistRepository` |
+| 函数/变量     | snake_case   | `get_watchlist_service`                           |
+| 私有          | 前缀下划线   | `_repository`                                     |
+| Pydantic 模型 | 名词、单数   | `MarketOverview`、`WatchlistItem`                 |
+| 路由函数      | 动词或资源名 | `market_overview`、`health_db`                    |
 
 **前端（`apps/web`）**
 
-| 对象 | 规则 | 例子 |
-|---|---|---|
-| 组件文件 | PascalCase.tsx，文件名 = 组件名 | `ScoreRing.tsx` |
-| hook | `useXxx.ts` | `useMarketOverview.ts` |
-| 工具/常量 | camelCase.ts | `format.ts`、`chartTheme.ts`、`queryKeys.ts` |
-| 测试 | 与被测文件同目录，`.test.ts(x)` | `MarketPage.test.tsx` |
-| CSS 类 | kebab-case | `.metric-value`、`.retry-btn` |
+| 对象      | 规则                            | 例子                                         |
+| --------- | ------------------------------- | -------------------------------------------- |
+| 组件文件  | PascalCase.tsx，文件名 = 组件名 | `ScoreRing.tsx`                              |
+| hook      | `useXxx.ts`                     | `useMarketOverview.ts`                       |
+| 工具/常量 | camelCase.ts                    | `format.ts`、`chartTheme.ts`、`queryKeys.ts` |
+| 测试      | 与被测文件同目录，`.test.ts(x)` | `MarketPage.test.tsx`                        |
+| CSS 类    | kebab-case                      | `.metric-value`、`.retry-btn`                |
 
 **一律 named export，不用 default export**：重命名可追踪，打包器能摇树，IDE 自动导入不会起别名。
 
@@ -72,22 +72,30 @@ api/routes -> services -> domain <- adapters
 
 ## 5. 样式
 
-- 颜色、圆角、间距只能用 `styles/tokens.css` 的变量。组件里写死色值会被 ESLint 拦下（唯一豁免：`lib/chartTheme.ts`，因为 canvas 读不到 CSS 变量）。
-- 组件样式用类名 + CSS 文件，不写内联样式（动态尺寸/位置除外）。
-- 不引入 Tailwind / CSS-in-JS：现有 token 体系已经够用，重造一遍只会分裂视觉。
+- **双主题与语义 Token（`styles/tokens.css`）**：所有颜色、圆角、间距与阴影只读 CSS 变量。通过 `html[data-theme="dark" | "light"]` 切换 **Carbon Dark**（Carbon Matte 默认暗色）与 **Ceramic Light**（Machined Ceramic 浅色）双主题，并通过 `html[data-tone="signal" | "cobalt" | "danger"]` 控制局部状态语气；`index.html` 在首屏绘制前同步读取 `vs_theme` 写入 `data-theme`，仅在用户交互切换主题时短暂挂载 `html.theme-anim` 过渡类。
+- **实色与渐变严格分离**：`tokens.css` 将纯 `<color>` token（如 `--panel`、`--ink`、`--signal`、`--cobalt`、`--danger`）与 `<gradient>`/`<shadow>` token（如 `--card-bg`、`--well-shadow`、`--cta-bg`）分开定义，确保 `ScoreRing` 等 SVG 属性始终解析为合法颜色；禁止在组件或工具里硬编码 `#hex` 色值（ESLint 强制拦截）。
+- **基础原语类组（`styles/primitives.css`）**：按能力收口为 6 组可复用类，新页面优先组合复用，局部页面布局再放 `styles/app.css`：
+  - 背景与品牌：`.dot-field`、`.vs-checker`
+  - 表面与容器：`.card-machined`、`.well`、`.well-grid` / `.well-grid-4` / `.well-cell`、`.stage-well`、`.chart-stage`、`.bento-deck` / `.bento-pad`
+  - 分段与主题切换：`.seg-well` / `.seg-tab`、`.theme-capsule` / `.theme-opt`
+  - 排版与指标：`.tnum` / `.num-sym` / `.num-dec`、`.title-display`、`.code-pill`、`.eyebrow-pill` / `.live-beacon`、`.hud-pill`、`.sec-head` / `.sec-title` / `.sec-sub`
+  - 按钮与行动：`.btn-cta-lg`、`.btn-cta-sm`、`.btn-secondary-pill`
+  - 业务数据展示：`.tk-card`、`.ct-grid-2` / `.ct-pill-box` / `.pass-tag`、`.guard-card` / `.guard-item`、`.pro-table`
+- **Canvas 图表与主题同步**：组件通过 `lib/theme.ts` 的 `useThemeMode()` 读写并订阅当前主题；ECharts 在 canvas 中绘制无法读取 CSS 变量，统一通过 `lib/chartTheme.ts` 的 `getChartPalette(theme)` 获取同步调色板（`CHART_COLORS` 对应 Carbon Dark，`LIGHT_CHART_COLORS` 对应 Ceramic Light）。`lib/chartTheme.ts` 是项目唯一允许出现 `#hex` 字面量的文件。
+- **离线 SVG / Canvas 约束**：图标统一使用内联 `<svg>`（颜色走 `currentColor`），图表统一走本地按需注册的 ECharts canvas，字体使用本机字体栈；不引入 Tailwind、CSS-in-JS 或任何外部 CDN 资源。组件样式用类名 + CSS 文件，不写内联样式（动态尺寸/位置除外）。
 
 ## 6. TypeScript 规则（ESLint 已强制）
 
-| 规则 | 为什么 |
-|---|---|
-| `strict` + `noUncheckedIndexedAccess` | 索引访问天然可能 undefined，逼你处理 |
-| 禁 `any` | 一处 any 会顺着调用链传染 |
-| 禁非空断言 `!` | 断言失败是运行时崩溃，改成显式分支 |
-| `no-floating-promises` | 没 await 的 Promise 会吞掉异常 |
-| `consistent-type-imports` | 类型导入不产生运行时依赖，产物更小 |
-| `switch-exhaustiveness-check` | 枚举新增分支时编译期就报错 |
-| 命名约定（naming-convention） | 类型 PascalCase、变量 camelCase，统一认知 |
-| `no-console`（warn） | 调试输出不进生产；要留日志走正式方案 |
+| 规则                                  | 为什么                                    |
+| ------------------------------------- | ----------------------------------------- |
+| `strict` + `noUncheckedIndexedAccess` | 索引访问天然可能 undefined，逼你处理      |
+| 禁 `any`                              | 一处 any 会顺着调用链传染                 |
+| 禁非空断言 `!`                        | 断言失败是运行时崩溃，改成显式分支        |
+| `no-floating-promises`                | 没 await 的 Promise 会吞掉异常            |
+| `consistent-type-imports`             | 类型导入不产生运行时依赖，产物更小        |
+| `switch-exhaustiveness-check`         | 枚举新增分支时编译期就报错                |
+| 命名约定（naming-convention）         | 类型 PascalCase、变量 camelCase，统一认知 |
+| `no-console`（warn）                  | 调试输出不进生产；要留日志走正式方案      |
 
 ## 7. 测试
 

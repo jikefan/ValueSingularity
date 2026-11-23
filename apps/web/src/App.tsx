@@ -92,6 +92,7 @@ export function App() {
 
   return (
     <div className="shell">
+      <div className="dot-field" aria-hidden="true" />
       <TopNav
         user={user}
         isAuthLoading={isAuthLoading}

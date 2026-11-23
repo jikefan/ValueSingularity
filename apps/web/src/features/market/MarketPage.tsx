@@ -5,9 +5,10 @@ import { Metric } from '../../components/ui/Metric'
 import { ScoreRing } from '../../components/ui/ScoreRing'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
-import { CHART_AXIS_COMMON, CHART_COLORS, CHART_TOOLTIP_COMMON } from '../../lib/chartTheme'
+import { createChartTheme } from '../../lib/chartTheme'
 import { Chart, type ChartOption } from '../../lib/charts'
 import { chgClass, fmtDateTime, fmtMoney, fmtNum, fmtPct } from '../../lib/format'
+import { useThemeMode } from '../../lib/theme'
 import type { TemperatureLevel } from '../../types/api'
 import { useMarketOverview } from './useMarketOverview'
 
@@ -32,33 +33,35 @@ const LEVEL_META: Record<
 
 export function MarketPage() {
   const { data, error, isPending, isFetching, isError, refetch } = useMarketOverview()
+  const { theme } = useThemeMode()
 
   const flowOption = useMemo<ChartOption>(() => {
+    const { colors, axis, tooltip } = createChartTheme(theme)
     const flows = data?.hot_industries ?? []
     return {
       grid: { left: 12, right: 20, top: 16, bottom: 12, containLabel: true },
       tooltip: {
-        ...CHART_TOOLTIP_COMMON,
+        ...tooltip,
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
         valueFormatter: (value: unknown) => `${fmtNum(Number(value), 2)} 亿`,
       },
       xAxis: {
-        ...CHART_AXIS_COMMON,
+        ...axis,
         type: 'value',
         axisLabel: {
-          ...CHART_AXIS_COMMON.axisLabel,
+          ...axis.axisLabel,
           formatter: '{value} 亿',
         },
       },
       yAxis: {
-        ...CHART_AXIS_COMMON,
+        ...axis,
         type: 'category',
         inverse: true,
         data: flows.map((flow) => flow.name),
         axisLabel: {
-          ...CHART_AXIS_COMMON.axisLabel,
-          color: CHART_COLORS.text,
+          ...axis.axisLabel,
+          color: colors.text,
         },
         axisLine: { show: false },
         axisTick: { show: false },
@@ -71,14 +74,14 @@ export function MarketPage() {
           data: flows.map((flow) => ({
             value: Number((flow.net_inflow / 1e8).toFixed(2)),
             itemStyle: {
-              color: flow.net_inflow >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative,
+              color: flow.net_inflow >= 0 ? colors.positive : colors.negative,
               borderRadius: flow.net_inflow >= 0 ? [0, 6, 6, 0] : [6, 0, 0, 6],
             },
           })),
         },
       ],
     }
-  }, [data])
+  }, [data, theme])
 
   if (isPending || (!data && isFetching)) {
     return (

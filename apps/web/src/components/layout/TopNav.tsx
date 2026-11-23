@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
+import { useThemeMode, type ThemeMode } from '../../lib/theme'
 import type { PlanTier, StockMetaRecord, UserProfile } from '../../types/api'
 import { Tag } from '../ui/Tag'
 
@@ -16,6 +17,53 @@ const PLAN_COLOR: Record<PlanTier, 'gray' | 'blue' | 'green'> = {
 }
 
 const EMPTY_RESULTS: StockMetaRecord[] = []
+
+const THEME_OPTIONS: ReadonlyArray<{ mode: ThemeMode; label: string }> = [
+  { mode: 'dark', label: '碳黑' },
+  { mode: 'light', label: '陶瓷白' },
+]
+
+function ThemeIcon({ mode }: { mode: ThemeMode }) {
+  switch (mode) {
+    case 'dark':
+      return (
+        <svg
+          width={12}
+          height={12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+        </svg>
+      )
+    case 'light':
+      return (
+        <svg
+          width={12}
+          height={12}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="12" r="4" />
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+        </svg>
+      )
+    default: {
+      const _exhaustive: never = mode
+      return _exhaustive
+    }
+  }
+}
 
 type TopNavProps = {
   user?: UserProfile | null
@@ -42,6 +90,7 @@ export function TopNav({
   onSubmitQuery,
   searchError = false,
 }: TopNavProps) {
+  const { theme, setTheme } = useThemeMode()
   const [isOpen, setIsOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const searchRef = useRef<HTMLFormElement>(null)
@@ -101,7 +150,17 @@ export function TopNav({
     <header className="topnav">
       <div className="topnav-inner">
         <NavLink className="brand" to="/">
-          <span className="brand-mark">VS</span>
+          <span className="vs-checker" aria-hidden="true">
+            <i />
+            <i className="off" />
+            <i className="sig" />
+            <i className="off" />
+            <i />
+            <i className="off" />
+            <i />
+            <i className="off" />
+            <i />
+          </span>
           <span className="brand-text">
             <b>价值奇点</b>
             <i>VALUE SINGULARITY</i>
@@ -233,6 +292,28 @@ export function TopNav({
         </form>
 
         <span className="spacer" />
+
+        <div className="theme-capsule" role="group" aria-label="主题切换">
+          {THEME_OPTIONS.map(({ mode, label }) => {
+            const isActive = theme === mode
+            return (
+              <button
+                key={mode}
+                type="button"
+                className={isActive ? 'theme-opt active' : 'theme-opt'}
+                aria-pressed={isActive}
+                onClick={() => {
+                  if (!isActive) {
+                    setTheme(mode, { animate: true })
+                  }
+                }}
+              >
+                <ThemeIcon mode={mode} />
+                {label}
+              </button>
+            )
+          })}
+        </div>
 
         {user ? (
           <span className="nav-user">

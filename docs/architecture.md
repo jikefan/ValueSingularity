@@ -8,13 +8,13 @@
 
 早期 demo 文档曾设想 7 个微服务 + K3s/Istio/ArgoCD，那是单机研究工具不需要的运维复杂度，本仓库明确不采用。
 
-| 决策 | 选择 | 理由 |
-|---|---|---|
-| 部署形态 | 单体 | 一个 FastAPI 进程托管 API（可选托管前端静态产物），避免拆服务后的联调成本 |
-| 运行时并发模型 | 全链路异步 | `psycopg` 3 async + SQLAlchemy `AsyncSession` 贯穿路由、服务、端口与 PostgreSQL 适配器；同步库（`akshare`、`duckdb`）在适配器内通过 `asyncio.to_thread` 卸载 |
-| 用户与快照存储 | PostgreSQL 17 + Alembic | 事务、约束（如单行快照与日记必填检查）和 JSONB 读模型可靠，替代早期 SQLite 草案；`migrations/env.py` 保留同步迁移并复用 `postgresql+psycopg://` DSN |
-| 事实分析存储 | Parquet + DuckDB | 列式分析大宽表不污染 OLTP 库和备份 |
-| 数据源 | 适配器隔离 | 公共行情源会限流或改版，换源不碰业务逻辑 |
+| 决策           | 选择                    | 理由                                                                                                                                                         |
+| -------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 部署形态       | 单体                    | 一个 FastAPI 进程托管 API（可选托管前端静态产物），避免拆服务后的联调成本                                                                                    |
+| 运行时并发模型 | 全链路异步              | `psycopg` 3 async + SQLAlchemy `AsyncSession` 贯穿路由、服务、端口与 PostgreSQL 适配器；同步库（`akshare`、`duckdb`）在适配器内通过 `asyncio.to_thread` 卸载 |
+| 用户与快照存储 | PostgreSQL 17 + Alembic | 事务、约束（如单行快照与日记必填检查）和 JSONB 读模型可靠，替代早期 SQLite 草案；`migrations/env.py` 保留同步迁移并复用 `postgresql+psycopg://` DSN          |
+| 事实分析存储   | Parquet + DuckDB        | 列式分析大宽表不污染 OLTP 库和备份                                                                                                                           |
+| 数据源         | 适配器隔离              | 公共行情源会限流或改版，换源不碰业务逻辑                                                                                                                     |
 
 ## 2. 后端分层
 
@@ -38,14 +38,14 @@ db/         SQLAlchemy AsyncEngine、AsyncSession 与 ORM 表模型（仅由 ada
 
 Vite + React 19 + TypeScript，**没有** UI 组件库，靠 `styles/tokens.css` 的 CSS 变量 + `components/ui` 里的小组件。服务端状态与请求由 `@tanstack/react-query` + `openapi-fetch` 管理。
 
-| 决策 | 选择 | 理由 |
-|---|---|---|
-| 框架 | React | 9 个分析 Tab + 表单 + 状态较多；手写 `innerHTML` 的维护成本已经证明不可持续 |
+| 决策       | 选择                                      | 理由                                                                                     |
+| ---------- | ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| 框架       | React                                     | 9 个分析 Tab + 表单 + 状态较多；手写 `innerHTML` 的维护成本已经证明不可持续              |
 | 请求与缓存 | `openapi-fetch` + `@tanstack/react-query` | 路径、入参、出参与错误载荷编译期受 OpenAPI 约束；缓存、取消和重试由 QueryClient 统一托管 |
-| 构建 | Vite | HMR 快，零配置；`tsc --noEmit` 单独做类型门禁 |
-| 样式 | CSS 变量 + 手写类 | 视觉与暗色金融终端设计系统一致，不引入 Tailwind |
-| 图表 | ECharts 按需注册 | 只 `use` 用到的图表与组件，控制产物体积 |
-| 外部资源 | 零 CDN | 字体走系统栈，图表走 npm，离线可用 |
+| 构建       | Vite                                      | HMR 快，零配置；`tsc --noEmit` 单独做类型门禁                                            |
+| 样式       | CSS 变量 + 手写类                         | 视觉与 Carbon Dark / Ceramic Light 双材质设计系统一致，不引入 Tailwind                   |
+| 图表       | ECharts 按需注册                          | 只 `use` 用到的图表与组件，控制产物体积                                                  |
+| 外部资源   | 零 CDN                                    | 字体走系统栈，图表走 npm，离线可用                                                       |
 
 页面结构：`features/<域>/<Page>.tsx`（及本域 `useXxx.ts` hooks），请求与共享工具在 `lib/`（`api` / `queryClient` / `queryKeys` / `format` / `charts`），纯展示组件在 `components/ui/`。依赖边界由 `apps/web/eslint.config.js` 强制执行。
 
@@ -65,15 +65,15 @@ domain/models.py + routes
 
 ## 5. 测试与门禁
 
-| 层 | 工具 | 覆盖范围 |
-|---|---|---|
-| 后端架构与契约 | pytest-asyncio + AST + `httpx.AsyncClient` | 分层隔离、全异步守卫、lifespan 连接池释放、OpenAPI 同步、health、market overview |
-| 后端数据库集成 | Alembic + pytest-asyncio (`postgres:17-alpine`) | `alembic upgrade head`、`/api/health/db`、watchlist CRUD（`AsyncSession`） |
-| 后端静态 | ruff + mypy (strict) | 全量 |
-| 前端契约同步 | `pnpm check:api` | 验证 `openapi.gen.ts` 与 `openapi.json` 一致 |
-| 前端逻辑与交互 | vitest + Testing Library | `format.ts`、`MarketPage` 正常渲染与 503 重试恢复 |
-| 前端静态 | eslint + `tsc --noEmit` | 全量 + 分层/禁裸 `fetch`/禁手写 `interface` 规则 |
-| 端到端 | 待补 | Phase 1 起加 Playwright 冒烟 |
+| 层             | 工具                                            | 覆盖范围                                                                         |
+| -------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| 后端架构与契约 | pytest-asyncio + AST + `httpx.AsyncClient`      | 分层隔离、全异步守卫、lifespan 连接池释放、OpenAPI 同步、health、market overview |
+| 后端数据库集成 | Alembic + pytest-asyncio (`postgres:17-alpine`) | `alembic upgrade head`、`/api/health/db`、watchlist CRUD（`AsyncSession`）       |
+| 后端静态       | ruff + mypy (strict)                            | 全量                                                                             |
+| 前端契约同步   | `pnpm check:api`                                | 验证 `openapi.gen.ts` 与 `openapi.json` 一致                                     |
+| 前端逻辑与交互 | vitest + Testing Library                        | `format.ts`、`MarketPage` 正常渲染与 503 重试恢复                                |
+| 前端静态       | eslint + `tsc --noEmit`                         | 全量 + 分层/禁裸 `fetch`/禁手写 `interface` 规则                                 |
+| 端到端         | 待补                                            | Phase 1 起加 Playwright 冒烟                                                     |
 
 ## 6. 已决与未决问题
 

@@ -44,7 +44,7 @@ export function ScoreRing({
         cy={size / 2}
         r={radius}
         fill="none"
-        stroke="rgba(126,149,170,0.16)"
+        stroke="var(--line-soft)"
         strokeWidth={stroke}
       />
       <circle

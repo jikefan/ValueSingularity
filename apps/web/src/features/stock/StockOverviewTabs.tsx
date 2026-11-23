@@ -5,14 +5,10 @@ import { Metric } from '../../components/ui/Metric'
 import { ScoreRing } from '../../components/ui/ScoreRing'
 import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
-import {
-  CHART_AXIS_COMMON,
-  CHART_COLORS,
-  CHART_LEGEND_COMMON,
-  CHART_TOOLTIP_COMMON,
-} from '../../lib/chartTheme'
+import { createChartTheme } from '../../lib/chartTheme'
 import { Chart, type ChartOption } from '../../lib/charts'
 import { formatNum, formatPct, formatYi, qualityTone, toYi } from '../../lib/format'
+import { useThemeMode } from '../../lib/theme'
 import type { StockSnapshotPayload } from '../../types/api'
 import { FORMULA_NOTE_TITLES } from './stockHelpers'
 
@@ -21,6 +17,7 @@ function clampPctWidth(score: number): number {
 }
 
 export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
+  const { theme } = useThemeMode()
   const {
     radar,
     valuation,
@@ -40,19 +37,20 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
     [radar],
   )
 
-  const radarOption = useMemo<ChartOption>(
-    () => ({
+  const radarOption = useMemo<ChartOption>(() => {
+    const { colors, tooltip } = createChartTheme(theme)
+    return {
       tooltip: {
-        ...CHART_TOOLTIP_COMMON,
+        ...tooltip,
         trigger: 'item',
       },
       radar: {
         radius: '66%',
         indicator: radarDimensions.map((dim) => ({ name: dim.label, max: 100 })),
-        axisName: { color: CHART_COLORS.text, fontSize: 12 },
+        axisName: { color: colors.text, fontSize: 12 },
         splitArea: { areaStyle: { color: ['transparent'] } },
-        splitLine: { lineStyle: { color: CHART_COLORS.grid } },
-        axisLine: { lineStyle: { color: CHART_COLORS.axisLine } },
+        splitLine: { lineStyle: { color: colors.grid } },
+        axisLine: { lineStyle: { color: colors.axisLine } },
       },
       series: [
         {
@@ -62,16 +60,15 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
             {
               value: radarDimensions.map((dim) => dim.score),
               name: `${snapshot.name} 综合画像`,
-              itemStyle: { color: CHART_COLORS.positive },
-              lineStyle: { color: CHART_COLORS.positive, width: 2 },
-              areaStyle: { color: CHART_COLORS.electric, opacity: 0.16 },
+              itemStyle: { color: colors.positive },
+              lineStyle: { color: colors.positive, width: 2 },
+              areaStyle: { color: colors.electric, opacity: 0.16 },
             },
           ],
         },
       ],
-    }),
-    [radarDimensions, snapshot.name],
-  )
+    }
+  }, [radarDimensions, snapshot.name, theme])
 
   const formulaEntries = Object.entries(snapshot.formula_notes)
 
@@ -188,45 +185,47 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
 }
 
 export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
+  const { theme } = useThemeMode()
   const trendsAsc = useMemo(
     () => [...snapshot.annual_trends].sort((a, b) => a.year - b.year),
     [snapshot.annual_trends],
   )
   const trendsDesc = useMemo(() => [...trendsAsc].reverse(), [trendsAsc])
 
-  const trendOption = useMemo<ChartOption>(
-    () => ({
+  const trendOption = useMemo<ChartOption>(() => {
+    const { colors, axis, legend, tooltip } = createChartTheme(theme)
+    return {
       tooltip: {
-        ...CHART_TOOLTIP_COMMON,
+        ...tooltip,
         trigger: 'axis',
         axisPointer: { type: 'cross' },
       },
       legend: {
-        ...CHART_LEGEND_COMMON,
+        ...legend,
         top: 0,
         type: 'scroll',
         data: ['营业收入', '归母净利润', '自由现金流', 'ROE (%)'],
       },
       grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
       xAxis: {
-        ...CHART_AXIS_COMMON,
+        ...axis,
         type: 'category',
         data: trendsAsc.map((point) => String(point.year)),
       },
       yAxis: [
         {
-          ...CHART_AXIS_COMMON,
+          ...axis,
           type: 'value',
           name: '亿元',
           nameGap: 14,
-          nameTextStyle: { color: CHART_COLORS.muted },
+          nameTextStyle: { color: colors.muted },
         },
         {
-          ...CHART_AXIS_COMMON,
+          ...axis,
           type: 'value',
           name: 'ROE %',
           nameGap: 14,
-          nameTextStyle: { color: CHART_COLORS.muted },
+          nameTextStyle: { color: colors.muted },
           splitLine: { show: false },
         },
       ],
@@ -235,21 +234,21 @@ export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayloa
           name: '营业收入',
           type: 'bar',
           barMaxWidth: 18,
-          itemStyle: { color: CHART_COLORS.electric, borderRadius: [4, 4, 0, 0] },
+          itemStyle: { color: colors.electric, borderRadius: [4, 4, 0, 0] },
           data: trendsAsc.map((point) => toYi(point.revenue_yuan)),
         },
         {
           name: '归母净利润',
           type: 'bar',
           barMaxWidth: 18,
-          itemStyle: { color: CHART_COLORS.positive, borderRadius: [4, 4, 0, 0] },
+          itemStyle: { color: colors.positive, borderRadius: [4, 4, 0, 0] },
           data: trendsAsc.map((point) => toYi(point.net_profit_yuan)),
         },
         {
           name: '自由现金流',
           type: 'bar',
           barMaxWidth: 18,
-          itemStyle: { color: CHART_COLORS.violet, borderRadius: [4, 4, 0, 0] },
+          itemStyle: { color: colors.violet, borderRadius: [4, 4, 0, 0] },
           data: trendsAsc.map((point) => toYi(point.fcf_yuan)),
         },
         {
@@ -258,8 +257,8 @@ export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayloa
           yAxisIndex: 1,
           smooth: true,
           symbolSize: 6,
-          itemStyle: { color: CHART_COLORS.amber },
-          lineStyle: { color: CHART_COLORS.amber, width: 2 },
+          itemStyle: { color: colors.amber },
+          lineStyle: { color: colors.amber, width: 2 },
           data: trendsAsc.map((point) =>
             point.roe_pct !== null && point.roe_pct !== undefined
               ? Number(point.roe_pct.toFixed(2))
@@ -267,9 +266,8 @@ export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayloa
           ),
         },
       ],
-    }),
-    [trendsAsc],
-  )
+    }
+  }, [trendsAsc, theme])
 
   if (trendsAsc.length === 0) {
     return (
@@ -386,60 +384,61 @@ export function StockMoatTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
 }
 
 export function StockGrowthTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
+  const { theme } = useThemeMode()
   const { growth, annual_trends: annualTrends } = snapshot
   const trendsAsc = useMemo(() => [...annualTrends].sort((a, b) => a.year - b.year), [annualTrends])
 
-  const marginOption = useMemo<ChartOption>(
-    () => ({
+  const marginOption = useMemo<ChartOption>(() => {
+    const { colors, axis, legend, tooltip } = createChartTheme(theme)
+    return {
       tooltip: {
-        ...CHART_TOOLTIP_COMMON,
+        ...tooltip,
         trigger: 'axis',
       },
       legend: {
-        ...CHART_LEGEND_COMMON,
+        ...legend,
         top: 0,
         type: 'scroll',
         data: ['毛利率 (%)', '净利率 (%)', '研发费用率 (%)'],
       },
       grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
       xAxis: {
-        ...CHART_AXIS_COMMON,
+        ...axis,
         type: 'category',
         data: trendsAsc.map((point) => String(point.year)),
       },
       yAxis: {
-        ...CHART_AXIS_COMMON,
+        ...axis,
         type: 'value',
         name: '%',
         nameGap: 14,
-        nameTextStyle: { color: CHART_COLORS.muted },
+        nameTextStyle: { color: colors.muted },
       },
       series: [
         {
           name: '毛利率 (%)',
           type: 'line',
           smooth: true,
-          itemStyle: { color: CHART_COLORS.positive },
+          itemStyle: { color: colors.positive },
           data: trendsAsc.map((point) => point.gross_margin_pct ?? null),
         },
         {
           name: '净利率 (%)',
           type: 'line',
           smooth: true,
-          itemStyle: { color: CHART_COLORS.electric },
+          itemStyle: { color: colors.electric },
           data: trendsAsc.map((point) => point.net_margin_pct ?? null),
         },
         {
           name: '研发费用率 (%)',
           type: 'line',
           smooth: true,
-          itemStyle: { color: CHART_COLORS.amber },
+          itemStyle: { color: colors.amber },
           data: trendsAsc.map((point) => point.rd_ratio_pct ?? null),
         },
       ],
-    }),
-    [trendsAsc],
-  )
+    }
+  }, [trendsAsc, theme])
 
   return (
     <div className="stack" style={{ gap: 16 }}>

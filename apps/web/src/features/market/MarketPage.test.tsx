@@ -1,9 +1,9 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ChartOption } from '../../lib/charts'
-import { CHART_COLORS } from '../../lib/chartTheme'
+import { CHART_COLORS, LIGHT_CHART_COLORS } from '../../lib/chartTheme'
 import { createQueryClient } from '../../lib/queryClient'
 import type { MarketOverview } from '../../types/api'
 import { MarketPage } from './MarketPage'
@@ -75,6 +75,8 @@ describe('MarketPage', () => {
     cleanup()
     capturedChartOptions.clear()
     vi.restoreAllMocks()
+    delete document.documentElement.dataset.theme
+    window.localStorage.clear()
   })
 
   it('renders onboarding workflow, quick-access stock links, metrics, and aligned inverse flowOption', async () => {
@@ -194,5 +196,43 @@ describe('MarketPage', () => {
     expect(await screen.findByText('半导体')).toBeInTheDocument()
     expect(screen.getByText('—')).toBeInTheDocument()
     expect(screen.getByText('42')).toBeInTheDocument()
+  })
+
+  it('updates industry flow chart option to LIGHT_CHART_COLORS when data-theme toggles to light', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse(SAMPLE_OVERVIEW))
+
+    renderMarketPage()
+    expect(await screen.findByText('半导体')).toBeInTheDocument()
+
+    document.documentElement.dataset.theme = 'light'
+
+    await waitFor(() => {
+      const flowOption = capturedChartOptions.get('行业净流入柱状图')
+      expect(flowOption?.tooltip).toMatchObject({
+        backgroundColor: LIGHT_CHART_COLORS.panel,
+        borderColor: LIGHT_CHART_COLORS.axisLine,
+      })
+      expect(flowOption?.xAxis).toMatchObject({
+        axisLine: { lineStyle: { color: LIGHT_CHART_COLORS.axisLine } },
+      })
+      expect(flowOption?.yAxis).toMatchObject({
+        axisLabel: { color: LIGHT_CHART_COLORS.text },
+      })
+      expect(flowOption?.series).toMatchObject([
+        {
+          type: 'bar',
+          data: [
+            {
+              value: 31.2,
+              itemStyle: { color: LIGHT_CHART_COLORS.positive, borderRadius: [0, 6, 6, 0] },
+            },
+            {
+              value: -6.1,
+              itemStyle: { color: LIGHT_CHART_COLORS.negative, borderRadius: [6, 0, 0, 6] },
+            },
+          ],
+        },
+      ])
+    })
   })
 })

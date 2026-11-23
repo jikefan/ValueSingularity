@@ -1,4 +1,4 @@
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const mockSetOption = vi.fn()
@@ -32,12 +32,22 @@ vi.mock('echarts/renderers', () => ({
 }))
 
 import { Chart } from './charts'
-import { CHART_COLORS, CHART_FONT_FAMILY } from './chartTheme'
+import {
+  CHART_AXIS_COMMON,
+  CHART_COLORS,
+  CHART_FONT_FAMILY,
+  CHART_LEGEND_COMMON,
+  CHART_TOOLTIP_COMMON,
+  LIGHT_CHART_COLORS,
+  createChartTheme,
+} from './chartTheme'
 
 describe('Chart', () => {
   afterEach(() => {
     cleanup()
     vi.clearAllMocks()
+    delete document.documentElement.dataset.theme
+    window.localStorage.clear()
   })
 
   it('disables initial chart animation inside setOption so bars render immediately', () => {
@@ -59,5 +69,64 @@ describe('Chart', () => {
       },
       true,
     )
+  })
+
+  it('re-applies setOption with light palette text color when data-theme changes to light', async () => {
+    render(
+      <Chart
+        ariaLabel="主题切换柱状图"
+        option={{
+          series: [{ type: 'bar', data: [10, 20] }],
+        }}
+      />,
+    )
+
+    expect(mockSetOption).toHaveBeenCalledTimes(1)
+    expect(mockSetOption).toHaveBeenLastCalledWith(
+      {
+        animation: false,
+        textStyle: { fontFamily: CHART_FONT_FAMILY, color: CHART_COLORS.text },
+        series: [{ type: 'bar', data: [10, 20] }],
+      },
+      true,
+    )
+
+    document.documentElement.dataset.theme = 'light'
+
+    await waitFor(() => {
+      expect(mockSetOption).toHaveBeenCalledTimes(2)
+    })
+    expect(mockSetOption).toHaveBeenLastCalledWith(
+      {
+        animation: false,
+        textStyle: { fontFamily: CHART_FONT_FAMILY, color: LIGHT_CHART_COLORS.text },
+        series: [{ type: 'bar', data: [10, 20] }],
+      },
+      true,
+    )
+  })
+
+  it('builds theme-synchronized ECharts defaults from createChartTheme and derives dark constants cleanly', () => {
+    const darkTheme = createChartTheme('dark')
+    expect(darkTheme.colors).toBe(CHART_COLORS)
+    expect(darkTheme.axis).toStrictEqual(CHART_AXIS_COMMON)
+    expect(darkTheme.legend).toStrictEqual(CHART_LEGEND_COMMON)
+    expect(darkTheme.tooltip).toStrictEqual(CHART_TOOLTIP_COMMON)
+
+    const lightTheme = createChartTheme('light')
+    expect(lightTheme.colors).toBe(LIGHT_CHART_COLORS)
+    expect(lightTheme.axis).toMatchObject({
+      axisLine: { lineStyle: { color: LIGHT_CHART_COLORS.axisLine } },
+      axisLabel: { color: LIGHT_CHART_COLORS.muted, fontFamily: CHART_FONT_FAMILY },
+      splitLine: { lineStyle: { color: LIGHT_CHART_COLORS.grid } },
+    })
+    expect(lightTheme.legend).toMatchObject({
+      textStyle: { color: LIGHT_CHART_COLORS.text, fontFamily: CHART_FONT_FAMILY },
+    })
+    expect(lightTheme.tooltip).toMatchObject({
+      backgroundColor: LIGHT_CHART_COLORS.panel,
+      borderColor: LIGHT_CHART_COLORS.axisLine,
+      textStyle: { color: LIGHT_CHART_COLORS.white, fontFamily: CHART_FONT_FAMILY },
+    })
   })
 })

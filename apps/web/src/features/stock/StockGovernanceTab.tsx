@@ -3,18 +3,15 @@ import { Card } from '../../components/ui/Card'
 import { Metric } from '../../components/ui/Metric'
 import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
-import {
-  CHART_AXIS_COMMON,
-  CHART_COLORS,
-  CHART_LEGEND_COMMON,
-  CHART_TOOLTIP_COMMON,
-} from '../../lib/chartTheme'
+import { createChartTheme } from '../../lib/chartTheme'
 import { Chart, type ChartOption } from '../../lib/charts'
 import { fmtNum, formatNum, formatPct, formatYi, qualityTone, toYi } from '../../lib/format'
+import { useThemeMode } from '../../lib/theme'
 import type { StockSnapshotPayload } from '../../types/api'
 import { SHAREHOLDER_STATUS_META } from './stockHelpers'
 
 export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
+  const { theme } = useThemeMode()
   const { shareholder_return: sReturn, formula_notes: formulaNotes } = snapshot
   const statusMeta = SHAREHOLDER_STATUS_META[sReturn.status]
 
@@ -31,33 +28,34 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
   const hasPartialCurrentYear =
     latestSeriesYear !== null && Number.isFinite(asOfYear) && latestSeriesYear === asOfYear
 
-  const barOption = useMemo<ChartOption>(
-    () => ({
+  const barOption = useMemo<ChartOption>(() => {
+    const { colors, axis, legend, tooltip } = createChartTheme(theme)
+    return {
       tooltip: {
-        ...CHART_TOOLTIP_COMMON,
+        ...tooltip,
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
       },
       legend: {
-        ...CHART_LEGEND_COMMON,
+        ...legend,
         top: 0,
         type: 'scroll',
         data: ['现金分红', '股份回购', '股权再融资', '股东净回报'],
       },
       grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
       xAxis: {
-        ...CHART_AXIS_COMMON,
+        ...axis,
         type: 'category',
         data: seriesAsc.map((point) =>
           point.year === asOfYear ? `${point.year}(年内)` : String(point.year),
         ),
       },
       yAxis: {
-        ...CHART_AXIS_COMMON,
+        ...axis,
         type: 'value',
         name: '亿元',
         nameGap: 14,
-        nameTextStyle: { color: CHART_COLORS.muted },
+        nameTextStyle: { color: colors.muted },
       },
       series: [
         {
@@ -65,7 +63,7 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
           type: 'bar',
           stack: 'outflow',
           barMaxWidth: 20,
-          itemStyle: { color: CHART_COLORS.positive },
+          itemStyle: { color: colors.positive },
           data: seriesAsc.map((point) => toYi(point.dividend_yuan)),
         },
         {
@@ -73,28 +71,27 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
           type: 'bar',
           stack: 'outflow',
           barMaxWidth: 20,
-          itemStyle: { color: CHART_COLORS.electric },
+          itemStyle: { color: colors.electric },
           data: seriesAsc.map((point) => toYi(point.repurchase_yuan)),
         },
         {
           name: '股权再融资',
           type: 'bar',
           barMaxWidth: 20,
-          itemStyle: { color: CHART_COLORS.negative },
+          itemStyle: { color: colors.negative },
           data: seriesAsc.map((point) => toYi(point.equity_financing_yuan)),
         },
         {
           name: '股东净回报',
           type: 'line',
           smooth: false,
-          itemStyle: { color: CHART_COLORS.amber },
-          lineStyle: { color: CHART_COLORS.amber, width: 2 },
+          itemStyle: { color: colors.amber },
+          lineStyle: { color: colors.amber, width: 2 },
           data: seriesAsc.map((point) => toYi(point.net_return_yuan)),
         },
       ],
-    }),
-    [asOfYear, seriesAsc],
-  )
+    }
+  }, [asOfYear, seriesAsc, theme])
 
   return (
     <div className="stack" style={{ gap: 16 }}>

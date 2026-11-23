@@ -6,6 +6,7 @@ import { ScoreRing } from '../../components/ui/ScoreRing'
 import { AuthProvider } from '../../lib/AuthProvider'
 import { setAccessToken } from '../../lib/api'
 import type { ChartOption } from '../../lib/charts'
+import { LIGHT_CHART_COLORS } from '../../lib/chartTheme'
 import { createQueryClient } from '../../lib/queryClient'
 import type {
   AiPreferences,
@@ -529,6 +530,8 @@ describe('StockPage', () => {
     capturedChartOptions.clear()
     setAccessToken(null)
     vi.restoreAllMocks()
+    delete document.documentElement.dataset.theme
+    window.localStorage.clear()
   })
 
   it('lights up all 9 tabs from StockSnapshotPayload including Reverse DCF matrix and CT drill-down', async () => {
@@ -1000,6 +1003,7 @@ describe('StockPage', () => {
     const { container: ringHigh } = render(
       <ScoreRing score={89} toneMode="quality" label="RADAR" />,
     )
+    expect(ringHigh.querySelectorAll('circle')[0]).toHaveAttribute('stroke', 'var(--line-soft)')
     expect(ringHigh.querySelectorAll('circle')[1]).toHaveAttribute('stroke', 'var(--accent)')
 
     const { container: ringMid } = render(<ScoreRing score={55} toneMode="quality" label="RADAR" />)
@@ -2080,5 +2084,74 @@ describe('StockPage', () => {
     expect(governanceChart?.xAxis).toMatchObject({
       data: ['2024', '2025', '2026(年内)'],
     })
+  })
+
+  it('updates stock chart options to LIGHT_CHART_COLORS when data-theme switches to light', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(SAMPLE_SNAPSHOT, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600519')
+    expect(await screen.findByRole('img', { name: '五维评分雷达图' })).toBeInTheDocument()
+
+    document.documentElement.dataset.theme = 'light'
+
+    await waitFor(() => {
+      expect(capturedChartOptions.get('五维评分雷达图')?.radar).toMatchObject({
+        axisName: { color: LIGHT_CHART_COLORS.text },
+        axisLine: { lineStyle: { color: LIGHT_CHART_COLORS.axisLine } },
+      })
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: '财务分析' }))
+    expect(await screen.findByRole('img', { name: '十年财务趋势图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('十年财务趋势图')?.tooltip).toMatchObject({
+      backgroundColor: LIGHT_CHART_COLORS.panel,
+      borderColor: LIGHT_CHART_COLORS.axisLine,
+    })
+    expect(capturedChartOptions.get('十年财务趋势图')?.series).toMatchObject([
+      { itemStyle: { color: LIGHT_CHART_COLORS.electric } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.positive } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.violet } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.amber } },
+    ])
+
+    fireEvent.click(screen.getByRole('tab', { name: '估值' }))
+    expect(await screen.findByRole('img', { name: '历史估值走势图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('历史估值走势图')?.tooltip).toMatchObject({
+      backgroundColor: LIGHT_CHART_COLORS.panel,
+      borderColor: LIGHT_CHART_COLORS.axisLine,
+    })
+    expect(capturedChartOptions.get('历史估值走势图')?.series).toMatchObject([
+      { itemStyle: { color: LIGHT_CHART_COLORS.electric } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.positive } },
+    ])
+
+    fireEvent.click(screen.getByRole('tab', { name: '增长引擎' }))
+    expect(await screen.findByRole('img', { name: '盈利能力与研发投入趋势图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('盈利能力与研发投入趋势图')?.series).toMatchObject([
+      { itemStyle: { color: LIGHT_CHART_COLORS.positive } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.electric } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.amber } },
+    ])
+
+    fireEvent.click(screen.getByRole('tab', { name: '治理' }))
+    expect(await screen.findByRole('img', { name: '股东净回报柱状图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('股东净回报柱状图')?.series).toMatchObject([
+      { itemStyle: { color: LIGHT_CHART_COLORS.positive } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.electric } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.negative } },
+      { itemStyle: { color: LIGHT_CHART_COLORS.amber } },
+    ])
   })
 })
