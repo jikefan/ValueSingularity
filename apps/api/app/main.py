@@ -24,6 +24,9 @@ _SENSITIVE_VALIDATION_KEYS = frozenset(
     {
         "byok_api_key",
         "password",
+        "current_password",
+        "new_password",
+        "smtp_password",
         "webhook_secret",
         "api_key",
         "refresh_token",
@@ -51,17 +54,21 @@ def _sanitize_validation_errors(exc: RequestValidationError) -> list[dict[str, A
     for err in exc.errors():
         copied = dict(err)
         loc = copied.get("loc") or ()
+        loc_tuple = tuple(loc)
         sensitive_loc = any(
             isinstance(part, str) and part.lower() in _SENSITIVE_VALIDATION_KEYS for part in loc
         )
         if "input" in copied:
-            if sensitive_loc:
-                raw_input = copied["input"]
+            raw_input = copied["input"]
+            is_raw_body_error = copied.get("type") == "model_attributes_type" or (
+                loc_tuple == ("body",) and isinstance(raw_input, str | bytes) and len(raw_input) > 0
+            )
+            if sensitive_loc or is_raw_body_error:
                 copied["input"] = (
-                    raw_input if raw_input is None or raw_input == "" else "[REDACTED]"
+                    raw_input if raw_input is None or raw_input in ("", b"") else "[REDACTED]"
                 )
             else:
-                copied["input"] = _redact_validation_input(copied["input"])
+                copied["input"] = _redact_validation_input(raw_input)
         sanitized.append(copied)
     return sanitized
 

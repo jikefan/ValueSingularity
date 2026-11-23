@@ -51,3 +51,37 @@ def test_0002_check_constraints_match_metadata_without_double_prefix() -> None:
     downgrade_sql = _render_offline_sql("downgrade", "0002:0001")
     assert "DROP CONSTRAINT ck_journal_action_valid" in downgrade_sql
     assert "ck_journal_ck_journal_action_valid" not in downgrade_sql
+
+
+def test_0003_check_constraints_match_metadata_without_double_prefix() -> None:
+    upgrade_sql = _render_offline_sql("upgrade", "0002:0003")
+    emitted_checks = set(CHECK_CONSTRAINT_RE.findall(upgrade_sql))
+
+    table_name = "email_verification_codes"
+    table = Base.metadata.tables[table_name]
+    expected_checks = {
+        c.name
+        for c in table.constraints
+        if isinstance(c, sa.CheckConstraint) and isinstance(c.name, str)
+    }
+    assert expected_checks == {"ck_email_verification_codes_purpose_valid"}
+    for name in expected_checks:
+        assert f"CONSTRAINT {name} CHECK" in upgrade_sql
+        assert not name.startswith(f"ck_{table_name}_ck_{table_name}_")
+
+    assert emitted_checks == expected_checks
+    assert "ADD COLUMN email_verified_at" in upgrade_sql
+    assert "ADD COLUMN token_version" in upgrade_sql
+    assert "ADD COLUMN family_id" in upgrade_sql
+    assert "ADD COLUMN revoked_reason" in upgrade_sql
+    assert "CREATE INDEX ix_refresh_tokens_family_id" in upgrade_sql
+    assert "CREATE INDEX ix_email_codes_email_purpose_created" in upgrade_sql
+
+    downgrade_sql = _render_offline_sql("downgrade", "0003:0002")
+    assert "DROP INDEX ix_email_codes_email_purpose_created" in downgrade_sql
+    assert "DROP TABLE email_verification_codes" in downgrade_sql
+    assert "DROP INDEX ix_refresh_tokens_family_id" in downgrade_sql
+    assert "DROP COLUMN revoked_reason" in downgrade_sql
+    assert "DROP COLUMN family_id" in downgrade_sql
+    assert "DROP COLUMN token_version" in downgrade_sql
+    assert "DROP COLUMN email_verified_at" in downgrade_sql

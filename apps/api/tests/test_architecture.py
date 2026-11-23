@@ -203,6 +203,12 @@ def test_duckdb_and_akshare_adapters_are_async() -> None:
     _assert_public_methods_are_async(paths)
 
 
+def test_email_adapters_are_async() -> None:
+    paths = sorted((APP_ROOT / "adapters/email").rglob("*.py"))
+    assert paths
+    _assert_public_methods_are_async(paths)
+
+
 def test_no_sync_db_or_testclient_regressions() -> None:
     violations: list[str] = []
     test_paths = sorted((API_ROOT / "tests").rglob("*.py"))

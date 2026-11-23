@@ -28,6 +28,12 @@ def _reject_nul(value: str, label: str = "文本") -> str:
     return value
 
 
+def _require_ascii_digits(value: str) -> str:
+    if not value.isascii():
+        raise ValueError("验证码必须为 6 位数字")
+    return value
+
+
 class TemperatureLevel(StrEnum):
     """A-share market temperature bucket, from cold to hot."""
 
@@ -149,6 +155,7 @@ class UserProfile(BaseModel):
     email: str | None
     phone: str | None
     display_name: str
+    email_verified: bool = False
     plan_tier: PlanTier
     plan_expires_at: datetime | None = None
     created_at: datetime
@@ -157,17 +164,54 @@ class UserProfile(BaseModel):
 class UserAuthRecord(UserProfile):
     password_hash: str
     is_active: bool
+    email_verified_at: datetime | None = None
+    token_version: int = 1
 
 
 class AuthenticatedUser(BaseModel):
     id: UUID
     plan_tier: PlanTier
+    token_version: int = 1
+
+
+EmailCodePurpose = Literal["register", "reset_password", "verify_email", "delete_account"]
+PublicEmailCodePurpose = Literal["register", "reset_password"]
+AuthenticatedEmailCodePurpose = Literal["verify_email", "delete_account"]
+
+
+class AuthConfigResponse(BaseModel):
+    email_verification_required: bool
+    smtp_configured: bool
+    code_ttl_minutes: int = 10
+    code_cooldown_seconds: int = 60
+
+
+class EmailCodeSendRequest(BaseModel):
+    email: EmailStr
+    purpose: PublicEmailCodePurpose
+
+
+class AuthenticatedEmailCodeRequest(BaseModel):
+    purpose: AuthenticatedEmailCodePurpose
+
+
+class EmailCodeSendResponse(BaseModel):
+    sent: bool = True
+    expires_in_seconds: int = Field(ge=1)
+    cooldown_seconds: int = Field(ge=1)
+    message: str
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     display_name: str = Field(min_length=1, max_length=64)
+    verification_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "密码")
 
     @field_validator("display_name")
     @classmethod
@@ -176,6 +220,80 @@ class RegisterRequest(BaseModel):
         if not cleaned:
             raise ValueError("昵称不能为空")
         return _reject_nul(cleaned, "昵称")
+
+    @field_validator("verification_code")
+    @classmethod
+    def _validate_verification_code(cls, value: str | None) -> str | None:
+        return _require_ascii_digits(value) if value is not None else None
+
+
+class VerifyEmailRequest(BaseModel):
+    verification_code: str = Field(pattern=r"^\d{6}$")
+
+    @field_validator("verification_code")
+    @classmethod
+    def _validate_verification_code(cls, value: str) -> str:
+        return _require_ascii_digits(value)
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    email: EmailStr
+    verification_code: str = Field(pattern=r"^\d{6}$")
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("verification_code")
+    @classmethod
+    def _validate_verification_code(cls, value: str) -> str:
+        return _require_ascii_digits(value)
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "新密码")
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("current_password")
+    @classmethod
+    def _validate_current_password_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "当前密码")
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "新密码")
+
+
+class UserProfileUpdateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=64)
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def _strip_display_name(cls, value: object) -> object:
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("display_name")
+    @classmethod
+    def _validate_display_name_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "昵称")
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+    verification_code: str | None = Field(default=None, pattern=r"^\d{6}$")
+
+    @field_validator("password")
+    @classmethod
+    def _validate_password_no_nul(cls, value: str) -> str:
+        return _reject_nul(value, "密码")
+
+    @field_validator("verification_code")
+    @classmethod
+    def _validate_verification_code(cls, value: str | None) -> str | None:
+        return _require_ascii_digits(value) if value is not None else None
 
 
 class LoginRequest(BaseModel):
@@ -198,9 +316,11 @@ class AuthSession(BaseModel):
 class RefreshTokenRecord(BaseModel):
     id: UUID
     user_id: UUID
+    family_id: UUID
     token_hash: str
     expires_at: datetime
     revoked_at: datetime | None
+    revoked_reason: str | None = None
 
 
 class RefreshRotationStatus(StrEnum):
@@ -213,6 +333,23 @@ class RefreshRotationStatus(StrEnum):
 
 class RefreshRotationResult(BaseModel):
     status: RefreshRotationStatus
+    user: UserAuthRecord | None = None
+
+
+class PasswordResetStatus(StrEnum):
+    UPDATED = "updated"
+    INVALID_CODE = "invalid_code"
+    INACTIVE = "inactive"
+
+
+class PasswordChangeStatus(StrEnum):
+    UPDATED = "updated"
+    NOT_FOUND = "not_found"
+    INACTIVE = "inactive"
+
+
+class PasswordChangeResult(BaseModel):
+    status: PasswordChangeStatus
     user: UserAuthRecord | None = None
 
 

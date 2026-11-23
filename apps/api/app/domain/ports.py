@@ -16,6 +16,7 @@ from app.domain.models import (
     AlertDeliveryItem,
     AuthenticatedUser,
     DevilsAdvocateChallenge,
+    EmailCodePurpose,
     IndexDailyRow,
     JournalAction,
     JournalCreate,
@@ -26,6 +27,8 @@ from app.domain.models import (
     MarketOverview,
     MdaDiffHighlight,
     MdaMetricShift,
+    PasswordChangeResult,
+    PasswordResetStatus,
     PlanTier,
     RefreshRotationResult,
     RefreshTokenRecord,
@@ -221,6 +224,7 @@ class UserRepository(Protocol):
         password_hash: str,
         display_name: str,
         plan_tier: PlanTier,
+        email_verified_at: datetime | None = None,
     ) -> UserAuthRecord:
         """Persist a new user account."""
         ...
@@ -233,6 +237,49 @@ class UserRepository(Protocol):
         """Return a user auth record by primary key."""
         ...
 
+    async def mark_email_verified(
+        self, user_id: UUID, verified_at: datetime
+    ) -> UserAuthRecord | None:
+        """Set email_verified_at once if not yet verified and return the updated record."""
+        ...
+
+    async def update_display_name(self, user_id: UUID, display_name: str) -> UserAuthRecord | None:
+        """Update the user's display name and return the updated record."""
+        ...
+
+    async def complete_password_reset(
+        self,
+        *,
+        email: str,
+        code_hash: str,
+        password_hash: str,
+        now: datetime,
+        max_attempts: int = 5,
+    ) -> PasswordResetStatus:
+        """Atomically verify reset OTP, update password, bump token_version, and revoke tokens."""
+        ...
+
+    async def complete_password_change(
+        self,
+        user_id: UUID,
+        *,
+        password_hash: str,
+        new_token_hash: str,
+        new_expires_at: datetime,
+        now: datetime,
+        user_agent: str | None,
+    ) -> PasswordChangeResult:
+        """Atomically update password, bump token_version, revoke old tokens, and create new."""
+        ...
+
+    async def delete_user_account(self, user_id: UUID) -> bool:
+        """Atomically delete verification codes and user account (cascading user-scoped rows)."""
+        ...
+
+    async def release_read_transaction(self) -> None:
+        """Release any open read transaction before long-running external I/O."""
+        ...
+
 
 class RefreshTokenRepository(Protocol):
     async def create(
@@ -242,6 +289,7 @@ class RefreshTokenRepository(Protocol):
         token_hash: str,
         expires_at: datetime,
         user_agent: str | None,
+        family_id: UUID | None = None,
     ) -> RefreshTokenRecord:
         """Persist a hashed refresh token record."""
         ...
@@ -258,8 +306,64 @@ class RefreshTokenRepository(Protocol):
         """Atomically validate, revoke, and replace a refresh token."""
         ...
 
-    async def revoke_by_hash(self, token_hash: str, revoked_at: datetime) -> bool:
+    async def revoke_by_hash(
+        self, token_hash: str, revoked_at: datetime, reason: str = "logout"
+    ) -> bool:
         """Revoke an active refresh token by SHA-256 hash."""
+        ...
+
+
+class EmailVerificationRepository(Protocol):
+    async def try_issue_code(
+        self,
+        *,
+        email: str,
+        purpose: EmailCodePurpose,
+        code_hash: str,
+        expires_at: datetime,
+        created_at: datetime,
+        cooldown_seconds: int,
+        hourly_limit: int,
+        consumed_at: datetime | None = None,
+    ) -> UUID:
+        """Atomically enforce cooldown and hourly cap, then persist a verification code."""
+        ...
+
+    async def delete_code_by_id(self, code_id: UUID) -> None:
+        """Remove a pending verification code row (e.g. after upstream SMTP failure)."""
+        ...
+
+    async def verify_and_consume(
+        self,
+        *,
+        email: str,
+        purpose: EmailCodePurpose,
+        code_hash: str,
+        now: datetime,
+        max_attempts: int = 5,
+    ) -> bool:
+        """Atomically check, track failed attempts, and consume the latest code on match."""
+        ...
+
+    async def release_read_transaction(self) -> None:
+        """Release any open read transaction before long-running external I/O."""
+        ...
+
+
+class EmailSenderPort(Protocol):
+    async def ensure_configured(self) -> None:
+        """Verify outbound email delivery is configured before touching user state."""
+        ...
+
+    async def send_verification_code(
+        self,
+        *,
+        to_email: str,
+        code: str,
+        purpose: EmailCodePurpose,
+        expires_minutes: int,
+    ) -> None:
+        """Send an email verification code or raise delivery/config error."""
         ...
 
 

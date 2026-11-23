@@ -9,6 +9,45 @@ class EmailAlreadyRegisteredError(Exception):
         self.email = email
 
 
+class EmailCodeCooldownError(Exception):
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__(f"验证码发送过于频繁，请在 {retry_after_seconds} 秒后重试")
+        self.retry_after_seconds = retry_after_seconds
+
+
+class EmailCodeRateLimitError(Exception):
+    def __init__(
+        self,
+        message: str = "该邮箱 1 小时内发送验证码次数已达上限，请稍后再试",
+    ) -> None:
+        super().__init__(message)
+
+
+class InvalidVerificationCodeError(Exception):
+    def __init__(self, message: str = "验证码无效或已过期，请重新获取") -> None:
+        super().__init__(message)
+
+
+class EmailDeliveryError(Exception):
+    def __init__(self, message: str = "邮件发送失败，请稍后重试") -> None:
+        super().__init__(message)
+
+
+class EmailNotConfiguredError(Exception):
+    def __init__(self, message: str = "邮件发送服务尚未配置，请联系管理员") -> None:
+        super().__init__(message)
+
+
+class SamePasswordError(Exception):
+    def __init__(self, message: str = "新密码不能与当前密码相同") -> None:
+        super().__init__(message)
+
+
+class UserNotFoundError(Exception):
+    def __init__(self, message: str = "用户不存在") -> None:
+        super().__init__(message)
+
+
 class MarketSnapshotUnavailableError(Exception):
     def __init__(self, message: str = "市场快照尚未生成，请先执行行情同步") -> None:
         super().__init__(message)

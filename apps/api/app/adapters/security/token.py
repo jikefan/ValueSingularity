@@ -25,6 +25,7 @@ class JwtTokenCodec:
         payload = {
             "sub": str(user.id),
             "tier": user.plan_tier.value,
+            "tv": user.token_version,
             "type": "access",
             "iat": int(now.timestamp()),
             "exp": int((now + timedelta(seconds=expires_in)).timestamp()),
@@ -43,11 +44,22 @@ class JwtTokenCodec:
 
         raw_sub = payload.get("sub")
         raw_tier = payload.get("tier")
-        if not isinstance(raw_sub, str) or not isinstance(raw_tier, str):
+        raw_tv = payload.get("tv")
+        if (
+            not isinstance(raw_sub, str)
+            or not isinstance(raw_tier, str)
+            or not isinstance(raw_tv, int)
+            or isinstance(raw_tv, bool)
+            or raw_tv < 1
+        ):
             return None
 
         try:
-            return AuthenticatedUser(id=UUID(raw_sub), plan_tier=PlanTier(raw_tier))
+            return AuthenticatedUser(
+                id=UUID(raw_sub),
+                plan_tier=PlanTier(raw_tier),
+                token_version=raw_tv,
+            )
         except ValueError:
             return None
 

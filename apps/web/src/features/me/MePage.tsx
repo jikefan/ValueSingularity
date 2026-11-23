@@ -10,6 +10,7 @@ import { useJournal, useRemoveJournal } from '../../lib/useJournal'
 import { parseOptionalNumber } from '../../lib/validation'
 import type { JournalAction, PlanTier, WatchlistItem, WatchlistUpsert } from '../../types/api'
 import { useRemoveWatchlist, useUpsertWatchlist, useWatchlist } from '../../lib/useWatchlist'
+import { AccountSecurityPanel } from './AccountSecurityPanel'
 import { AiPrefsPanel } from './AiPrefsPanel'
 import { DecisionLedgerPanel } from './DecisionLedgerPanel'
 import { SentinelAlertsPanel } from './SentinelAlertsPanel'
@@ -237,18 +238,29 @@ export function MePage() {
     <div className="container stack" style={{ gap: 16 }}>
       <Card
         title="投资账户"
-        extra={<Tag color={PLAN_COLOR[user.plan_tier]}>{user.plan_tier.toUpperCase()}</Tag>}
+        extra={
+          <div className="sentinel-list">
+            <Tag color={user.email_verified ? 'green' : 'amber'}>
+              {user.email_verified ? '邮箱已验证' : '邮箱未验证'}
+            </Tag>
+            <Tag color={PLAN_COLOR[user.plan_tier]}>{user.plan_tier.toUpperCase()}</Tag>
+          </div>
+        }
       >
         <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-          <div className="stack" style={{ gap: 2 }}>
-            <strong>{user.display_name}</strong>
-            <span className="small muted mono">{user.email ?? user.phone ?? '—'}</span>
+          <div className="stack wrap-anywhere" style={{ gap: 2 }}>
+            <strong className="wrap-anywhere">{user.display_name}</strong>
+            <span className="small muted mono wrap-anywhere">
+              {user.email ?? user.phone ?? '—'}
+            </span>
           </div>
           <span className="small muted">多租户隔离 · 击球区哨兵已就绪</span>
         </div>
       </Card>
 
-      <AiPrefsPanel key={user.id} enabled={Boolean(user)} />
+      <AccountSecurityPanel key={`security-${user.id}`} enabled={Boolean(user)} />
+
+      <AiPrefsPanel key={`ai-prefs-${user.id}`} enabled={Boolean(user)} />
 
       <Card
         title={editingCode ? `编辑自选 · ${editingCode}` : '添加自选与击球区哨兵'}

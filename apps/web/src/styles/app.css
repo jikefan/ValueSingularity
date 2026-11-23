@@ -89,6 +89,12 @@ p {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
+}
+
+.wrap-anywhere {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .mt-8 {
@@ -180,6 +186,7 @@ p {
   padding: 6px 14px;
   border-radius: 999px;
   color: var(--soft);
+  white-space: nowrap;
   transition:
     color 0.15s,
     background 0.15s;
@@ -273,6 +280,21 @@ p {
   display: inline-flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.nav-user-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-user .tag,
+.nav-user .btn-ghost {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* ---------- card ---------- */
@@ -460,7 +482,7 @@ p {
 
 .auth-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
   padding: 4px;
   margin-bottom: 18px;
@@ -470,19 +492,26 @@ p {
 }
 
 .auth-tab {
-  padding: 7px 12px;
+  padding: 7px 8px;
   border: none;
   border-radius: calc(var(--radius-sm) - 3px);
   font-size: 13px;
   color: var(--soft);
+  text-align: center;
+  white-space: nowrap;
   background: transparent;
   transition:
     color 0.15s,
     background 0.15s;
 }
 
-.auth-tab:hover {
+.auth-tab:hover:not(:disabled) {
   color: var(--white);
+}
+
+.auth-tab:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .auth-tab.active {
@@ -682,6 +711,60 @@ p {
 
 .link-accent:hover {
   text-decoration: underline;
+}
+
+.auth-link-btn {
+  padding: 0;
+  border: none;
+  font-size: 12px;
+  color: var(--electric);
+  background: transparent;
+}
+
+.auth-link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.auth-link-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.input-action-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.input-action-row .input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.input-action-row .btn-ghost,
+.input-action-row .btn-primary {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.security-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.danger-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(255, 107, 138, 0.42);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 107, 138, 0.06);
+}
+
+.danger-zone .danger-zone-title {
+  color: var(--rose);
 }
 
 .textarea {
@@ -1118,6 +1201,12 @@ p {
   color: var(--amber);
 }
 
+.notice-success {
+  border-color: rgba(115, 240, 195, 0.38);
+  background: rgba(115, 240, 195, 0.1);
+  color: var(--accent);
+}
+
 .sensitivity-table th,
 .sensitivity-table td {
   white-space: nowrap;
@@ -1399,6 +1488,7 @@ p {
   .grid-3,
   .grid-2,
   .form-grid,
+  .security-grid,
   .formula-list,
   .falsify-rule-row,
   .mda-shift-grid,
@@ -1430,6 +1520,10 @@ p {
   }
   .compare-picker-form {
     flex-direction: column;
+  }
+  .input-action-row {
+    flex-direction: column;
+    align-items: stretch;
   }
   .nav-links a {
     padding: 6px 10px;

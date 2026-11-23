@@ -5,6 +5,7 @@ export const queryKeys = {
   auth: {
     all: ['auth'] as const,
     me: () => ['auth', 'me'] as const,
+    config: () => ['auth', 'config'] as const,
   },
   market: {
     all: ['market'] as const,

@@ -236,7 +236,9 @@ export function TopNav({
 
         {user ? (
           <span className="nav-user">
-            <span className="soft small">{user.display_name}</span>
+            <span className="nav-user-name soft small" title={user.display_name}>
+              {user.display_name}
+            </span>
             <Tag color={PLAN_COLOR[user.plan_tier]}>{user.plan_tier.toUpperCase()}</Tag>
             <button type="button" className="btn-ghost" onClick={onLogout}>
               退出

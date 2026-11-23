@@ -1,5 +1,13 @@
 export type ParsedOptionalNumber = { ok: true; value: number | null } | { ok: false; error: string }
 
+export function isValidEmailFormat(raw: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim())
+}
+
+export function isSixDigitCode(raw: string): boolean {
+  return /^[0-9]{6}$/.test(raw.trim())
+}
+
 export function parseOptionalNumber(
   raw: string,
   label: string,

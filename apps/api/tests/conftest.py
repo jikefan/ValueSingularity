@@ -6,10 +6,21 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.api.deps import get_db
+from app.adapters.email.smtp import UnconfiguredEmailSender
+from app.api.deps import get_db, get_email_sender
 from app.db.base import Base
 from app.main import create_app
 from app.settings import settings
+
+
+@pytest.fixture(autouse=True)
+def _isolate_email_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep tests isolated from host SMTP env config and force opt-in email verification."""
+    monkeypatch.setattr(settings, "smtp_host", None)
+    monkeypatch.setattr(settings, "smtp_username", None)
+    monkeypatch.setattr(settings, "smtp_password", None)
+    monkeypatch.setattr(settings, "smtp_from_email", None)
+    monkeypatch.setattr(settings, "auth_require_email_verification", None)
 
 
 @pytest.fixture
@@ -40,6 +51,7 @@ async def db_client() -> AsyncIterator[AsyncClient]:
             yield session
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_email_sender] = UnconfiguredEmailSender
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

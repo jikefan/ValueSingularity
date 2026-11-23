@@ -1,15 +1,18 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from '../../lib/AuthProvider'
-import { setAccessToken } from '../../lib/api'
+import { getAccessToken, setAccessToken } from '../../lib/api'
 import { createQueryClient } from '../../lib/queryClient'
+import { queryKeys } from '../../lib/queryKeys'
 import type {
   AiPreferences,
   AlertDeliveryItem,
   AlertScanSummary,
+  AuthConfigResponse,
   DecisionLedgerReport,
+  EmailCodeSendResponse,
   JournalEntryItem,
   NotificationPreferences,
   TokenResponse,
@@ -24,9 +27,17 @@ const SAMPLE_USER: UserProfile = {
   email: 'pro@example.com',
   phone: null,
   display_name: '长坡厚雪',
+  email_verified: true,
   plan_tier: 'pro',
   plan_expires_at: null,
   created_at: '2026-11-22T00:00:00Z',
+}
+
+const DEFAULT_AUTH_CONFIG: AuthConfigResponse = {
+  email_verification_required: false,
+  smtp_configured: false,
+  code_ttl_minutes: 10,
+  code_cooldown_seconds: 60,
 }
 
 const INITIAL_ITEM: WatchlistItem = {
@@ -88,6 +99,9 @@ function handleEmptyPhase3Get(pathname: string, method: string): Response | null
   if (method !== 'GET') {
     return null
   }
+  if (pathname === '/api/auth/config') {
+    return jsonResponse(DEFAULT_AUTH_CONFIG, 200)
+  }
   if (pathname === '/api/journal/ledger') {
     return jsonResponse(EMPTY_LEDGER, 200)
   }
@@ -147,23 +161,28 @@ function renderMePage() {
     },
   })
 
-  return render(
-    <QueryClientProvider client={client}>
-      <AuthProvider>
-        <MemoryRouter initialEntries={['/me']}>
-          <Routes>
-            <Route path="/me" element={<MePage />} />
-            <Route path="/login" element={<div>登录入口页</div>} />
-            <Route path="/stock/:code" element={<div>个股详情</div>} />
-          </Routes>
-        </MemoryRouter>
-      </AuthProvider>
-    </QueryClientProvider>,
-  )
+  return {
+    client,
+    ...render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/me']}>
+            <Routes>
+              <Route path="/" element={<div>首页已跳转</div>} />
+              <Route path="/me" element={<MePage />} />
+              <Route path="/login" element={<div>登录入口页</div>} />
+              <Route path="/stock/:code" element={<div>个股详情</div>} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    ),
+  }
 }
 
 describe('MePage', () => {
   afterEach(() => {
+    vi.useRealTimers()
     cleanup()
     setAccessToken(null)
     vi.restoreAllMocks()
@@ -209,6 +228,9 @@ describe('MePage', () => {
 
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return jsonResponse(tokenResponse, 200)
+      }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return jsonResponse(DEFAULT_AUTH_CONFIG, 200)
       }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return jsonResponse(watchlistState, 200)
@@ -322,6 +344,9 @@ describe('MePage', () => {
 
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_AUTH_CONFIG, 200))
       }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return Promise.resolve(jsonResponse([], 200))
@@ -441,6 +466,9 @@ describe('MePage', () => {
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return Promise.resolve(jsonResponse(tokenResponse, 200))
       }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_AUTH_CONFIG, 200))
+      }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return Promise.resolve(jsonResponse([INITIAL_ITEM], 200))
       }
@@ -522,6 +550,9 @@ describe('MePage', () => {
 
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_AUTH_CONFIG, 200))
       }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return Promise.resolve(jsonResponse([INITIAL_ITEM], 200))
@@ -666,6 +697,9 @@ describe('MePage', () => {
       const pathname = new URL(request.url).pathname
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return Promise.resolve(jsonResponse(tokenResponse, 200))
+      }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_AUTH_CONFIG, 200))
       }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return Promise.resolve(jsonResponse([], 200))
@@ -821,6 +855,9 @@ describe('MePage', () => {
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return Promise.resolve(jsonResponse(tokenResponse, 200))
       }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_AUTH_CONFIG, 200))
+      }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return Promise.resolve(jsonResponse([], 200))
       }
@@ -928,6 +965,9 @@ describe('MePage', () => {
 
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return jsonResponse(tokenResponse, 200)
+      }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return jsonResponse(DEFAULT_AUTH_CONFIG, 200)
       }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return jsonResponse([], 200)
@@ -1086,6 +1126,9 @@ describe('MePage', () => {
 
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return jsonResponse(tokenResponse, 200)
+      }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return jsonResponse(DEFAULT_AUTH_CONFIG, 200)
       }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return jsonResponse([], 200)
@@ -1287,6 +1330,9 @@ describe('MePage', () => {
       if (pathname === '/api/auth/refresh' && request.method === 'POST') {
         return Promise.resolve(jsonResponse(tokenResponse, 200))
       }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_AUTH_CONFIG, 200))
+      }
       if (pathname === '/api/watchlist' && request.method === 'GET') {
         return Promise.resolve(jsonResponse([], 200))
       }
@@ -1364,5 +1410,523 @@ describe('MePage', () => {
       '启用 BYOK 自备密钥前，请先填写公网 Base URL',
     )
     expect(putCount).toBe(callsBeforeClientCheck)
+  })
+
+  it('supports legacy email verification, profile display_name edit, and changePassword keeping session alive', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+
+    let userState: UserProfile = { ...SAMPLE_USER, email_verified: false }
+    let verifyPayload: unknown = null
+    let profilePayload: unknown = null
+    let changePasswordPayload: unknown = null
+
+    const sendResponse: EmailCodeSendResponse = {
+      sent: true,
+      expires_in_seconds: 600,
+      cooldown_seconds: 60,
+      message: '验证码已发送至您的邮箱，请注意查收',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return jsonResponse(
+          {
+            access_token: 'initial-active-token',
+            token_type: 'bearer',
+            expires_in: 900,
+            user: userState,
+          } satisfies TokenResponse,
+          200,
+        )
+      }
+      if (pathname === '/api/auth/me/email-codes' && request.method === 'POST') {
+        return jsonResponse(sendResponse, 200)
+      }
+      if (pathname === '/api/auth/verify-email' && request.method === 'POST') {
+        verifyPayload = JSON.parse(await request.clone().text())
+        userState = { ...userState, email_verified: true }
+        return jsonResponse(userState, 200)
+      }
+      if (pathname === '/api/auth/me' && request.method === 'PATCH') {
+        const parsed: unknown = JSON.parse(await request.clone().text())
+        profilePayload = parsed
+        if (isRecord(parsed) && typeof parsed.display_name === 'string') {
+          userState = { ...userState, display_name: parsed.display_name }
+        }
+        return jsonResponse(userState, 200)
+      }
+      if (pathname === '/api/auth/password/change' && request.method === 'POST') {
+        const parsed: unknown = JSON.parse(await request.clone().text())
+        changePasswordPayload = parsed
+        if (isRecord(parsed) && parsed.current_password === 'wrong-current') {
+          return jsonResponse({ detail: '当前密码错误' }, 400)
+        }
+        return jsonResponse(
+          {
+            access_token: 'rotated-after-pw-change',
+            token_type: 'bearer',
+            expires_in: 900,
+            user: userState,
+          } satisfies TokenResponse,
+          200,
+        )
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse([INITIAL_ITEM], 200)
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return emptyPhase3
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500)
+    })
+
+    renderMePage()
+
+    expect(await screen.findByText('邮箱未验证')).toBeInTheDocument()
+    expect(screen.getByText('邮箱未验证')).toHaveClass('tag-amber')
+
+    // Send verification email and test 60s countdown
+    fireEvent.click(screen.getByRole('button', { name: '发送验证邮件' }))
+    expect(await screen.findByText('验证码已发送至您的邮箱，请注意查收')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重新发送 (60s)' })).toBeDisabled()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    expect(screen.getByRole('button', { name: '重新发送 (58s)' })).toBeDisabled()
+
+    // Invalid code rejected client-side
+    fireEvent.change(screen.getByLabelText('邮箱验证码'), { target: { value: '12' } })
+    fireEvent.click(screen.getByRole('button', { name: '验证邮箱' }))
+    expect(await screen.findByText('请输入 6 位数字邮箱验证码')).toBeInTheDocument()
+
+    // Valid code verifies email and updates Tag in 投资账户
+    fireEvent.change(screen.getByLabelText('邮箱验证码'), { target: { value: '246810' } })
+    fireEvent.click(screen.getByRole('button', { name: '验证邮箱' }))
+
+    expect(await screen.findByText('邮箱验证成功')).toBeInTheDocument()
+    expect(screen.getByText('邮箱已验证')).toHaveClass('tag-green')
+    expect(verifyPayload).toEqual({ verification_code: '246810' })
+
+    // Update display_name
+    fireEvent.change(screen.getByLabelText('显示昵称'), { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存昵称' }))
+    expect(await screen.findByText('请输入 1–64 个字符的显示昵称')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('显示昵称'), { target: { value: '安全复盘者' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存昵称' }))
+    expect(await screen.findByText('显示昵称已更新')).toBeInTheDocument()
+    expect(screen.getByText('安全复盘者')).toBeInTheDocument()
+    expect(profilePayload).toEqual({ display_name: '安全复盘者' })
+
+    // Change password validation & submit
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'oldpass123' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'oldpass123' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'oldpass123' } })
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    expect(await screen.findByText('新密码不能与当前密码相同')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'newpass1234' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'different123' } })
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    expect(await screen.findByText('两次输入的新密码不一致')).toBeInTheDocument()
+
+    // Backend 400 error on wrong current password
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'wrong-current' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'newpass1234' } })
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    expect(await screen.findByText('当前密码错误')).toBeInTheDocument()
+
+    // Successful password change rotates access token and preserves online session + watchlist
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'oldpass123' } })
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    expect(await screen.findByText('密码修改成功，当前会话已保持在线')).toBeInTheDocument()
+    expect(getAccessToken()).toBe('rotated-after-pw-change')
+    expect(changePasswordPayload).toEqual({
+      current_password: 'oldpass123',
+      new_password: 'newpass1234',
+    })
+    expect(screen.getByText('贵州茅台')).toBeInTheDocument()
+  })
+
+  it('supports permanent account deletion with password + optional/required verification code, clears caches, and redirects to /', async () => {
+    let authConfig: AuthConfigResponse = { ...DEFAULT_AUTH_CONFIG }
+    const deletePayloads: unknown[] = []
+    const sendCodePayloads: unknown[] = []
+
+    const tokenResponse: TokenResponse = {
+      access_token: 'delete-session-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+    const sendResponse: EmailCodeSendResponse = {
+      sent: true,
+      expires_in_seconds: 600,
+      cooldown_seconds: 60,
+      message: '验证码已发送至您的邮箱，请注意查收',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return jsonResponse(tokenResponse, 200)
+      }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        return jsonResponse(authConfig, 200)
+      }
+      if (pathname === '/api/auth/me/email-codes' && request.method === 'POST') {
+        sendCodePayloads.push(JSON.parse(await request.clone().text()))
+        return jsonResponse(sendResponse, 200)
+      }
+      if (pathname === '/api/auth/me/delete' && request.method === 'POST') {
+        const parsed: unknown = JSON.parse(await request.clone().text())
+        deletePayloads.push(parsed)
+        if (isRecord(parsed) && parsed.password === 'wrong-pass') {
+          return jsonResponse({ detail: '密码错误' }, 400)
+        }
+        return new Response(null, { status: 204 })
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse([INITIAL_ITEM], 200)
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return emptyPhase3
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500)
+    })
+
+    // Case 1: email_verification_required = false (password + checkbox only)
+    const view1 = renderMePage()
+    expect(await screen.findByText('贵州茅台')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '注销后将永久清除自选愿望单、投资日记时间胶囊、哨兵与 BYOK 配置，所有会话将立即失效。',
+      ),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '发送注销验证码' })).not.toBeInTheDocument()
+
+    const deleteBtn = screen.getByRole('button', { name: '永久注销账户' })
+    expect(deleteBtn).toBeDisabled()
+
+    fireEvent.click(screen.getByLabelText('我确认永久删除账户及全部关联数据'))
+    expect(deleteBtn).not.toBeDisabled()
+
+    // Wrong password shows inline error and keeps user signed in
+    fireEvent.change(screen.getByLabelText('注销确认密码'), { target: { value: 'wrong-pass' } })
+    fireEvent.click(deleteBtn)
+    expect(await screen.findByText('密码错误')).toBeInTheDocument()
+    expect(getAccessToken()).toBe('delete-session-token')
+
+    // Correct password deletes account, clears caches & access token, and redirects to /
+    fireEvent.change(screen.getByLabelText('注销确认密码'), { target: { value: 'right-pass' } })
+    fireEvent.click(deleteBtn)
+
+    expect(await screen.findByText('首页已跳转')).toBeInTheDocument()
+    expect(getAccessToken()).toBeNull()
+    expect(view1.client.getQueryData(queryKeys.auth.me())).toBeNull()
+    expect(view1.client.getQueryData(queryKeys.watchlist.list())).toBeUndefined()
+    expect(view1.client.getQueryData(queryKeys.ai.preferences())).toBeUndefined()
+    expect(deletePayloads[1]).toEqual({ password: 'right-pass' })
+    view1.unmount()
+
+    // Case 2: email_verification_required = true (requires 6-digit verification code)
+    authConfig = {
+      ...DEFAULT_AUTH_CONFIG,
+      email_verification_required: true,
+      smtp_configured: true,
+    }
+    const view2 = renderMePage()
+    expect(await screen.findByRole('button', { name: '发送注销验证码' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '发送注销验证码' }))
+    expect(await screen.findByText('验证码已发送至您的邮箱，请注意查收')).toBeInTheDocument()
+    expect(sendCodePayloads[0]).toEqual({ purpose: 'delete_account' })
+
+    fireEvent.change(screen.getByLabelText('注销确认密码'), { target: { value: 'right-pass' } })
+    fireEvent.click(screen.getByLabelText('我确认永久删除账户及全部关联数据'))
+    fireEvent.click(screen.getByRole('button', { name: '永久注销账户' }))
+    expect(await screen.findByText('请输入 6 位数字注销验证码')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('注销验证码'), { target: { value: '998877' } })
+    fireEvent.click(screen.getByRole('button', { name: '永久注销账户' }))
+
+    expect(await screen.findByText('首页已跳转')).toBeInTheDocument()
+    expect(getAccessToken()).toBeNull()
+    expect(view2.client.getQueryData(queryKeys.auth.me())).toBeNull()
+    expect(view2.client.getQueryData(queryKeys.watchlist.list())).toBeUndefined()
+    expect(deletePayloads[2]).toEqual({
+      password: 'right-pass',
+      verification_code: '998877',
+    })
+  })
+
+  it('blocks deleteAccount while auth/config is pending or errored, recovers on retry, and allows phone-only accounts to delete cleanly when email_verification_required is true', async () => {
+    let configCalls = 0
+    let resolvePendingConfig!: (res: Response) => void
+    const pendingConfig = new Promise<Response>((resolve) => {
+      resolvePendingConfig = resolve
+    })
+    const deletePayloads: unknown[] = []
+
+    const emailToken: TokenResponse = {
+      access_token: 'email-user-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+    const phoneOnlyUser: UserProfile = {
+      ...SAMPLE_USER,
+      id: '33333333-3333-3333-3333-333333333333',
+      email: null,
+      phone: '13800138000',
+      email_verified: false,
+      display_name: '手机用户',
+    }
+    const phoneToken: TokenResponse = {
+      access_token: 'phone-user-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: phoneOnlyUser,
+    }
+
+    let currentToken = emailToken
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return jsonResponse(currentToken, 200)
+      }
+      if (pathname === '/api/auth/config' && request.method === 'GET') {
+        configCalls += 1
+        if (configCalls === 1) {
+          return pendingConfig
+        }
+        return jsonResponse(
+          {
+            email_verification_required: true,
+            smtp_configured: true,
+            code_ttl_minutes: 10,
+            code_cooldown_seconds: 60,
+          } satisfies AuthConfigResponse,
+          200,
+        )
+      }
+      if (pathname === '/api/auth/me/delete' && request.method === 'POST') {
+        deletePayloads.push(JSON.parse(await request.clone().text()))
+        return new Response(null, { status: 204 })
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return jsonResponse([], 200)
+      }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return emptyPhase3
+      }
+      return jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500)
+    })
+
+    const view1 = renderMePage()
+    expect(await screen.findByText('正在加载邮箱安全配置...')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('我确认永久删除账户及全部关联数据'))
+    fireEvent.change(screen.getByLabelText('注销确认密码'), { target: { value: 'right-pass' } })
+    expect(screen.getByRole('button', { name: '永久注销账户' })).toBeDisabled()
+
+    resolvePendingConfig(jsonResponse({ detail: '配置服务异常' }, 503))
+
+    expect(
+      await screen.findByText('邮箱安全配置加载失败，暂无法确认注销验证要求'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '永久注销账户' })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: '重试加载配置' }))
+    expect(await screen.findByLabelText('注销验证码')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '永久注销账户' })).not.toBeDisabled()
+    view1.unmount()
+    setAccessToken(null)
+
+    currentToken = phoneToken
+    renderMePage()
+
+    expect(await screen.findByText('未绑定邮箱')).toBeInTheDocument()
+    expect(screen.getByText('当前账户未绑定邮箱地址，暂不支持邮箱验证码认证。')).toBeInTheDocument()
+    expect(screen.queryByLabelText('注销验证码')).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('注销确认密码'), { target: { value: 'phone-pass' } })
+    fireEvent.click(screen.getByLabelText('我确认永久删除账户及全部关联数据'))
+    fireEvent.click(screen.getByRole('button', { name: '永久注销账户' }))
+
+    expect(await screen.findByText('首页已跳转')).toBeInTheDocument()
+    expect(deletePayloads).toEqual([{ password: 'phone-pass' }])
+  })
+
+  it('enforces >128 password validation, handles 400/429/503 security errors, resets verifyCooldown on success, and applies wrap-anywhere + danger-zone-title classes', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+
+    let verifySendCalls = 0
+    let verifyConfirmCalls = 0
+    let changePasswordCalls = 0
+    let deleteCalls = 0
+    let userState: UserProfile = {
+      ...SAMPLE_USER,
+      email: 'very.long.investor.email.address.for.mobile.wrapping.check@subdomain.example.com',
+      display_name: '超长昵称'.repeat(16),
+      email_verified: false,
+    }
+
+    const sendResponse: EmailCodeSendResponse = {
+      sent: true,
+      expires_in_seconds: 600,
+      cooldown_seconds: 60,
+      message: '验证码已发送至您的邮箱，请注意查收',
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/refresh' && request.method === 'POST') {
+        return Promise.resolve(
+          jsonResponse(
+            {
+              access_token: 'security-token',
+              token_type: 'bearer',
+              expires_in: 900,
+              user: userState,
+            } satisfies TokenResponse,
+            200,
+          ),
+        )
+      }
+      if (pathname === '/api/auth/me/email-codes' && request.method === 'POST') {
+        verifySendCalls += 1
+        if (verifySendCalls === 1) {
+          return Promise.resolve(jsonResponse({ detail: '发送过于频繁，请 45 秒后再试' }, 429))
+        }
+        if (verifySendCalls === 2) {
+          return Promise.resolve(jsonResponse({ detail: 'SMTP 服务暂不可用' }, 503))
+        }
+        return Promise.resolve(jsonResponse(sendResponse, 200))
+      }
+      if (pathname === '/api/auth/verify-email' && request.method === 'POST') {
+        verifyConfirmCalls += 1
+        if (verifyConfirmCalls === 1) {
+          return Promise.resolve(jsonResponse({ detail: '验证码错误或已过期' }, 400))
+        }
+        userState = { ...userState, email_verified: true }
+        return Promise.resolve(jsonResponse(userState, 200))
+      }
+      if (pathname === '/api/auth/password/change' && request.method === 'POST') {
+        changePasswordCalls += 1
+        return Promise.resolve(jsonResponse({ detail: '密码修改服务暂不可用' }, 503))
+      }
+      if (pathname === '/api/auth/me/delete' && request.method === 'POST') {
+        deleteCalls += 1
+        return Promise.resolve(jsonResponse({ detail: '注销服务暂不可用' }, 503))
+      }
+      if (pathname === '/api/watchlist' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      if (pathname === '/api/journal' && request.method === 'GET') {
+        return Promise.resolve(jsonResponse([], 200))
+      }
+      const emptyPhase3 = handleEmptyPhase3Get(pathname, request.method)
+      if (emptyPhase3) {
+        return Promise.resolve(emptyPhase3)
+      }
+      return Promise.resolve(
+        jsonResponse({ detail: `Unhandled ${request.method} ${pathname}` }, 500),
+      )
+    })
+
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval')
+    renderMePage()
+
+    const emailNodes = await screen.findAllByText(
+      'very.long.investor.email.address.for.mobile.wrapping.check@subdomain.example.com',
+    )
+    expect(emailNodes.length).toBeGreaterThanOrEqual(2)
+    for (const node of emailNodes) {
+      expect(node).toHaveClass('wrap-anywhere')
+    }
+    const dangerToggle = screen.getByRole('button', { name: /永久注销账户（危险操作）/ })
+    expect(dangerToggle).toHaveClass('danger-zone-title')
+    expect(dangerToggle.closest('.danger-zone')).not.toBeNull()
+
+    const currentPwInput = screen.getByLabelText('当前密码')
+    const newPwInput = screen.getByLabelText('新密码')
+    const confirmPwInput = screen.getByLabelText('确认新密码')
+    const deletePwInput = screen.getByLabelText('注销确认密码')
+    expect(currentPwInput).toHaveAttribute('maxLength', '128')
+    expect(newPwInput).toHaveAttribute('maxLength', '128')
+    expect(confirmPwInput).toHaveAttribute('maxLength', '128')
+    expect(deletePwInput).toHaveAttribute('maxLength', '128')
+
+    fireEvent.change(currentPwInput, { target: { value: 'c'.repeat(129) } })
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    expect(await screen.findByText('当前密码长度不能超过 128 位')).toBeInTheDocument()
+
+    fireEvent.change(currentPwInput, { target: { value: 'validpass123' } })
+    fireEvent.change(newPwInput, { target: { value: 'n'.repeat(129) } })
+    fireEvent.change(confirmPwInput, { target: { value: 'n'.repeat(129) } })
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    expect(await screen.findByText('新密码长度不能超过 128 位')).toBeInTheDocument()
+    expect(changePasswordCalls).toBe(0)
+
+    fireEvent.change(newPwInput, { target: { value: 'newvalidpass123' } })
+    fireEvent.change(confirmPwInput, { target: { value: 'newvalidpass123' } })
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    expect(await screen.findByText('密码修改服务暂不可用')).toBeInTheDocument()
+    expect(changePasswordCalls).toBe(1)
+
+    fireEvent.click(screen.getByLabelText('我确认永久删除账户及全部关联数据'))
+    fireEvent.change(deletePwInput, { target: { value: 'd'.repeat(129) } })
+    fireEvent.click(screen.getByRole('button', { name: '永久注销账户' }))
+    expect(await screen.findByText('密码长度不能超过 128 位')).toBeInTheDocument()
+    expect(deleteCalls).toBe(0)
+
+    fireEvent.change(deletePwInput, { target: { value: 'validpass123' } })
+    fireEvent.click(screen.getByRole('button', { name: '永久注销账户' }))
+    expect(await screen.findByText('注销服务暂不可用')).toBeInTheDocument()
+    expect(deleteCalls).toBe(1)
+
+    fireEvent.click(screen.getByRole('button', { name: '发送验证邮件' }))
+    expect(await screen.findByText('发送过于频繁，请 45 秒后再试')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '发送验证邮件' }))
+    expect(await screen.findByText('SMTP 服务暂不可用')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '发送验证邮件' }))
+    expect(await screen.findByText('验证码已发送至您的邮箱，请注意查收')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '重新发送 (60s)' })).toBeDisabled()
+
+    fireEvent.change(screen.getByLabelText('邮箱验证码'), { target: { value: '000000' } })
+    fireEvent.click(screen.getByRole('button', { name: '验证邮箱' }))
+    expect(await screen.findByText('验证码错误或已过期')).toBeInTheDocument()
+
+    const clearsBeforeVerifySuccess = clearIntervalSpy.mock.calls.length
+    fireEvent.change(screen.getByLabelText('邮箱验证码'), { target: { value: '654321' } })
+    fireEvent.click(screen.getByRole('button', { name: '验证邮箱' }))
+    expect(await screen.findByText('邮箱验证成功')).toBeInTheDocument()
+    expect(clearIntervalSpy.mock.calls.length).toBeGreaterThan(clearsBeforeVerifySuccess)
   })
 })

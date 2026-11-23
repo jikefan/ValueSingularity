@@ -4,9 +4,14 @@ import type {
   AiPreferencesUpdate,
   AlertDeliveryItem,
   AlertScanSummary,
+  AuthConfigResponse,
+  AuthenticatedEmailCodeRequest,
   DecisionLedgerReport,
+  DeleteAccountRequest,
   DevilsAdvocateRequest,
   DevilsAdvocateResponse,
+  EmailCodeSendRequest,
+  EmailCodeSendResponse,
   Health,
   JournalAction,
   JournalCreate,
@@ -17,6 +22,8 @@ import type {
   MdaDiffResponse,
   NotificationPreferences,
   NotificationPreferencesUpdate,
+  PasswordChangeRequest,
+  PasswordResetConfirmRequest,
   RegisterRequest,
   StockCompareItem,
   StockDetail,
@@ -25,6 +32,8 @@ import type {
   TokenResponse,
   UserEventItem,
   UserProfile,
+  UserProfileUpdateRequest,
+  VerifyEmailRequest,
   WatchlistItem,
   WatchlistUpsert,
 } from '../types/api'
@@ -41,16 +50,25 @@ export class ApiError extends Error {
 }
 
 const PUBLIC_AUTH_PATHS = new Set([
+  '/api/auth/config',
+  '/api/auth/email-codes',
   '/api/auth/login',
+  '/api/auth/password/reset',
   '/api/auth/register',
   '/api/auth/refresh',
   '/api/auth/logout',
 ])
 
+type InflightChangePassword = {
+  epoch: number
+  promise: Promise<TokenResponse>
+}
+
 let accessToken: string | null = null
 let authEpoch = 0
 let inflightRefresh: Promise<TokenResponse | null> | null = null
 let inflightLogout: Promise<void> | null = null
+let inflightChangePassword: InflightChangePassword | null = null
 const authExpiredListeners = new Set<() => void>()
 
 export function getAccessToken(): string | null {
@@ -124,13 +142,26 @@ const client = createClient<paths>({
   fetch: fetchWithAuth,
 })
 
+async function waitForInflightChangePassword(epoch: number): Promise<TokenResponse | null> {
+  const pending = inflightChangePassword
+  if (!pending || pending.epoch !== epoch) {
+    return null
+  }
+  try {
+    return await pending.promise
+  } catch {
+    return null
+  }
+}
+
 async function executeRefresh(epoch: number): Promise<TokenResponse | null> {
   let result: ApiResult<TokenResponse>
   try {
     result = await client.POST('/api/auth/refresh')
   } catch (err) {
+    const changed = await waitForInflightChangePassword(epoch)
     if (authEpoch !== epoch) {
-      return null
+      return changed && accessToken === changed.access_token ? changed : null
     }
     if (err instanceof ApiError) {
       throw err
@@ -145,6 +176,10 @@ async function executeRefresh(epoch: number): Promise<TokenResponse | null> {
 
   const { data, error, response } = result
   if (response.status === 401 || response.status === 403) {
+    const changed = await waitForInflightChangePassword(epoch)
+    if (authEpoch !== epoch) {
+      return changed && accessToken === changed.access_token ? changed : null
+    }
     accessToken = null
     notifyAuthExpired()
     return null
@@ -240,6 +275,7 @@ export const api = {
     authEpoch += 1
     accessToken = data.access_token
     inflightRefresh = null
+    inflightLogout = null
     return data
   },
 
@@ -252,6 +288,7 @@ export const api = {
     authEpoch += 1
     accessToken = data.access_token
     inflightRefresh = null
+    inflightLogout = null
     return data
   },
 
@@ -277,6 +314,57 @@ export const api = {
 
   me: async (signal?: AbortSignal): Promise<UserProfile> =>
     unwrap(await client.GET('/api/auth/me', { signal })),
+
+  getAuthConfig: async (signal?: AbortSignal): Promise<AuthConfigResponse> =>
+    unwrap(await client.GET('/api/auth/config', { signal })),
+
+  sendPublicEmailCode: async (body: EmailCodeSendRequest): Promise<EmailCodeSendResponse> =>
+    unwrap(await client.POST('/api/auth/email-codes', { body })),
+
+  sendMyEmailCode: async (body: AuthenticatedEmailCodeRequest): Promise<EmailCodeSendResponse> =>
+    unwrap(await client.POST('/api/auth/me/email-codes', { body })),
+
+  verifyEmail: async (body: VerifyEmailRequest): Promise<UserProfile> =>
+    unwrap(await client.POST('/api/auth/verify-email', { body })),
+
+  resetPassword: async (body: PasswordResetConfirmRequest): Promise<void> => {
+    const { error, response } = await client.POST('/api/auth/password/reset', { body })
+    if (!response.ok) {
+      throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
+    }
+  },
+
+  changePassword: async (body: PasswordChangeRequest): Promise<TokenResponse> => {
+    const startEpoch = authEpoch
+    const promise = (async () => {
+      const data = unwrap(await client.POST('/api/auth/password/change', { body }))
+      if (authEpoch !== startEpoch) {
+        throw new ApiError('修改密码已取消', 0)
+      }
+      setAccessToken(data.access_token)
+      return data
+    })().finally(() => {
+      if (inflightChangePassword?.promise === promise) {
+        inflightChangePassword = null
+      }
+    })
+    inflightChangePassword = { epoch: startEpoch, promise }
+    return promise
+  },
+
+  updateProfile: async (body: UserProfileUpdateRequest): Promise<UserProfile> =>
+    unwrap(await client.PATCH('/api/auth/me', { body })),
+
+  deleteAccount: async (body: DeleteAccountRequest): Promise<void> => {
+    const startEpoch = authEpoch
+    const { error, response } = await client.POST('/api/auth/me/delete', { body })
+    if (!response.ok) {
+      throw new ApiError(extractErrorMessage(error, fallbackMessage(response)), response.status)
+    }
+    if (authEpoch === startEpoch) {
+      setAccessToken(null)
+    }
+  },
 
   marketOverview: async (signal?: AbortSignal): Promise<MarketOverview> =>
     unwrap(await client.GET('/api/market/overview', { signal })),

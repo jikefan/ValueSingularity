@@ -41,6 +41,7 @@ const SAMPLE_USER: UserProfile = {
   email: 'stock@example.com',
   phone: null,
   display_name: '护城河研究员',
+  email_verified: true,
   plan_tier: 'pro',
   plan_expires_at: null,
   created_at: '2026-11-22T00:00:00Z',

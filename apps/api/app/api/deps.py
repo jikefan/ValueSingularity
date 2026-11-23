@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.email.smtp import SmtpEmailAdapter, UnconfiguredEmailSender
 from app.adapters.llm.openai_compatible import OpenAiCompatibleLlmAdapter
 from app.adapters.notifications.webhook import HttpxWebhookNotifier
 from app.adapters.postgres.ai import PostgresAiRepository
@@ -17,16 +18,21 @@ from app.adapters.postgres.event import PostgresEventRepository
 from app.adapters.postgres.journal import PostgresJournalRepository
 from app.adapters.postgres.market import PostgresMarketRepository, PostgresStockMetaRepository
 from app.adapters.postgres.snapshot import PostgresStockSnapshotRepository
-from app.adapters.postgres.user import PostgresRefreshTokenRepository, PostgresUserRepository
+from app.adapters.postgres.user import (
+    PostgresEmailVerificationRepository,
+    PostgresRefreshTokenRepository,
+    PostgresUserRepository,
+)
 from app.adapters.postgres.watchlist import PostgresWatchlistRepository
 from app.adapters.security.password import Argon2PasswordHasher
 from app.adapters.security.token import JwtTokenCodec
 from app.db.session import DatabaseUnavailableError, check_db_health, dispose_db, get_db
+from app.domain.errors import EmailNotConfiguredError
 from app.domain.models import AuthenticatedUser
-from app.domain.ports import LlmCompanionPort, WebhookNotifierPort
+from app.domain.ports import EmailSenderPort, LlmCompanionPort, WebhookNotifierPort
 from app.services.ai import AiPartnerService
 from app.services.alerts import AlertScanService
-from app.services.auth import AuthService, InvalidAccessTokenError
+from app.services.auth import AuthService, InactiveUserError, InvalidAccessTokenError
 from app.services.event import EventService
 from app.services.journal import JournalService
 from app.services.market import MarketService
@@ -56,13 +62,45 @@ def get_token_codec() -> JwtTokenCodec:
     )
 
 
-def get_auth_service(session: DbSessionDep) -> AuthService:
+def get_email_sender() -> EmailSenderPort:
+    if settings.smtp_configured:
+        assert settings.smtp_host is not None
+        assert settings.smtp_username is not None
+        assert settings.smtp_password is not None
+        try:
+            return SmtpEmailAdapter(
+                host=settings.smtp_host,
+                port=settings.smtp_port,
+                username=settings.smtp_username,
+                password=settings.smtp_password,
+                from_email=settings.smtp_from_email or settings.smtp_username,
+                from_name=settings.smtp_from_name,
+                use_ssl=settings.smtp_use_ssl,
+                timeout_seconds=settings.smtp_timeout_seconds,
+            )
+        except EmailNotConfiguredError:
+            return UnconfiguredEmailSender()
+    return UnconfiguredEmailSender()
+
+
+EmailSenderDep = Annotated[EmailSenderPort, Depends(get_email_sender)]
+
+
+def get_auth_service(
+    session: DbSessionDep,
+    email_sender: EmailSenderDep,
+) -> AuthService:
     return AuthService(
         users=PostgresUserRepository(session),
         refresh_tokens=PostgresRefreshTokenRepository(session),
         hasher=get_password_hasher(),
         tokens=get_token_codec(),
         refresh_ttl_days=settings.refresh_token_ttl_days,
+        email_codes=PostgresEmailVerificationRepository(session),
+        email_sender=email_sender,
+        otp_secret=settings.jwt_secret,
+        require_email_verification=settings.effective_require_email_verification,
+        smtp_configured=settings.smtp_configured,
     )
 
 
@@ -159,6 +197,11 @@ async def get_current_user(
         )
     try:
         return await auth_service.authenticate_access_token(credentials.credentials)
+    except InactiveUserError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账号已停用",
+        ) from exc
     except InvalidAccessTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -185,6 +228,7 @@ __all__ = [
     "CurrentUserDep",
     "DatabaseUnavailableError",
     "DbSessionDep",
+    "EmailSenderDep",
     "EventServiceDep",
     "JournalServiceDep",
     "LlmCompanionDep",
@@ -198,6 +242,7 @@ __all__ = [
     "get_auth_service",
     "get_current_user",
     "get_db",
+    "get_email_sender",
     "get_event_service",
     "get_journal_service",
     "get_llm_companion",

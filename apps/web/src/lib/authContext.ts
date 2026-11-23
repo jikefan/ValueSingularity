@@ -1,5 +1,13 @@
 import { createContext, useContext } from 'react'
-import type { LoginRequest, RegisterRequest, UserProfile } from '../types/api'
+import type {
+  DeleteAccountRequest,
+  LoginRequest,
+  PasswordChangeRequest,
+  RegisterRequest,
+  UserProfile,
+  UserProfileUpdateRequest,
+  VerifyEmailRequest,
+} from '../types/api'
 
 export type AuthContextValue = {
   user: UserProfile | null
@@ -7,6 +15,10 @@ export type AuthContextValue = {
   login: (body: LoginRequest) => Promise<UserProfile>
   register: (body: RegisterRequest) => Promise<UserProfile>
   logout: () => Promise<void>
+  updateProfile: (body: UserProfileUpdateRequest) => Promise<UserProfile>
+  verifyEmail: (body: VerifyEmailRequest) => Promise<UserProfile>
+  changePassword: (body: PasswordChangeRequest) => Promise<UserProfile>
+  deleteAccount: (body: DeleteAccountRequest) => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)

@@ -562,6 +562,51 @@
         "title": "AnnualReturnPoint",
         "type": "object"
       },
+      "AuthConfigResponse": {
+        "properties": {
+          "code_cooldown_seconds": {
+            "default": 60,
+            "title": "Code Cooldown Seconds",
+            "type": "integer"
+          },
+          "code_ttl_minutes": {
+            "default": 10,
+            "title": "Code Ttl Minutes",
+            "type": "integer"
+          },
+          "email_verification_required": {
+            "title": "Email Verification Required",
+            "type": "boolean"
+          },
+          "smtp_configured": {
+            "title": "Smtp Configured",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "email_verification_required",
+          "smtp_configured"
+        ],
+        "title": "AuthConfigResponse",
+        "type": "object"
+      },
+      "AuthenticatedEmailCodeRequest": {
+        "properties": {
+          "purpose": {
+            "enum": [
+              "verify_email",
+              "delete_account"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "purpose"
+        ],
+        "title": "AuthenticatedEmailCodeRequest",
+        "type": "object"
+      },
       "CitedMetricFact": {
         "properties": {
           "label": {
@@ -802,6 +847,33 @@
         "title": "DecisionLedgerReport",
         "type": "object"
       },
+      "DeleteAccountRequest": {
+        "properties": {
+          "password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "verification_code": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Code"
+          }
+        },
+        "required": [
+          "password"
+        ],
+        "title": "DeleteAccountRequest",
+        "type": "object"
+      },
       "DevilsAdvocateChallenge": {
         "properties": {
           "cited_facts": {
@@ -954,6 +1026,59 @@
           "compliance_notice"
         ],
         "title": "DevilsAdvocateResponse",
+        "type": "object"
+      },
+      "EmailCodeSendRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "register",
+              "reset_password"
+            ],
+            "title": "Purpose",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "purpose"
+        ],
+        "title": "EmailCodeSendRequest",
+        "type": "object"
+      },
+      "EmailCodeSendResponse": {
+        "properties": {
+          "cooldown_seconds": {
+            "minimum": 1.0,
+            "title": "Cooldown Seconds",
+            "type": "integer"
+          },
+          "expires_in_seconds": {
+            "minimum": 1.0,
+            "title": "Expires In Seconds",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "sent": {
+            "default": true,
+            "title": "Sent",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "expires_in_seconds",
+          "cooldown_seconds",
+          "message"
+        ],
+        "title": "EmailCodeSendResponse",
         "type": "object"
       },
       "EmotionLedgerRow": {
@@ -2414,6 +2539,55 @@
         "title": "NotificationPreferencesUpdate",
         "type": "object"
       },
+      "PasswordChangeRequest": {
+        "properties": {
+          "current_password": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Current Password",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "New Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "title": "PasswordChangeRequest",
+        "type": "object"
+      },
+      "PasswordResetConfirmRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "new_password": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "New Password",
+            "type": "string"
+          },
+          "verification_code": {
+            "pattern": "^\\d{6}$",
+            "title": "Verification Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "verification_code",
+          "new_password"
+        ],
+        "title": "PasswordResetConfirmRequest",
+        "type": "object"
+      },
       "PeerBenchmarkMetrics": {
         "properties": {
           "as_of": {
@@ -2692,6 +2866,18 @@
             "minLength": 8,
             "title": "Password",
             "type": "string"
+          },
+          "verification_code": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verification Code"
           }
         },
         "required": [
@@ -3480,6 +3666,11 @@
             ],
             "title": "Email"
           },
+          "email_verified": {
+            "default": false,
+            "title": "Email Verified",
+            "type": "boolean"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -3521,6 +3712,21 @@
           "created_at"
         ],
         "title": "UserProfile",
+        "type": "object"
+      },
+      "UserProfileUpdateRequest": {
+        "properties": {
+          "display_name": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "UserProfileUpdateRequest",
         "type": "object"
       },
       "ValidationError": {
@@ -3762,6 +3968,20 @@
           "history"
         ],
         "title": "ValuationSection",
+        "type": "object"
+      },
+      "VerifyEmailRequest": {
+        "properties": {
+          "verification_code": {
+            "pattern": "^\\d{6}$",
+            "title": "Verification Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verification_code"
+        ],
+        "title": "VerifyEmailRequest",
         "type": "object"
       },
       "WatchlistItem": {
@@ -4270,6 +4490,68 @@
         ]
       }
     },
+    "/api/auth/config": {
+      "get": {
+        "operationId": "auth_config",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Config",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/email-codes": {
+      "post": {
+        "operationId": "auth_send_email_code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCodeSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCodeSendResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Send Email Code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "auth_login",
@@ -4349,6 +4631,215 @@
         "tags": [
           "auth"
         ]
+      },
+      "patch": {
+        "operationId": "auth_update_me",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me/delete": {
+      "post": {
+        "operationId": "auth_delete_me",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me/email-codes": {
+      "post": {
+        "operationId": "auth_send_my_email_code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthenticatedEmailCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailCodeSendResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Send My Email Code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/password/change": {
+      "post": {
+        "operationId": "auth_change_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/password/reset": {
+      "post": {
+        "operationId": "auth_reset_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordResetConfirmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Reset Password",
+        "tags": [
+          "auth"
+        ]
       }
     },
     "/api/auth/refresh": {
@@ -4408,6 +4899,52 @@
           }
         },
         "summary": "Register",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/verify-email": {
+      "post": {
+        "operationId": "auth_verify_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfile"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Verify Email",
         "tags": [
           "auth"
         ]

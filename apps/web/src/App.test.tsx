@@ -176,8 +176,8 @@ describe('App global stock search', () => {
     expect(await screen.findByRole('heading', { name: '贵州茅台' })).toBeInTheDocument()
   })
 
-  it('renders TopNav cleanly without search props or dead persona placeholder', () => {
-    render(
+  it('renders TopNav cleanly without search props or dead persona placeholder and truncates long display names', () => {
+    const guestView = render(
       <MemoryRouter>
         <TopNav />
       </MemoryRouter>,
@@ -186,6 +186,27 @@ describe('App global stock search', () => {
     expect(screen.getByLabelText('搜索股票')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: '登录 / 注册' })).toBeInTheDocument()
     expect(screen.queryByText('中性分析师')).not.toBeInTheDocument()
+    guestView.unmount()
+
+    render(
+      <MemoryRouter>
+        <TopNav
+          user={{
+            id: '11111111-1111-1111-1111-111111111111',
+            email: 'investor@example.com',
+            phone: null,
+            display_name: '超长价值投资者昵称'.repeat(8),
+            email_verified: true,
+            plan_tier: 'pro',
+            plan_expires_at: null,
+            created_at: '2026-11-22T00:00:00Z',
+          }}
+        />
+      </MemoryRouter>,
+    )
+
+    const nameBadge = screen.getByText('超长价值投资者昵称'.repeat(8))
+    expect(nameBadge).toHaveClass('nav-user-name')
   })
 
   it('closes dropdown on outside click, handles empty/error states, and navigates on Enter via first result', async () => {

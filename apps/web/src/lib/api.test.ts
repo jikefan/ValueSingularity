@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
   AiPreferences,
+  AuthConfigResponse,
   DevilsAdvocateResponse,
+  EmailCodeSendResponse,
   MdaDiffResponse,
   TokenResponse,
   UserProfile,
@@ -22,6 +24,7 @@ const SAMPLE_USER: UserProfile = {
   email: 'investor@example.com',
   phone: null,
   display_name: '价值猎手',
+  email_verified: true,
   plan_tier: 'pro',
   plan_expires_at: null,
   created_at: '2026-11-22T00:00:00Z',
@@ -824,5 +827,451 @@ describe('api auth and single-flight refresh middleware', () => {
     refreshStatus = 401
     await expect(api.listWatchlist()).rejects.toMatchObject({ status: 401 })
     expect(getAuthEpoch()).toBeGreaterThan(e5)
+  })
+
+  it('calls auth closure endpoints (config, email codes, verify, reset, profile) without triggering refresh on public auth errors', async () => {
+    setAccessToken('session-token')
+    const calls: Array<{ method: string; url: string; body: unknown; auth: string | null }> = []
+    const authConfig: AuthConfigResponse = {
+      email_verification_required: true,
+      smtp_configured: true,
+      code_ttl_minutes: 10,
+      code_cooldown_seconds: 60,
+    }
+    const sendCodeResponse: EmailCodeSendResponse = {
+      sent: true,
+      expires_in_seconds: 600,
+      cooldown_seconds: 60,
+      message: '验证码已发送至您的邮箱，请注意查收',
+    }
+    const updatedUser: UserProfile = {
+      ...SAMPLE_USER,
+      display_name: '安全复盘者',
+      email_verified: true,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+      const rawBody =
+        request.method === 'POST' || request.method === 'PATCH' ? await request.clone().text() : ''
+      const parsedBody: unknown = rawBody ? JSON.parse(rawBody) : null
+      calls.push({
+        method: request.method,
+        url: url.pathname,
+        body: parsedBody,
+        auth: request.headers.get('Authorization'),
+      })
+
+      if (url.pathname === '/api/auth/config' && request.method === 'GET') {
+        return jsonResponse(authConfig, 200)
+      }
+      if (url.pathname === '/api/auth/email-codes' && request.method === 'POST') {
+        return jsonResponse(sendCodeResponse, 200)
+      }
+      if (url.pathname === '/api/auth/me/email-codes' && request.method === 'POST') {
+        return jsonResponse(sendCodeResponse, 200)
+      }
+      if (url.pathname === '/api/auth/verify-email' && request.method === 'POST') {
+        return jsonResponse(updatedUser, 200)
+      }
+      if (url.pathname === '/api/auth/password/reset' && request.method === 'POST') {
+        return jsonResponse({ detail: '验证码错误或已过期' }, 401)
+      }
+      if (url.pathname === '/api/auth/me' && request.method === 'PATCH') {
+        return jsonResponse(updatedUser, 200)
+      }
+      return jsonResponse({ detail: 'unexpected' }, 500)
+    })
+
+    expect(await api.getAuthConfig()).toEqual(authConfig)
+    expect(
+      await api.sendPublicEmailCode({ email: 'investor@example.com', purpose: 'register' }),
+    ).toEqual(sendCodeResponse)
+    expect(await api.sendMyEmailCode({ purpose: 'verify_email' })).toEqual(sendCodeResponse)
+    expect(await api.verifyEmail({ verification_code: '123456' })).toEqual(updatedUser)
+    expect(await api.updateProfile({ display_name: '安全复盘者' })).toEqual(updatedUser)
+    await expect(
+      api.resetPassword({
+        email: 'investor@example.com',
+        verification_code: '000000',
+        new_password: 'newpassword123',
+      }),
+    ).rejects.toMatchObject({ status: 401, message: '验证码错误或已过期' })
+
+    expect(calls).toEqual([
+      { method: 'GET', url: '/api/auth/config', body: null, auth: null },
+      {
+        method: 'POST',
+        url: '/api/auth/email-codes',
+        body: { email: 'investor@example.com', purpose: 'register' },
+        auth: null,
+      },
+      {
+        method: 'POST',
+        url: '/api/auth/me/email-codes',
+        body: { purpose: 'verify_email' },
+        auth: 'Bearer session-token',
+      },
+      {
+        method: 'POST',
+        url: '/api/auth/verify-email',
+        body: { verification_code: '123456' },
+        auth: 'Bearer session-token',
+      },
+      {
+        method: 'PATCH',
+        url: '/api/auth/me',
+        body: { display_name: '安全复盘者' },
+        auth: 'Bearer session-token',
+      },
+      {
+        method: 'POST',
+        url: '/api/auth/password/reset',
+        body: {
+          email: 'investor@example.com',
+          verification_code: '000000',
+          new_password: 'newpassword123',
+        },
+        auth: null,
+      },
+    ])
+  })
+
+  it('rotates accessToken on changePassword, cancels if logout races, and clears accessToken only on OK deleteAccount', async () => {
+    setAccessToken('old-token')
+    const rotatedTokenResponse: TokenResponse = {
+      access_token: 'rotated-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+
+      if (pathname === '/api/auth/password/change' && request.method === 'POST') {
+        return jsonResponse(rotatedTokenResponse, 200)
+      }
+      if (pathname === '/api/auth/me/delete' && request.method === 'POST') {
+        const parsed: unknown = JSON.parse(await request.clone().text())
+        if (typeof parsed === 'object' && parsed !== null && 'password' in parsed) {
+          if (parsed.password === 'wrong-password') {
+            return jsonResponse({ detail: '密码错误' }, 400)
+          }
+        }
+        return new Response(null, { status: 204 })
+      }
+      if (pathname === '/api/auth/logout') {
+        return new Response(null, { status: 204 })
+      }
+      return jsonResponse({ detail: 'unexpected' }, 500)
+    })
+
+    const epochBeforeChange = getAuthEpoch()
+    const changed = await api.changePassword({
+      current_password: 'old-password',
+      new_password: 'new-password-123',
+    })
+    expect(changed.access_token).toBe('rotated-token')
+    expect(getAccessToken()).toBe('rotated-token')
+    expect(getAuthEpoch()).toBeGreaterThan(epochBeforeChange)
+
+    await expect(api.deleteAccount({ password: 'wrong-password' })).rejects.toMatchObject({
+      status: 400,
+      message: '密码错误',
+    })
+    expect(getAccessToken()).toBe('rotated-token')
+
+    const epochBeforeDelete = getAuthEpoch()
+    await api.deleteAccount({ password: 'new-password-123' })
+    expect(getAccessToken()).toBeNull()
+    expect(getAuthEpoch()).toBeGreaterThan(epochBeforeDelete)
+
+    // Race check: logout while changePassword is in flight must never resurrect token.
+    setAccessToken('active-before-race')
+    const changeStarted = createDeferred<void>()
+    const changeGate = createDeferred<Response>()
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+      if (pathname === '/api/auth/password/change') {
+        changeStarted.resolve()
+        return changeGate.promise
+      }
+      if (pathname === '/api/auth/logout') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    const pendingChange = api.changePassword({
+      current_password: 'new-password-123',
+      new_password: 'newer-password-456',
+    })
+    await changeStarted.promise
+    await api.logout()
+    changeGate.resolve(jsonResponse(rotatedTokenResponse, 200))
+
+    await expect(pendingChange).rejects.toMatchObject({ status: 0, message: '修改密码已取消' })
+    expect(getAccessToken()).toBeNull()
+  })
+
+  it('does not wipe new session accessToken when slow deleteAccount finishes after relogin', async () => {
+    setAccessToken('old-user-token')
+    const deleteStarted = createDeferred<void>()
+    const deleteGate = createDeferred<Response>()
+
+    const newLoginResponse: TokenResponse = {
+      access_token: 'new-user-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+      if (pathname === '/api/auth/me/delete') {
+        deleteStarted.resolve()
+        return deleteGate.promise
+      }
+      if (pathname === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(newLoginResponse, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    const pendingDelete = api.deleteAccount({ password: 'old-password' })
+    await deleteStarted.promise
+
+    await api.login({ email: 'investor@example.com', password: 'password123' })
+    expect(getAccessToken()).toBe('new-user-token')
+
+    deleteGate.resolve(new Response(null, { status: 204 }))
+    await pendingDelete
+
+    expect(getAccessToken()).toBe('new-user-token')
+  })
+
+  it('clears inflightLogout on login and register so slow logout never blocks subsequent refreshes', async () => {
+    setAccessToken('initial-token')
+    const logoutGate1 = createDeferred<Response>()
+    const logoutGate2 = createDeferred<Response>()
+    let logoutCount = 0
+    let refreshCount = 0
+
+    const reloginToken: TokenResponse = {
+      access_token: 'relogin-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+    const refreshedToken1: TokenResponse = {
+      access_token: 'refreshed-after-login',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+    const registerToken: TokenResponse = {
+      access_token: 'register-token',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+    const refreshedToken2: TokenResponse = {
+      access_token: 'refreshed-after-register',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+      const auth = request.headers.get('Authorization')
+
+      if (pathname === '/api/auth/logout') {
+        logoutCount += 1
+        return logoutCount === 1 ? logoutGate1.promise : logoutGate2.promise
+      }
+      if (pathname === '/api/auth/login') {
+        return Promise.resolve(jsonResponse(reloginToken, 200))
+      }
+      if (pathname === '/api/auth/register') {
+        return Promise.resolve(jsonResponse(registerToken, 201))
+      }
+      if (pathname === '/api/auth/refresh') {
+        refreshCount += 1
+        return Promise.resolve(
+          jsonResponse(refreshCount === 1 ? refreshedToken1 : refreshedToken2, 200),
+        )
+      }
+      if (pathname === '/api/watchlist') {
+        if (auth === 'Bearer relogin-token' || auth === 'Bearer register-token') {
+          return Promise.resolve(jsonResponse({ detail: '登录凭证已过期' }, 401))
+        }
+        if (auth === 'Bearer refreshed-after-login' || auth === 'Bearer refreshed-after-register') {
+          return Promise.resolve(jsonResponse([SAMPLE_ITEM], 200))
+        }
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    const slowLogout1 = api.logout()
+    await api.login({ email: 'investor@example.com', password: 'password123' })
+    expect(getAccessToken()).toBe('relogin-token')
+
+    const itemsAfterLogin = await api.listWatchlist()
+    expect(itemsAfterLogin).toEqual([SAMPLE_ITEM])
+    expect(refreshCount).toBe(1)
+    expect(getAccessToken()).toBe('refreshed-after-login')
+
+    logoutGate1.resolve(new Response(null, { status: 204 }))
+    await slowLogout1
+    expect(getAccessToken()).toBe('refreshed-after-login')
+
+    const slowLogout2 = api.logout()
+    await api.register({
+      email: 'investor@example.com',
+      password: 'password123',
+      display_name: '价值猎手',
+    })
+    expect(getAccessToken()).toBe('register-token')
+
+    const itemsAfterRegister = await api.listWatchlist()
+    expect(itemsAfterRegister).toEqual([SAMPLE_ITEM])
+    expect(refreshCount).toBe(2)
+    expect(getAccessToken()).toBe('refreshed-after-register')
+
+    logoutGate2.resolve(new Response(null, { status: 204 }))
+    await slowLogout2
+    expect(getAccessToken()).toBe('refreshed-after-register')
+  })
+
+  it('prevents concurrent 401 refresh from firing authExpired or wiping rotated token during changePassword, while expiring if changePassword fails', async () => {
+    setAccessToken('old-token-a')
+    const expiredListener = vi.fn()
+    const unsubscribe = subscribeAuthExpired(expiredListener)
+
+    const changeGateA = createDeferred<Response>()
+    const refreshStartedA = createDeferred<void>()
+    const refreshGateA = createDeferred<Response>()
+
+    const rotatedResponseA: TokenResponse = {
+      access_token: 'rotated-pw-token-a',
+      token_type: 'bearer',
+      expires_in: 900,
+      user: SAMPLE_USER,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
+      if (pathname === '/api/auth/password/change') {
+        return changeGateA.promise
+      }
+      if (pathname === '/api/auth/refresh') {
+        refreshStartedA.resolve()
+        return refreshGateA.promise
+      }
+      return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+    })
+
+    try {
+      const pendingChangeA = api.changePassword({
+        current_password: 'old-password',
+        new_password: 'new-password-123',
+      })
+      const pendingRefreshA = api.refreshSession()
+      await refreshStartedA.promise
+
+      refreshGateA.resolve(jsonResponse({ detail: 'Refresh token 已吊销' }, 401))
+      await Promise.resolve()
+      changeGateA.resolve(jsonResponse(rotatedResponseA, 200))
+
+      const [changeResA, refreshResA] = await Promise.all([pendingChangeA, pendingRefreshA])
+      expect(changeResA.access_token).toBe('rotated-pw-token-a')
+      expect(refreshResA?.access_token ?? 'rotated-pw-token-a').toBe('rotated-pw-token-a')
+      expect(getAccessToken()).toBe('rotated-pw-token-a')
+      expect(expiredListener).not.toHaveBeenCalled()
+
+      setAccessToken('old-token-b')
+      const refreshStartedB = createDeferred<void>()
+      const refreshGateB = createDeferred<Response>()
+      const changeGateB = createDeferred<Response>()
+      const rotatedResponseB: TokenResponse = {
+        access_token: 'rotated-pw-token-b',
+        token_type: 'bearer',
+        expires_in: 900,
+        user: SAMPLE_USER,
+      }
+
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const request = asRequest(input)
+        const pathname = new URL(request.url).pathname
+        if (pathname === '/api/auth/refresh') {
+          refreshStartedB.resolve()
+          return refreshGateB.promise
+        }
+        if (pathname === '/api/auth/password/change') {
+          return changeGateB.promise
+        }
+        return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+      })
+
+      const pendingRefreshB = api.refreshSession()
+      await refreshStartedB.promise
+      const pendingChangeB = api.changePassword({
+        current_password: 'old-password',
+        new_password: 'new-password-456',
+      })
+
+      refreshGateB.resolve(jsonResponse({ detail: 'Refresh token 已吊销' }, 401))
+      await Promise.resolve()
+      changeGateB.resolve(jsonResponse(rotatedResponseB, 200))
+
+      await Promise.all([pendingRefreshB, pendingChangeB])
+      expect(getAccessToken()).toBe('rotated-pw-token-b')
+      expect(expiredListener).not.toHaveBeenCalled()
+
+      setAccessToken('old-token-c')
+      const refreshStartedC = createDeferred<void>()
+      const refreshGateC = createDeferred<Response>()
+      const changeGateC = createDeferred<Response>()
+
+      vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+        const request = asRequest(input)
+        const pathname = new URL(request.url).pathname
+        if (pathname === '/api/auth/refresh') {
+          refreshStartedC.resolve()
+          return refreshGateC.promise
+        }
+        if (pathname === '/api/auth/password/change') {
+          return changeGateC.promise
+        }
+        return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+      })
+
+      const pendingChangeC = api.changePassword({
+        current_password: 'wrong-password',
+        new_password: 'new-password-789',
+      })
+      const pendingRefreshC = api.refreshSession()
+      await refreshStartedC.promise
+
+      refreshGateC.resolve(jsonResponse({ detail: '会话已失效' }, 401))
+      await Promise.resolve()
+      changeGateC.resolve(jsonResponse({ detail: '当前密码错误' }, 400))
+
+      await expect(pendingChangeC).rejects.toMatchObject({ status: 400, message: '当前密码错误' })
+      expect(await pendingRefreshC).toBeNull()
+      expect(getAccessToken()).toBeNull()
+      expect(expiredListener).toHaveBeenCalledTimes(1)
+    } finally {
+      unsubscribe()
+    }
   })
 })
