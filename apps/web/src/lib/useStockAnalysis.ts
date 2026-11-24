@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { StockScreenerFilters } from '../types/api'
 import { ApiError, api } from './api'
 import { queryKeys } from './queryKeys'
@@ -86,5 +86,19 @@ export function useStockScreener(filters: StockScreenerFilters = {}, enabled = t
     queryFn: ({ signal }) => api.getStockScreener(filters, signal),
     enabled,
     placeholderData: keepPreviousData,
+  })
+}
+
+export function useForceSyncStockSnapshot(code: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => api.syncStockSnapshot(code, undefined, { force: true }),
+    onSuccess: (synced) => {
+      queryClient.setQueryData(queryKeys.stocks.snapshot(code), synced)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.stocks.detail(code) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.stocks.screenerPrefix() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.market.discovery() })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.stocks.comparePrefix() })
+    },
   })
 }

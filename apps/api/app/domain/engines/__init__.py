@@ -12,6 +12,8 @@ from app.domain.engines.ai_partner import (
 )
 from app.domain.engines.ct_scanner import scan_financial_ct
 from app.domain.engines.decision_ledger import build_decision_ledger
+from app.domain.engines.discovery import build_market_discovery_board
+from app.domain.engines.forensics import analyze_stock_forensics
 from app.domain.engines.mda_diff import (
     compute_accounting_metric_shifts,
     compute_text_mda_diff,
@@ -41,8 +43,10 @@ __all__ = [
     "SUPPORTED_CANONICAL_METRICS",
     "SentinelEvaluationResult",
     "analyze_shareholder_return",
+    "analyze_stock_forensics",
     "build_decision_ledger",
     "build_deterministic_challenges",
+    "build_market_discovery_board",
     "build_stock_snapshot",
     "canonicalize_metric",
     "collect_allowed_snapshot_numbers",

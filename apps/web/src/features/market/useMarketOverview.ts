@@ -8,3 +8,11 @@ export function useMarketOverview() {
     queryFn: ({ signal }) => api.marketOverview(signal),
   })
 }
+
+export function useMarketDiscovery(enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.market.discovery(),
+    queryFn: ({ signal }) => api.getMarketDiscovery(signal),
+    enabled,
+  })
+}

@@ -6,6 +6,7 @@ import { GlossaryLabel } from '../../components/ui/InfoHint'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { api } from '../../lib/api'
+import { getEarningsQualityBadgeMeta } from '../../lib/earningsQuality'
 import { formatNum, formatPct, formatSignedPct, formatYi, qualityTone } from '../../lib/format'
 import type { GlossaryKey } from '../../lib/glossary'
 import { queryKeys } from '../../lib/queryKeys'
@@ -46,50 +47,14 @@ const COMPARE_PRESETS: readonly ComparePreset[] = [
 const MAX_COMPARE_CODES = 5
 const CODE_PATTERN = /^[0-9]{6}$/
 
-const IT_BLOCK_KEYWORDS = ['软件', '信息', 'IT', '科技', '计算机', '互联网', '数据', '网络', '电子']
-const FINANCIAL_INDUSTRY_KEYWORDS = [
-  '银行',
-  '非银金融',
-  '金融',
-  '金融业',
-  '银行业',
-  '农商行',
-  '保险',
-  '证券',
-  '资本市场',
-  '信托',
-  '多元金融',
-  '期货',
-]
-const FINANCIAL_NAME_SUFFIX_RE = /(银行|农商行|人寿|财险|再保险|信托|期货|证券)$/
-
-function containsItKeyword(text: string): boolean {
-  const upper = text.toUpperCase()
-  return IT_BLOCK_KEYWORDS.some((kw) => upper.includes(kw))
-}
+const FINANCIAL_SW1_INDUSTRIES = new Set(['银行', '非银金融', '保险', '证券', '多元金融'])
 
 function isFinancialCompareItem(item: StockCompareItem): boolean {
-  const candidates = [
-    item.metrics?.industry_sw1 ?? '',
-    item.meta.industry_sw1 ?? '',
-    item.meta.industry_sw2 ?? '',
-  ]
-    .map((val) => val.trim())
-    .filter(Boolean)
-
-  for (const text of candidates) {
-    if (!containsItKeyword(text) && FINANCIAL_INDUSTRY_KEYWORDS.some((kw) => text.includes(kw))) {
-      return true
-    }
+  if (item.metrics) {
+    return item.metrics.is_financial
   }
-  if (candidates.length > 0) {
-    return false
-  }
-  const name = item.meta.name.trim()
-  if (!name || containsItKeyword(name)) {
-    return false
-  }
-  return FINANCIAL_NAME_SUFFIX_RE.test(name) || name.includes('保险')
+  const sw1 = item.meta.industry_sw1?.trim() ?? ''
+  return FINANCIAL_SW1_INDUSTRIES.has(sw1)
 }
 
 function renderExemptibleMetric(
@@ -256,6 +221,54 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
         (value) => (
           <span className={`mono ${qualityTone(value, true)}`}>{formatSignedPct(value, 2)}</span>
         ),
+        { forceExemptOnFinancial: true },
+      ),
+  },
+  {
+    key: 'earnings_quality',
+    label: '盈利成色标签',
+    glossaryKey: 'forensic_profit_truth',
+    render: (item) =>
+      item.metrics?.earnings_quality_label ? (
+        <span
+          className={
+            getEarningsQualityBadgeMeta(
+              item.metrics.earnings_quality_tag,
+              item.metrics.earnings_quality_label,
+            ).badgeClass
+          }
+        >
+          {item.metrics.earnings_quality_label}
+        </span>
+      ) : (
+        '—'
+      ),
+  },
+  {
+    key: 'invest_profit_share_3y_pct',
+    label: '近3年投资收益占比',
+    glossaryKey: 'invest_profit_share',
+    render: (item) =>
+      renderExemptibleMetric(
+        item,
+        item.metrics?.invest_profit_share_3y_pct,
+        (value) => {
+          const isHigh =
+            value !== null && value !== undefined && Number.isFinite(value) && value >= 30
+          return <span className={isHigh ? 'mono tone-bad' : 'mono'}>{formatPct(value, 1)}</span>
+        },
+        { forceExemptOnFinancial: true },
+      ),
+  },
+  {
+    key: 'investment_assets_ratio_pct',
+    label: '表内投资类资产占比',
+    glossaryKey: 'investment_assets_ratio',
+    render: (item) =>
+      renderExemptibleMetric(
+        item,
+        item.metrics?.investment_assets_ratio_pct,
+        (value) => <span className="mono">{formatPct(value, 1)}</span>,
         { forceExemptOnFinancial: true },
       ),
   },

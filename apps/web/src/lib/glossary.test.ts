@@ -127,13 +127,51 @@ const REQUIRED_GLOSSARY_KEYS: readonly GlossaryKey[] = [
   'net_cash_yield',
 ]
 
+const REQUIRED_FOUR_FIELD_KEYS = [
+  // Forensics & Profit Truth
+  'forensic_profit_truth',
+  'core_operating_profit',
+  'invest_and_fair_value',
+  'invest_profit_share',
+  'subsidy_and_oneoff',
+  'investment_assets_ratio',
+  'dupont_attribution',
+  'asset_turnover',
+  'equity_multiplier',
+  'capital_allocation',
+  'interest_burden',
+  'ocf_to_core_profit',
+  // Cross-Asset Discovery & Regime
+  'macro_discovery_board',
+  'us_2y_fed_anchor',
+  'us_10y_real_yield',
+  'us_10y_2y_spread',
+  'us_cn_10y_spread',
+  'gold_fed_signal',
+  'gold_au9999_sge',
+  'style_rotation_signal',
+  'dividend_bond_spread',
+  'earnings_quality_contrast',
+  'deep_value_fortress',
+  'quality_filter',
+] as const satisfies readonly GlossaryKey[]
+
 describe('GLOSSARY', () => {
   it('defines non-empty label, summary, and valid optional formula/reading for every entry', () => {
     const keys = Object.keys(GLOSSARY) as GlossaryKey[]
-    expect(keys.length).toBeGreaterThanOrEqual(REQUIRED_GLOSSARY_KEYS.length)
+    const allRequired = [...REQUIRED_GLOSSARY_KEYS, ...REQUIRED_FOUR_FIELD_KEYS]
+    expect(keys.length).toBeGreaterThanOrEqual(allRequired.length)
 
-    for (const requiredKey of REQUIRED_GLOSSARY_KEYS) {
+    for (const requiredKey of allRequired) {
       expect(GLOSSARY[requiredKey]).toBeDefined()
+    }
+
+    for (const fourFieldKey of REQUIRED_FOUR_FIELD_KEYS) {
+      const entry = GLOSSARY[fourFieldKey]
+      expect(entry.label.trim().length, `${fourFieldKey}.label`).toBeGreaterThan(0)
+      expect(entry.summary.trim().length, `${fourFieldKey}.summary`).toBeGreaterThan(0)
+      expect(entry.formula.trim().length, `${fourFieldKey}.formula`).toBeGreaterThan(0)
+      expect(entry.reading.trim().length, `${fourFieldKey}.reading`).toBeGreaterThan(0)
     }
 
     for (const key of keys) {

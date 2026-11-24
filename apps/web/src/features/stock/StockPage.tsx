@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
-import { GlossaryLabel } from '../../components/ui/InfoHint'
+import { GlossaryLabel, InfoHint } from '../../components/ui/InfoHint'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { ApiError, api } from '../../lib/api'
@@ -14,6 +14,7 @@ import { useAddWatchlist, useRemoveWatchlist, useWatchlist } from '../../lib/use
 import type { StockDetail, StockScreenerItem, StockSnapshotPayload } from '../../types/api'
 import { StockCtTab } from './StockCtTab'
 import { StockDecisionTab } from './StockDecisionTab'
+import { StockForensicsTab } from './StockForensicsTab'
 import { StockGovernanceTab } from './StockGovernanceTab'
 import { StockMdaDiffPanel } from './StockMdaDiffPanel'
 import {
@@ -28,11 +29,14 @@ import {
   computeFinancialPbRoeMetrics,
   deriveStockVerdict,
   formatStockDossierMarkdown,
+  getEarningsQualityBadgeMeta,
+  getForensicCautionAlertState,
   isFinancialSnapshot,
 } from './stockHelpers'
 
 const TABS = [
   { key: 'overview', label: '公司画像' },
+  { key: 'forensics', label: '利润真相' },
   { key: 'financials', label: '财务分析' },
   { key: 'moat', label: '护城河' },
   { key: 'valuation', label: '估值' },
@@ -46,10 +50,19 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key']
 type SnapshotTabKey = Exclude<TabKey, 'decision'>
 
-function renderSnapshotTab(tab: SnapshotTabKey, snapshot: StockSnapshotPayload) {
+function renderSnapshotTab(
+  tab: SnapshotTabKey,
+  snapshot: StockSnapshotPayload,
+  stockCode: string,
+  onSwitchTab: (nextTab: TabKey) => void,
+) {
   switch (tab) {
     case 'overview':
       return <StockOverviewTab snapshot={snapshot} />
+    case 'forensics':
+      return (
+        <StockForensicsTab snapshot={snapshot} stockCode={stockCode} onSwitchTab={onSwitchTab} />
+      )
     case 'financials':
       return <StockFinancialsTab snapshot={snapshot} />
     case 'moat':
@@ -179,6 +192,18 @@ function StockPageContent({ code }: { code: string }) {
     () => (snapshot ? computeFinancialPbRoeMetrics(snapshot) : null),
     [snapshot],
   )
+  const forensics = snapshot?.forensics ?? null
+  const forensicsBadgeMeta = useMemo(
+    () =>
+      forensics
+        ? getEarningsQualityBadgeMeta(
+            forensics.earnings_quality_tag,
+            forensics.earnings_quality_label,
+          )
+        : null,
+    [forensics],
+  )
+  const forensicAlert = useMemo(() => getForensicCautionAlertState(forensics), [forensics])
 
   if (stockQuery.isPending || (!stockQuery.data && stockQuery.isFetching)) {
     return (
@@ -347,7 +372,7 @@ function StockPageContent({ code }: { code: string }) {
         </Card>
       )
     }
-    return renderSnapshotTab(activeTab, snapshot)
+    return renderSnapshotTab(activeTab, snapshot, currentStock.code, setActiveTab)
   }
 
   return (
@@ -377,6 +402,9 @@ function StockPageContent({ code }: { code: string }) {
                     : '基础元数据'}
               </Tag>
               {isFinancial ? <Tag color="blue">金融业专项口径</Tag> : null}
+              {forensicsBadgeMeta ? (
+                <span className={forensicsBadgeMeta.badgeClass}>{forensicsBadgeMeta.label}</span>
+              ) : null}
             </div>
             <div className="small muted">
               {snapshot
@@ -478,6 +506,38 @@ function StockPageContent({ code }: { code: string }) {
               </span>
               <span className="small soft">{verdict.summary}</span>
             </div>
+
+            {forensicAlert.show && forensics ? (
+              <div
+                className={
+                  forensicAlert.highSeverity
+                    ? 'discovery-caution-strip discovery-caution-strip-red'
+                    : 'discovery-caution-strip'
+                }
+                role="note"
+                aria-label="利润成色鉴真提示"
+              >
+                <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
+                  <div className="stack" style={{ gap: 4, flex: '1 1 260px' }}>
+                    <span className="label-with-hint">
+                      <strong>
+                        利润成色警示 ·{' '}
+                        {forensicsBadgeMeta?.label ?? forensics.earnings_quality_label}
+                      </strong>
+                      <InfoHint term="forensic_profit_truth" />
+                    </span>
+                    <span>{forensics.verdict}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => setActiveTab('forensics')}
+                  >
+                    下钻「利润真相」 →
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             <div className="well-grid-4 stock-workstation-ribbon" aria-label="核心定量速览">
               <div className="well-cell">

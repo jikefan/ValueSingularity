@@ -1,9 +1,15 @@
+import {
+  type EarningsQualityBadgeMeta as SharedEarningsQualityBadgeMeta,
+  getEarningsQualityBadgeMeta as getSharedEarningsQualityBadgeMeta,
+} from '../../lib/earningsQuality'
 import { fmtNum, formatNum, formatPct, formatSignedPct, formatYi } from '../../lib/format'
 import type {
   CtCheckItem,
+  EarningsQualityTag,
   ReverseDcfSensitivityRow,
   SignalLight,
   StockDetail,
+  StockForensicsSection,
   StockSnapshotPayload,
 } from '../../types/api'
 
@@ -28,12 +34,14 @@ export const SHAREHOLDER_STATUS_META: Record<SignalLight, StatusBadgeMeta> = {
 
 export const FORMULA_NOTE_TITLES: Record<string, string> = {
   radar: '五维定量雷达模型',
+  financial_radar: '金融业专项五维评价口径',
   valuation_percentiles: '估值历史分位与采样规则',
   graham: '格雷厄姆数字与安全边际',
   roic_approx: '近似投入资本回报率 (ROIC)',
   reverse_dcf: '逆向 DCF 反推边界说明',
   shareholder_return: '股东净回报与 FCF 覆盖倍数',
   ct_scanner: '财务排雷 CT 扫描口径',
+  forensics: '利润含金量与杜邦/资本配置口径',
 }
 
 export const RADAR_DIMENSION_KEYS = [
@@ -64,6 +72,91 @@ export type StockVerdict = {
   badge: string
   tone: 'green' | 'amber' | 'rose' | 'blue'
   summary: string
+}
+
+export type EarningsQualityBadgeMeta = SharedEarningsQualityBadgeMeta
+
+export type ForensicVerdictTone = EarningsQualityBadgeMeta['verdictTone']
+
+export type ForensicBridgeKind = 'core' | 'invest' | 'subsidy' | 'assets'
+
+/** Maps earnings quality tag and optional label to semantic badge class and display text. */
+export function getEarningsQualityBadgeMeta(
+  tag: EarningsQualityTag | null | undefined,
+  customLabel?: string | null,
+): EarningsQualityBadgeMeta {
+  return getSharedEarningsQualityBadgeMeta(tag, customLabel)
+}
+
+/** Resolves discovery-verdict-box tone matching the earnings quality tag. */
+export function getEarningsQualityVerdictTone(
+  tag: EarningsQualityTag | null | undefined,
+): ForensicVerdictTone {
+  return getSharedEarningsQualityBadgeMeta(tag).verdictTone
+}
+
+/** Computes bridge step highlight class from forensic share thresholds. */
+export function getForensicBridgeStepClass(
+  kind: ForensicBridgeKind,
+  pct: number | null | undefined,
+  tag?: EarningsQualityTag | null,
+): string {
+  if (tag === 'financial_special') {
+    return 'forensic-bridge-step'
+  }
+  if (pct === null || pct === undefined || !Number.isFinite(pct)) {
+    return 'forensic-bridge-step'
+  }
+  switch (kind) {
+    case 'core':
+      return pct >= 75 ? 'forensic-bridge-step forensic-bridge-core' : 'forensic-bridge-step'
+    case 'invest':
+      if (pct >= 35) return 'forensic-bridge-step forensic-bridge-danger'
+      if (pct >= 20) return 'forensic-bridge-step forensic-bridge-warn'
+      return 'forensic-bridge-step'
+    case 'subsidy':
+      if (pct >= 45) return 'forensic-bridge-step forensic-bridge-danger'
+      if (pct >= 25) return 'forensic-bridge-step forensic-bridge-warn'
+      return 'forensic-bridge-step'
+    case 'assets':
+      if (pct >= 45) return 'forensic-bridge-step forensic-bridge-danger'
+      if (pct >= 35) return 'forensic-bridge-step forensic-bridge-warn'
+      return 'forensic-bridge-step'
+    default: {
+      const exhaustive: never = kind
+      return exhaustive
+    }
+  }
+}
+
+/** Evaluates whether the workstation header should show a forensic profit-truth caution strip. */
+export function getForensicCautionAlertState(forensics: StockForensicsSection | null | undefined): {
+  show: boolean
+  highSeverity: boolean
+} {
+  if (!forensics || forensics.earnings_quality_tag === 'financial_special') {
+    return { show: false, highSeverity: false }
+  }
+  const tag = forensics.earnings_quality_tag
+  const investShare = forensics.invest_profit_share_3y_pct ?? 0
+  const assetsRatio = forensics.investment_assets_ratio_pct ?? 0
+  const nonRecurringShare = forensics.non_recurring_share_3y_pct ?? 0
+
+  const show =
+    tag === 'investment_driven' ||
+    tag === 'subsidy_inflated' ||
+    tag === 'cashflow_divergent' ||
+    investShare >= 25 ||
+    assetsRatio >= 25
+
+  const highSeverity =
+    tag === 'investment_driven' ||
+    tag === 'subsidy_inflated' ||
+    investShare >= 50 ||
+    nonRecurringShare >= 45 ||
+    assetsRatio >= 50
+
+  return { show, highSeverity }
 }
 
 export type FinancialPbRoeMetrics = {
@@ -286,6 +379,33 @@ export function formatStockDossierMarkdown(
     `- 5年平均 ROE：${formatPct(moat.roe_5y_avg_pct, 2)} | 10年最低 ROE：${formatPct(moat.roe_10y_min_pct, 2)} | 近似 ROIC：${formatPct(moat.roic_approx_pct, 2)}`,
     `- 近 ${sReturn.window_years} 年股东净回报：${formatYi(sReturn.net_return_yuan)}（FCF 覆盖倍数 ${sReturn.fcf_coverage_ratio !== null && sReturn.fcf_coverage_ratio !== undefined ? `${fmtNum(sReturn.fcf_coverage_ratio, 2)}x` : '—'}）`,
     `- 回报结论：${sReturn.verdict}`,
+  )
+
+  if (snapshot.forensics) {
+    const forensics = snapshot.forensics
+    const qualityMeta = getEarningsQualityBadgeMeta(
+      forensics.earnings_quality_tag,
+      forensics.earnings_quality_label,
+    )
+    const findingsLines =
+      forensics.findings && forensics.findings.length > 0
+        ? forensics.findings.map(
+            (finding) =>
+              `- [${SIGNAL_META[finding.status].label}] ${finding.title}（${finding.metric_text}）：${finding.headline}。${finding.detail}`,
+          )
+        : []
+    lines.push(
+      '',
+      '## 利润真相与盈利成色深度鉴真',
+      `- 盈利成色标签：${qualityMeta.label}`,
+      `- 鉴真结论：${forensics.verdict}`,
+      `- 近 3 年主业核心利润占比：${formatPct(forensics.core_profit_share_3y_pct, 1)} | 投资与公允价值占比：${formatPct(forensics.invest_profit_share_3y_pct, 1)} | 补贴及一次性占比：${formatPct(forensics.non_recurring_share_3y_pct, 1)}`,
+      `- 表内投资类资产占比：${formatPct(forensics.investment_assets_ratio_pct, 1)}（规模 ${formatYi(forensics.investment_assets_yuan)}） | OCF / 主业核心利润：${formatPct(forensics.ocf_to_core_profit_3y_pct, 1)}`,
+      ...findingsLines,
+    )
+  }
+
+  lines.push(
     '',
     '## 空头视角与核心风险提示',
     ...(snapshot.radar.bear_cases.length > 0

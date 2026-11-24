@@ -4,6 +4,7 @@ import type {
   AuthConfigResponse,
   DevilsAdvocateResponse,
   EmailCodeSendResponse,
+  MarketDiscoveryResponse,
   MdaDiffResponse,
   TokenResponse,
   UserProfile,
@@ -1311,6 +1312,7 @@ describe('api auth and single-flight refresh middleware', () => {
       minDividendYield: 2,
       industry: '食品饮料',
       q: '茅台',
+      qualityFilter: 'core_only',
       sortBy: 'pe_percentile_10y',
       sortDir: 'asc',
       limit: 20,
@@ -1326,10 +1328,93 @@ describe('api auth and single-flight refresh middleware', () => {
     expect(requestedUrls[0]?.searchParams.get('min_dividend_yield')).toBe('2')
     expect(requestedUrls[0]?.searchParams.get('industry')).toBe('食品饮料')
     expect(requestedUrls[0]?.searchParams.get('q')).toBe('茅台')
+    expect(requestedUrls[0]?.searchParams.get('quality_filter')).toBe('core_only')
     expect(requestedUrls[0]?.searchParams.get('sort_by')).toBe('pe_percentile_10y')
     expect(requestedUrls[0]?.searchParams.get('sort_dir')).toBe('asc')
     expect(requestedUrls[0]?.searchParams.get('limit')).toBe('20')
 
     expect(requestedUrls[1]?.searchParams.toString()).toBe('')
+  })
+
+  it('calls GET /api/market/discovery and propagates ApiError on failure', async () => {
+    const sampleDiscovery: MarketDiscoveryResponse = {
+      as_of: '2026-11-24',
+      generated_at: '2026-11-24T10:00:00Z',
+      synced_stock_count: 12,
+      temperature: {
+        score: 38,
+        level: 'cool',
+        pe_median: 24.6,
+        pe_percentile: 31,
+        bond_yield: 2.18,
+        equity_bond_spread: 1.89,
+        comment: '估值处于近十年偏低区间。',
+      },
+      cross_asset: {
+        as_of: '2026-11-24',
+        us_2y_yield: 4.25,
+        us_10y_yield: 4.38,
+        us_10y_2y_spread: 0.13,
+        cn_10y_yield: 2.1,
+        us_cn_10y_spread: 2.28,
+        us_real_yield_proxy_pct: 1.78,
+        gold_price_cny: 615.4,
+        gold_symbol: 'Au99.99',
+        style_indices: [],
+        warnings: [],
+      },
+      themes: [
+        {
+          theme_id: 'gold_fed_cycle',
+          title: '美联储政策预期 × 黄金配置赔率',
+          subtitle: '利率见顶观察',
+          signal: 'green',
+          verdict: '宽松酝酿·赔率占优',
+          regime_summary: '2Y 美债走弱支撑黄金配置赔率。',
+          metrics: [{ label: '美债 2Y', value_text: '4.25%', tone: 'green' }],
+          picks: [],
+          caution_picks: [],
+          compare_codes: [],
+        },
+      ],
+      candidate_buckets: {
+        dividend_fortresses: [],
+        gold_resources: [],
+        core_cash_cows: [],
+        investment_cautions: [],
+        deep_value: [],
+      },
+    }
+
+    const calls: Array<{ method: string; pathname: string; hasSignal: boolean }> = []
+    let failNext = false
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      calls.push({
+        method: request.method,
+        pathname: new URL(request.url).pathname,
+        hasSignal: request.signal !== undefined,
+      })
+      if (failNext) {
+        return Promise.resolve(jsonResponse({ detail: '跨资产发现服务暂不可用' }, 503))
+      }
+      return Promise.resolve(jsonResponse(sampleDiscovery, 200))
+    })
+
+    const controller = new AbortController()
+    const payload = await api.getMarketDiscovery(controller.signal)
+    expect(payload).toEqual(sampleDiscovery)
+
+    failNext = true
+    await expect(api.getMarketDiscovery()).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 503,
+      message: '跨资产发现服务暂不可用',
+    })
+
+    expect(calls).toEqual([
+      { method: 'GET', pathname: '/api/market/discovery', hasSignal: true },
+      { method: 'GET', pathname: '/api/market/discovery', hasSignal: true },
+    ])
   })
 })

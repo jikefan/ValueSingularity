@@ -161,4 +161,72 @@ describe('InfoHint', () => {
     expect(screen.getByRole('button', { name: '解释：净现金 / 总市值' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '解释：5年平均 ROE' })).toBeInTheDocument()
   })
+
+  it('dismisses pinned tooltip on outside pointerdown and touchstart without breaking trigger toggle', () => {
+    render(<InfoHint term="radar_total_score" />)
+    const trigger = screen.getByRole('button', { name: '解释：综合雷达评分' })
+
+    fireEvent.pointerDown(trigger)
+    fireEvent.mouseDown(trigger)
+    fireEvent.click(trigger)
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toBeInTheDocument()
+
+    fireEvent.touchStart(tooltip)
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.click(trigger)
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+    fireEvent.touchStart(document.body)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.click(trigger)
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('flips tall popover below when trigger top headroom is smaller than popover height', () => {
+    render(
+      <InfoHint
+        title="高弹窗口径"
+        entry={{
+          summary: '用于验证较高弹窗在顶部空间不足时自动向下方展开。',
+        }}
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: '解释：高弹窗口径' })
+    const makeRect = (top: number, bottom: number, left: number, right: number): DOMRect => ({
+      left,
+      right,
+      top,
+      bottom,
+      width: right - left,
+      height: bottom - top,
+      x: left,
+      y: top,
+      toJSON: () => ({}),
+    })
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this === trigger) {
+        return makeRect(170, 186, 200, 216)
+      }
+      if (this.getAttribute('role') === 'tooltip') {
+        return makeRect(0, 220, 0, 320)
+      }
+      return makeRect(0, 0, 0, 0)
+    })
+
+    fireEvent.click(trigger)
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveAttribute('data-placement', 'bottom')
+    expect(tooltip).toHaveStyle({ top: '194px' })
+  })
 })

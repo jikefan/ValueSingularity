@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -50,13 +52,20 @@ class PostgresStockSnapshotRepository:
         except SQLAlchemyError as exc:
             raise DatabaseUnavailableError(exc.__class__.__name__) from exc
 
-        items: list[StockSnapshotPayload] = []
-        for row in rows:
-            try:
-                items.append(StockSnapshotPayload.model_validate(row.payload))
-            except ValidationError:
-                continue
-        return items
+        payloads = [row.payload for row in rows]
+        if not payloads:
+            return []
+
+        def _validate_all(raw_payloads: list[Any]) -> list[StockSnapshotPayload]:
+            items: list[StockSnapshotPayload] = []
+            for raw in raw_payloads:
+                try:
+                    items.append(StockSnapshotPayload.model_validate(raw))
+                except ValidationError:
+                    continue
+            return items
+
+        return await asyncio.to_thread(_validate_all, payloads)
 
     async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
         now = datetime.now(UTC)

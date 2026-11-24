@@ -76,6 +76,48 @@ class IndustryFlow(BaseModel):
     companies: int | None = Field(default=None, ge=0)
 
 
+class StyleRegimeIndex(BaseModel):
+    code: str
+    name: str
+    market: Literal["A", "US"] = "A"
+    style: Literal["tech", "dividend", "broad"] = "broad"
+    as_of: date | None = None
+    close: FiniteFloat | None = None
+    change_1d_pct: FiniteFloat | None = None
+    change_5d_pct: FiniteFloat | None = None
+    change_20d_pct: FiniteFloat | None = None
+    drawdown_60d_pct: FiniteFloat | None = Field(
+        default=None,
+        description="相对近60个交易日高点回撤，百分数（<= 0 表示回撤幅度）",
+    )
+
+
+class CrossAssetMacroSnapshot(BaseModel):
+    as_of: date | None = None
+    us_bond_as_of: date | None = None
+    us_2y_yield: FiniteFloat | None = None
+    us_10y_yield: FiniteFloat | None = None
+    us_10y_2y_spread: FiniteFloat | None = None
+    cn_10y_yield: FiniteFloat | None = None
+    us_cn_10y_spread: FiniteFloat | None = None
+    us_2y_change_20d_bps: FiniteFloat | None = None
+    us_10y_change_20d_bps: FiniteFloat | None = None
+    us_cpi_yoy: FiniteFloat | None = None
+    us_cpi_as_of: date | None = None
+    us_real_yield_proxy_pct: FiniteFloat | None = None
+    gold_price_cny: FiniteFloat | None = None
+    gold_symbol: str | None = None
+    gold_as_of: date | None = None
+    gold_change_5d_pct: FiniteFloat | None = None
+    gold_change_20d_pct: FiniteFloat | None = None
+    gold_percentile_1y: FiniteFloat | None = Field(default=None, ge=0, le=100)
+    gold_etf_tonnes: FiniteFloat | None = None
+    gold_etf_delta_tonnes: FiniteFloat | None = None
+    gold_etf_as_of: date | None = None
+    style_indices: list[StyleRegimeIndex] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class MarketOverview(BaseModel):
     schema_version: int = 1
     as_of: date
@@ -85,6 +127,7 @@ class MarketOverview(BaseModel):
     benchmark_indices: list[IndexQuote] = Field(default_factory=list)
     temperature: MarketTemperature
     hot_industries: list[IndustryFlow]
+    cross_asset: CrossAssetMacroSnapshot | None = None
 
 
 class StockMetaRecord(BaseModel):
@@ -133,6 +176,7 @@ class MarketFeedBundle(BaseModel):
     trade_calendar: list[TradeCalendarEntry]
     index_daily: list[IndexDailyRow]
     macro_rates: list[MacroRateRow]
+    cross_asset: CrossAssetMacroSnapshot | None = None
 
 
 class SyncSummary(BaseModel):
@@ -744,6 +788,19 @@ class StockAnnualReport(BaseModel):
     accept_invest_cash_yuan: FiniteFloat | None = None
     subsidiary_accept_invest_yuan: FiniteFloat | None = None
     cash_dividend_paid_yuan: FiniteFloat | None = None
+    operate_profit_yuan: FiniteFloat | None = None
+    sale_expense_yuan: FiniteFloat | None = None
+    manage_expense_yuan: FiniteFloat | None = None
+    operate_tax_add_yuan: FiniteFloat | None = None
+    invest_income_yuan: FiniteFloat | None = None
+    invest_joint_income_yuan: FiniteFloat | None = None
+    fair_value_change_yuan: FiniteFloat | None = None
+    other_income_yuan: FiniteFloat | None = None
+    asset_disposal_yuan: FiniteFloat | None = None
+    impairment_net_yuan: FiniteFloat | None = None
+    nonbusiness_net_yuan: FiniteFloat | None = None
+    long_equity_invest_yuan: FiniteFloat | None = None
+    invest_property_and_other_fin_yuan: FiniteFloat | None = None
 
 
 class StockDividendRecord(BaseModel):
@@ -946,6 +1003,86 @@ class RadarScoreSection(BaseModel):
     bear_cases: list[str]
 
 
+EarningsQualityTag = Literal[
+    "core_cash_cow",
+    "investment_driven",
+    "subsidy_inflated",
+    "cashflow_divergent",
+    "leveraged_roe",
+    "balanced_steady",
+    "financial_special",
+]
+
+
+class AnnualEarningsDecompositionPoint(BaseModel):
+    year: int
+    revenue_yuan: FiniteFloat | None = None
+    operate_profit_yuan: FiniteFloat | None = None
+    core_operating_profit_yuan: FiniteFloat | None = None
+    investment_and_fair_value_yuan: FiniteFloat | None = None
+    subsidy_and_oneoff_yuan: FiniteFloat | None = None
+    impairment_net_yuan: FiniteFloat | None = None
+    net_profit_yuan: FiniteFloat | None = None
+    deduct_net_profit_yuan: FiniteFloat | None = None
+    ocf_yuan: FiniteFloat | None = None
+    core_operating_margin_pct: FiniteFloat | None = None
+    invest_share_of_op_profit_pct: FiniteFloat | None = None
+
+
+class DupontYearPoint(BaseModel):
+    year: int
+    roe_pct: FiniteFloat | None = None
+    net_margin_pct: FiniteFloat | None = None
+    asset_turnover: FiniteFloat | None = None
+    equity_multiplier: FiniteFloat | None = None
+
+
+class CapitalAllocationSummary(BaseModel):
+    window_years: int = Field(ge=0)
+    total_ocf_yuan: FiniteFloat | None = None
+    total_capex_yuan: FiniteFloat | None = None
+    total_dividends_yuan: FiniteFloat = 0.0
+    total_repurchases_yuan: FiniteFloat = 0.0
+    total_equity_financing_yuan: FiniteFloat = 0.0
+    net_debt_change_yuan: FiniteFloat | None = None
+    ending_net_cash_yuan: FiniteFloat | None = None
+    ending_investment_assets_yuan: FiniteFloat | None = None
+    capex_to_ocf_pct: FiniteFloat | None = None
+    payout_to_ocf_pct: FiniteFloat | None = None
+    allocation_style: str
+    summary: str
+
+
+class ForensicFinding(BaseModel):
+    finding_id: str
+    title: str
+    status: SignalLight
+    headline: str
+    detail: str
+    metric_text: str
+
+
+class StockForensicsSection(BaseModel):
+    earnings_quality_tag: EarningsQualityTag
+    earnings_quality_label: str
+    verdict: str
+    core_profit_share_3y_pct: FiniteFloat | None = None
+    invest_profit_share_3y_pct: FiniteFloat | None = None
+    non_recurring_share_3y_pct: FiniteFloat | None = None
+    ocf_to_core_profit_3y_pct: FiniteFloat | None = None
+    interest_burden_pct: FiniteFloat | None = None
+    investment_assets_yuan: FiniteFloat | None = None
+    investment_assets_ratio_pct: FiniteFloat | None = None
+    dupont_roe_5y_avg_pct: FiniteFloat | None = None
+    dupont_net_margin_5y_avg_pct: FiniteFloat | None = None
+    dupont_asset_turnover_5y_avg: FiniteFloat | None = None
+    dupont_equity_multiplier_5y_avg: FiniteFloat | None = None
+    findings: list[ForensicFinding] = Field(default_factory=list)
+    annual_decomposition: list[AnnualEarningsDecompositionPoint] = Field(default_factory=list)
+    dupont_series: list[DupontYearPoint] = Field(default_factory=list)
+    capital_allocation: CapitalAllocationSummary | None = None
+
+
 class PeerBenchmarkMetrics(BaseModel):
     code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
     name: str
@@ -966,6 +1103,11 @@ class PeerBenchmarkMetrics(BaseModel):
     ct_red_count: int = Field(ge=0)
     ct_yellow_count: int = Field(ge=0)
     total_score: int = Field(ge=0, le=100)
+    is_financial: bool = False
+    earnings_quality_tag: EarningsQualityTag | None = None
+    earnings_quality_label: str | None = None
+    invest_profit_share_3y_pct: FiniteFloat | None = None
+    investment_assets_ratio_pct: FiniteFloat | None = None
 
 
 class StockSnapshotPayload(BaseModel):
@@ -986,6 +1128,7 @@ class StockSnapshotPayload(BaseModel):
     moat: MoatSection
     growth: GrowthSection
     radar: RadarScoreSection
+    forensics: StockForensicsSection | None = None
     peer_metrics: PeerBenchmarkMetrics
     pledge_ratio_pct: FiniteFloat | None = None
     pledge_date: date | None = None
@@ -1010,6 +1153,7 @@ ScreenerSortField = Literal[
     "total_mv_yuan",
 ]
 ScreenerSortDir = Literal["asc", "desc"]
+ScreenerQualityFilter = Literal["all", "core_only", "hide_investment_heavy", "dividend_fortress"]
 
 
 class StockScreenerItem(BaseModel):
@@ -1034,6 +1178,10 @@ class StockScreenerItem(BaseModel):
     total_score: int = Field(ge=0, le=100)
     valuation_margin: int = Field(ge=0, le=100)
     is_financial: bool = False
+    earnings_quality_tag: EarningsQualityTag | None = None
+    earnings_quality_label: str | None = None
+    invest_profit_share_3y_pct: FiniteFloat | None = None
+    investment_assets_ratio_pct: FiniteFloat | None = None
 
 
 class StockScreenerResponse(BaseModel):
@@ -1041,6 +1189,75 @@ class StockScreenerResponse(BaseModel):
     filtered_count: int = Field(ge=0)
     industries: list[str]
     items: list[StockScreenerItem]
+
+
+DiscoveryThemeId = Literal[
+    "gold_fed_cycle",
+    "tech_vs_dividend_rotation",
+    "earnings_quality_radar",
+    "deep_value_fortress",
+]
+
+
+class DiscoveryStockPick(BaseModel):
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
+    name: str
+    industry_sw1: str | None = None
+    close: FiniteFloat | None = None
+    pe_ttm: FiniteFloat | None = None
+    pe_percentile_10y: FiniteFloat | None = None
+    pb: FiniteFloat | None = None
+    dividend_yield_pct: FiniteFloat | None = None
+    dividend_spread_over_bond_pct: FiniteFloat | None = None
+    roe_5y_avg_pct: FiniteFloat | None = None
+    net_cash_to_mv_pct: FiniteFloat | None = None
+    graham_margin_pct: FiniteFloat | None = None
+    fcf_coverage_ratio: FiniteFloat | None = None
+    ct_red_count: int = Field(ge=0)
+    total_score: int = Field(ge=0, le=100)
+    is_financial: bool = False
+    earnings_quality_tag: EarningsQualityTag | None = None
+    earnings_quality_label: str | None = None
+    invest_profit_share_3y_pct: FiniteFloat | None = None
+    investment_assets_ratio_pct: FiniteFloat | None = None
+    reason: str
+
+
+class DiscoveryThemeMetric(BaseModel):
+    label: str
+    value_text: str
+    tone: SignalLight = "na"
+
+
+class DiscoveryThemeCard(BaseModel):
+    theme_id: DiscoveryThemeId
+    title: str
+    subtitle: str
+    signal: SignalLight
+    verdict: str
+    regime_summary: str
+    metrics: list[DiscoveryThemeMetric] = Field(default_factory=list)
+    picks: list[DiscoveryStockPick] = Field(default_factory=list)
+    caution_picks: list[DiscoveryStockPick] = Field(default_factory=list)
+    compare_codes: list[str] = Field(default_factory=list)
+
+
+class DiscoveryCandidateBuckets(BaseModel):
+    dividend_fortresses: list[DiscoveryStockPick] = Field(default_factory=list)
+    gold_resources: list[DiscoveryStockPick] = Field(default_factory=list)
+    core_cash_cows: list[DiscoveryStockPick] = Field(default_factory=list)
+    investment_cautions: list[DiscoveryStockPick] = Field(default_factory=list)
+    deep_value: list[DiscoveryStockPick] = Field(default_factory=list)
+
+
+class MarketDiscoveryResponse(BaseModel):
+    as_of: date
+    generated_at: datetime
+    synced_stock_count: int = Field(ge=0)
+    temperature: MarketTemperature
+    cross_asset: CrossAssetMacroSnapshot | None = None
+    themes: list[DiscoveryThemeCard] = Field(default_factory=list)
+    candidate_buckets: DiscoveryCandidateBuckets
 
 
 class StockSyncSummary(BaseModel):

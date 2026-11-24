@@ -15,6 +15,8 @@ import type { StockSnapshotPayload } from '../../types/api'
 import { SingularitySphereCanvas } from './SingularitySphereCanvas'
 import {
   FORMULA_NOTE_TITLES,
+  getEarningsQualityBadgeMeta,
+  getForensicBridgeStepClass,
   getRadarDimensions,
   isFinancialSnapshot,
   type RadarDimensionKey,
@@ -83,6 +85,17 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
 
   const isFinancial = useMemo(() => isFinancialSnapshot(snapshot), [snapshot])
   const radarDimensions = useMemo(() => getRadarDimensions(snapshot), [snapshot])
+  const forensics = snapshot.forensics ?? null
+  const forensicsBadge = useMemo(
+    () =>
+      forensics
+        ? getEarningsQualityBadgeMeta(
+            forensics.earnings_quality_tag,
+            forensics.earnings_quality_label,
+          )
+        : null,
+    [forensics],
+  )
 
   const radarOption = useMemo<ChartOption>(() => {
     const { colors, tooltip } = createChartTheme(theme)
@@ -255,6 +268,80 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
           />
         </Card>
       </div>
+
+      {forensics && forensicsBadge ? (
+        <Card
+          title="利润含金量与表内结构速览"
+          hint="forensic_profit_truth"
+          extra={<span className={forensicsBadge.badgeClass}>{forensicsBadge.label}</span>}
+        >
+          <div className="stack" style={{ gap: 12 }}>
+            <div className="forensic-bridge-grid">
+              <div
+                className={getForensicBridgeStepClass(
+                  'core',
+                  forensics.core_profit_share_3y_pct,
+                  forensics.earnings_quality_tag,
+                )}
+              >
+                <div className="forensic-bridge-label">
+                  <GlossaryLabel label="主业核心占比" term="core_operating_profit" />
+                </div>
+                <div className="forensic-bridge-value">
+                  {formatPct(forensics.core_profit_share_3y_pct, 1)}
+                </div>
+                <div className="forensic-bridge-sub">近3年主业核心营业利润占比</div>
+              </div>
+
+              <div
+                className={getForensicBridgeStepClass(
+                  'invest',
+                  forensics.invest_profit_share_3y_pct,
+                  forensics.earnings_quality_tag,
+                )}
+              >
+                <div className="forensic-bridge-label">
+                  <GlossaryLabel label="投资收益占比" term="invest_profit_share" />
+                </div>
+                <div className="forensic-bridge-value">
+                  {formatPct(forensics.invest_profit_share_3y_pct, 1)}
+                </div>
+                <div className="forensic-bridge-sub">近3年投资与公允价值占营业利润</div>
+              </div>
+
+              <div
+                className={getForensicBridgeStepClass(
+                  'assets',
+                  forensics.investment_assets_ratio_pct,
+                  forensics.earnings_quality_tag,
+                )}
+              >
+                <div className="forensic-bridge-label">
+                  <GlossaryLabel label="表内投资资产占比" term="investment_assets_ratio" />
+                </div>
+                <div className="forensic-bridge-value">
+                  {formatPct(forensics.investment_assets_ratio_pct, 1)}
+                </div>
+                <div className="forensic-bridge-sub">
+                  {`投资类资产 ${formatYi(forensics.investment_assets_yuan)}`}
+                </div>
+              </div>
+
+              <div className="forensic-bridge-step">
+                <div className="forensic-bridge-label">
+                  <GlossaryLabel label="OCF/核心利润" term="ocf_to_core_profit" />
+                </div>
+                <div className="forensic-bridge-value">
+                  {formatPct(forensics.ocf_to_core_profit_3y_pct, 1)}
+                </div>
+                <div className="forensic-bridge-sub">近3年经营现金流转化率</div>
+              </div>
+            </div>
+
+            <p className="small soft wrap-anywhere">{forensics.verdict}</p>
+          </div>
+        </Card>
+      ) : null}
 
       <Card
         title="空头视角与核心风险提示"

@@ -155,4 +155,5 @@ def build_market_overview(
         benchmark_indices=benchmark_indices,
         temperature=temperature,
         hot_industries=sorted_industries,
+        cross_asset=bundle.cross_asset,
     )

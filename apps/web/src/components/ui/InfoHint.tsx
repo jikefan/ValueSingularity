@@ -123,7 +123,12 @@ export function InfoHint(props: InfoHintProps) {
     const maxLeft = Math.max(VIEWPORT_MARGIN_PX, viewportWidth - width - VIEWPORT_MARGIN_PX)
     const left = Math.min(Math.max(VIEWPORT_MARGIN_PX, desiredLeft), maxLeft)
 
-    const placeBelow = triggerRect.top < FLIP_BELOW_THRESHOLD_PX
+    const requiredTopSpace = Math.max(
+      FLIP_BELOW_THRESHOLD_PX,
+      height + POPOVER_GAP_PX + VIEWPORT_MARGIN_PX,
+    )
+    const placeBelow =
+      triggerRect.top < requiredTopSpace && viewportHeight - triggerRect.bottom > triggerRect.top
     const desiredTop = placeBelow
       ? triggerRect.bottom + POPOVER_GAP_PX
       : triggerRect.top - height - POPOVER_GAP_PX
@@ -167,7 +172,7 @@ export function InfoHint(props: InfoHintProps) {
         setIsOpen(false)
       }
     }
-    function handleOutsideMouseDown(event: MouseEvent) {
+    function handleOutsidePointerDown(event: Event) {
       if (!(event.target instanceof Node)) {
         return
       }
@@ -179,15 +184,20 @@ export function InfoHint(props: InfoHintProps) {
       setIsOpen(false)
     }
     document.addEventListener('keydown', handleKeyDown)
-    document.addEventListener('mousedown', handleOutsideMouseDown)
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    document.addEventListener('mousedown', handleOutsidePointerDown)
+    document.addEventListener('touchstart', handleOutsidePointerDown)
     return () => {
       document.removeEventListener('keydown', handleKeyDown)
-      document.removeEventListener('mousedown', handleOutsideMouseDown)
+      document.removeEventListener('pointerdown', handleOutsidePointerDown)
+      document.removeEventListener('mousedown', handleOutsidePointerDown)
+      document.removeEventListener('touchstart', handleOutsidePointerDown)
     }
   }, [cancelCloseTimer, isOpen])
 
   function handleTriggerClick(event: ReactMouseEvent<HTMLButtonElement>) {
     event.stopPropagation()
+    pointerDownRef.current = false
     cancelCloseTimer()
     if (isPinned) {
       setIsPinned(false)
@@ -211,6 +221,9 @@ export function InfoHint(props: InfoHintProps) {
         aria-label={`解释：${resolved.label}`}
         aria-expanded={isOpen}
         aria-describedby={isOpen ? popoverId : undefined}
+        onPointerDown={() => {
+          pointerDownRef.current = true
+        }}
         onMouseDown={() => {
           pointerDownRef.current = true
         }}

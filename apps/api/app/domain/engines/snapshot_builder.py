@@ -20,6 +20,7 @@ from app.domain.engines._helpers import (
     sort_reports_asc,
 )
 from app.domain.engines.ct_scanner import scan_financial_ct
+from app.domain.engines.forensics import analyze_stock_forensics
 from app.domain.engines.reverse_dcf import compute_reverse_dcf
 from app.domain.engines.shareholder_return import analyze_shareholder_return
 from app.domain.market_math import subtract_years
@@ -36,6 +37,7 @@ from app.domain.models import (
     StockAnnualReport,
     StockDailyBar,
     StockFactBundle,
+    StockForensicsSection,
     StockMetaRecord,
     StockSnapshotPayload,
     ValuationHistoryPoint,
@@ -560,6 +562,7 @@ def _build_radar_and_bear_cases(
     moat: MoatSection,
     growth: GrowthSection,
     ocf_to_profit_5y_pct: float | None,
+    forensics: StockForensicsSection | None = None,
     is_financial: bool = False,
 ) -> RadarScoreSection:
     latest_net_margin = next(
@@ -681,6 +684,12 @@ def _build_radar_and_bear_cases(
         bear_cases.append(
             f"[成长性放缓] 近3年营收复合增速为 {growth.revenue_cagr_3y_pct:.2f}%，主业规模收缩。"
         )
+    if not is_financial and forensics is not None:
+        for finding in forensics.findings:
+            if finding.finding_id in {"investment_reliance", "non_recurring_subsidy"} and (
+                finding.status in {"red", "yellow"}
+            ):
+                bear_cases.append(f"[{finding.title}] {finding.headline}：{finding.detail}")
     if not bear_cases:
         bear_cases.append(
             "当前定量排雷与估值指标未见显著警示，仍需持续跟踪行业竞争格局与资本开支回报。"
@@ -765,6 +774,16 @@ def build_stock_snapshot(
         shareholder_return=shareholder_return,
         meta=effective_meta,
     )
+    forensics = analyze_stock_forensics(
+        ordered_reports,
+        effective_meta,
+        dividends=bundle.dividends,
+        repurchases=bundle.repurchases,
+        equity_financings=bundle.equity_financings,
+        shareholder_return=shareholder_return,
+        as_of=bundle.as_of,
+        is_financial=is_financial,
+    )
     radar = _build_radar_and_bear_cases(
         trends=trends,
         valuation=valuation,
@@ -774,6 +793,7 @@ def build_stock_snapshot(
         moat=moat,
         growth=growth,
         ocf_to_profit_5y_pct=ocf_to_profit_5y_pct,
+        forensics=forensics,
         is_financial=is_financial,
     )
 
@@ -847,6 +867,11 @@ def build_stock_snapshot(
         ct_red_count=ct_section.red_count,
         ct_yellow_count=ct_section.yellow_count,
         total_score=radar.total_score,
+        is_financial=is_financial,
+        earnings_quality_tag=forensics.earnings_quality_tag,
+        earnings_quality_label=forensics.earnings_quality_label,
+        invest_profit_share_3y_pct=forensics.invest_profit_share_3y_pct,
+        investment_assets_ratio_pct=forensics.investment_assets_ratio_pct,
     )
 
     latest_audit = next(
@@ -854,6 +879,11 @@ def build_stock_snapshot(
         None,
     )
     formula_notes = dict(_FORMULA_NOTES)
+    formula_notes["forensics"] = (
+        "主业利润拆解 = 营业利润 - 投资收益 - 公允价值变动收益 - 其他收益 - 资产处置收益；"
+        "表内投资类资产 = 交易性金融资产 + 长期股权投资 + 投资性房地产及其他金融/债权投资；"
+        "杜邦三因子基于平均净资产与平均总资产计算，金融业态豁免总资产周转率。"
+    )
     if is_financial:
         formula_notes["financial_radar"] = (
             "金融行业（银行/保险/券商等）存贷款及同业资金变动计入经营现金流，"
@@ -880,6 +910,7 @@ def build_stock_snapshot(
         moat=moat,
         growth=growth,
         radar=radar,
+        forensics=forensics,
         peer_metrics=peer_metrics,
         pledge_ratio_pct=finite_or_none(bundle.pledge.pledge_ratio_pct, 2)
         if bundle.pledge

@@ -423,6 +423,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market/discovery": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market Discovery */
+        get: operations["market_market_discovery"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market/overview": {
         parameters: {
             query?: never;
@@ -730,6 +747,33 @@ export interface components {
              */
             webhook_sent_count: number;
         };
+        /** AnnualEarningsDecompositionPoint */
+        AnnualEarningsDecompositionPoint: {
+            /** Core Operating Margin Pct */
+            core_operating_margin_pct?: number | null;
+            /** Core Operating Profit Yuan */
+            core_operating_profit_yuan?: number | null;
+            /** Deduct Net Profit Yuan */
+            deduct_net_profit_yuan?: number | null;
+            /** Impairment Net Yuan */
+            impairment_net_yuan?: number | null;
+            /** Invest Share Of Op Profit Pct */
+            invest_share_of_op_profit_pct?: number | null;
+            /** Investment And Fair Value Yuan */
+            investment_and_fair_value_yuan?: number | null;
+            /** Net Profit Yuan */
+            net_profit_yuan?: number | null;
+            /** Ocf Yuan */
+            ocf_yuan?: number | null;
+            /** Operate Profit Yuan */
+            operate_profit_yuan?: number | null;
+            /** Revenue Yuan */
+            revenue_yuan?: number | null;
+            /** Subsidy And Oneoff Yuan */
+            subsidy_and_oneoff_yuan?: number | null;
+            /** Year */
+            year: number;
+        };
         /** AnnualFinancialTrendPoint */
         AnnualFinancialTrendPoint: {
             /** Deduct Net Profit Yuan */
@@ -795,6 +839,44 @@ export interface components {
              */
             purpose: "verify_email" | "delete_account";
         };
+        /** CapitalAllocationSummary */
+        CapitalAllocationSummary: {
+            /** Allocation Style */
+            allocation_style: string;
+            /** Capex To Ocf Pct */
+            capex_to_ocf_pct?: number | null;
+            /** Ending Investment Assets Yuan */
+            ending_investment_assets_yuan?: number | null;
+            /** Ending Net Cash Yuan */
+            ending_net_cash_yuan?: number | null;
+            /** Net Debt Change Yuan */
+            net_debt_change_yuan?: number | null;
+            /** Payout To Ocf Pct */
+            payout_to_ocf_pct?: number | null;
+            /** Summary */
+            summary: string;
+            /** Total Capex Yuan */
+            total_capex_yuan?: number | null;
+            /**
+             * Total Dividends Yuan
+             * @default 0
+             */
+            total_dividends_yuan: number;
+            /**
+             * Total Equity Financing Yuan
+             * @default 0
+             */
+            total_equity_financing_yuan: number;
+            /** Total Ocf Yuan */
+            total_ocf_yuan?: number | null;
+            /**
+             * Total Repurchases Yuan
+             * @default 0
+             */
+            total_repurchases_yuan: number;
+            /** Window Years */
+            window_years: number;
+        };
         /** CitedMetricFact */
         CitedMetricFact: {
             /** Label */
@@ -803,6 +885,55 @@ export interface components {
             source_section: string;
             /** Value Text */
             value_text: string;
+        };
+        /** CrossAssetMacroSnapshot */
+        CrossAssetMacroSnapshot: {
+            /** As Of */
+            as_of?: string | null;
+            /** Cn 10Y Yield */
+            cn_10y_yield?: number | null;
+            /** Gold As Of */
+            gold_as_of?: string | null;
+            /** Gold Change 20D Pct */
+            gold_change_20d_pct?: number | null;
+            /** Gold Change 5D Pct */
+            gold_change_5d_pct?: number | null;
+            /** Gold Etf As Of */
+            gold_etf_as_of?: string | null;
+            /** Gold Etf Delta Tonnes */
+            gold_etf_delta_tonnes?: number | null;
+            /** Gold Etf Tonnes */
+            gold_etf_tonnes?: number | null;
+            /** Gold Percentile 1Y */
+            gold_percentile_1y?: number | null;
+            /** Gold Price Cny */
+            gold_price_cny?: number | null;
+            /** Gold Symbol */
+            gold_symbol?: string | null;
+            /** Style Indices */
+            style_indices?: components["schemas"]["StyleRegimeIndex"][];
+            /** Us 10Y 2Y Spread */
+            us_10y_2y_spread?: number | null;
+            /** Us 10Y Change 20D Bps */
+            us_10y_change_20d_bps?: number | null;
+            /** Us 10Y Yield */
+            us_10y_yield?: number | null;
+            /** Us 2Y Change 20D Bps */
+            us_2y_change_20d_bps?: number | null;
+            /** Us 2Y Yield */
+            us_2y_yield?: number | null;
+            /** Us Bond As Of */
+            us_bond_as_of?: string | null;
+            /** Us Cn 10Y Spread */
+            us_cn_10y_spread?: number | null;
+            /** Us Cpi As Of */
+            us_cpi_as_of?: string | null;
+            /** Us Cpi Yoy */
+            us_cpi_yoy?: number | null;
+            /** Us Real Yield Proxy Pct */
+            us_real_yield_proxy_pct?: number | null;
+            /** Warnings */
+            warnings?: string[];
         };
         /** CtCheckItem */
         CtCheckItem: {
@@ -931,6 +1062,122 @@ export interface components {
             /** Stock Name */
             stock_name: string;
         };
+        /** DiscoveryCandidateBuckets */
+        DiscoveryCandidateBuckets: {
+            /** Core Cash Cows */
+            core_cash_cows?: components["schemas"]["DiscoveryStockPick"][];
+            /** Deep Value */
+            deep_value?: components["schemas"]["DiscoveryStockPick"][];
+            /** Dividend Fortresses */
+            dividend_fortresses?: components["schemas"]["DiscoveryStockPick"][];
+            /** Gold Resources */
+            gold_resources?: components["schemas"]["DiscoveryStockPick"][];
+            /** Investment Cautions */
+            investment_cautions?: components["schemas"]["DiscoveryStockPick"][];
+        };
+        /** DiscoveryStockPick */
+        DiscoveryStockPick: {
+            /** Close */
+            close?: number | null;
+            /** Code */
+            code: string;
+            /** Ct Red Count */
+            ct_red_count: number;
+            /** Dividend Spread Over Bond Pct */
+            dividend_spread_over_bond_pct?: number | null;
+            /** Dividend Yield Pct */
+            dividend_yield_pct?: number | null;
+            /** Earnings Quality Label */
+            earnings_quality_label?: string | null;
+            /** Earnings Quality Tag */
+            earnings_quality_tag?: ("core_cash_cow" | "investment_driven" | "subsidy_inflated" | "cashflow_divergent" | "leveraged_roe" | "balanced_steady" | "financial_special") | null;
+            /** Fcf Coverage Ratio */
+            fcf_coverage_ratio?: number | null;
+            /** Graham Margin Pct */
+            graham_margin_pct?: number | null;
+            /** Industry Sw1 */
+            industry_sw1?: string | null;
+            /** Invest Profit Share 3Y Pct */
+            invest_profit_share_3y_pct?: number | null;
+            /** Investment Assets Ratio Pct */
+            investment_assets_ratio_pct?: number | null;
+            /**
+             * Is Financial
+             * @default false
+             */
+            is_financial: boolean;
+            /** Name */
+            name: string;
+            /** Net Cash To Mv Pct */
+            net_cash_to_mv_pct?: number | null;
+            /** Pb */
+            pb?: number | null;
+            /** Pe Percentile 10Y */
+            pe_percentile_10y?: number | null;
+            /** Pe Ttm */
+            pe_ttm?: number | null;
+            /** Reason */
+            reason: string;
+            /** Roe 5Y Avg Pct */
+            roe_5y_avg_pct?: number | null;
+            /** Total Score */
+            total_score: number;
+        };
+        /** DiscoveryThemeCard */
+        DiscoveryThemeCard: {
+            /** Caution Picks */
+            caution_picks?: components["schemas"]["DiscoveryStockPick"][];
+            /** Compare Codes */
+            compare_codes?: string[];
+            /** Metrics */
+            metrics?: components["schemas"]["DiscoveryThemeMetric"][];
+            /** Picks */
+            picks?: components["schemas"]["DiscoveryStockPick"][];
+            /** Regime Summary */
+            regime_summary: string;
+            /**
+             * Signal
+             * @enum {string}
+             */
+            signal: "green" | "yellow" | "red" | "na";
+            /** Subtitle */
+            subtitle: string;
+            /**
+             * Theme Id
+             * @enum {string}
+             */
+            theme_id: "gold_fed_cycle" | "tech_vs_dividend_rotation" | "earnings_quality_radar" | "deep_value_fortress";
+            /** Title */
+            title: string;
+            /** Verdict */
+            verdict: string;
+        };
+        /** DiscoveryThemeMetric */
+        DiscoveryThemeMetric: {
+            /** Label */
+            label: string;
+            /**
+             * Tone
+             * @default na
+             * @enum {string}
+             */
+            tone: "green" | "yellow" | "red" | "na";
+            /** Value Text */
+            value_text: string;
+        };
+        /** DupontYearPoint */
+        DupontYearPoint: {
+            /** Asset Turnover */
+            asset_turnover?: number | null;
+            /** Equity Multiplier */
+            equity_multiplier?: number | null;
+            /** Net Margin Pct */
+            net_margin_pct?: number | null;
+            /** Roe Pct */
+            roe_pct?: number | null;
+            /** Year */
+            year: number;
+        };
         /** EmailCodeSendRequest */
         EmailCodeSendRequest: {
             /**
@@ -1007,6 +1254,24 @@ export interface components {
             red_count: number;
             /** Yellow Count */
             yellow_count: number;
+        };
+        /** ForensicFinding */
+        ForensicFinding: {
+            /** Detail */
+            detail: string;
+            /** Finding Id */
+            finding_id: string;
+            /** Headline */
+            headline: string;
+            /** Metric Text */
+            metric_text: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "green" | "yellow" | "red" | "na";
+            /** Title */
+            title: string;
         };
         /** GrowthSection */
         GrowthSection: {
@@ -1220,6 +1485,26 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** MarketDiscoveryResponse */
+        MarketDiscoveryResponse: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            candidate_buckets: components["schemas"]["DiscoveryCandidateBuckets"];
+            cross_asset?: components["schemas"]["CrossAssetMacroSnapshot"] | null;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Synced Stock Count */
+            synced_stock_count: number;
+            temperature: components["schemas"]["MarketTemperature"];
+            /** Themes */
+            themes?: components["schemas"]["DiscoveryThemeCard"][];
+        };
         /** MarketOverview */
         MarketOverview: {
             /**
@@ -1229,6 +1514,7 @@ export interface components {
             as_of: string;
             /** Benchmark Indices */
             benchmark_indices?: components["schemas"]["IndexQuote"][];
+            cross_asset?: components["schemas"]["CrossAssetMacroSnapshot"] | null;
             /**
              * Data Source
              * @default akshare
@@ -1482,6 +1768,10 @@ export interface components {
             ct_red_count: number;
             /** Ct Yellow Count */
             ct_yellow_count: number;
+            /** Earnings Quality Label */
+            earnings_quality_label?: string | null;
+            /** Earnings Quality Tag */
+            earnings_quality_tag?: ("core_cash_cow" | "investment_driven" | "subsidy_inflated" | "cashflow_divergent" | "leveraged_roe" | "balanced_steady" | "financial_special") | null;
             /**
              * Exchange
              * @enum {string}
@@ -1493,6 +1783,15 @@ export interface components {
             implied_fcf_cagr_pct?: number | null;
             /** Industry Sw1 */
             industry_sw1?: string | null;
+            /** Invest Profit Share 3Y Pct */
+            invest_profit_share_3y_pct?: number | null;
+            /** Investment Assets Ratio Pct */
+            investment_assets_ratio_pct?: number | null;
+            /**
+             * Is Financial
+             * @default false
+             */
+            is_financial: boolean;
             /** Name */
             name: string;
             /** Net Cash To Mv Pct */
@@ -1671,6 +1970,47 @@ export interface components {
              */
             snapshot_available: boolean;
         };
+        /** StockForensicsSection */
+        StockForensicsSection: {
+            /** Annual Decomposition */
+            annual_decomposition?: components["schemas"]["AnnualEarningsDecompositionPoint"][];
+            capital_allocation?: components["schemas"]["CapitalAllocationSummary"] | null;
+            /** Core Profit Share 3Y Pct */
+            core_profit_share_3y_pct?: number | null;
+            /** Dupont Asset Turnover 5Y Avg */
+            dupont_asset_turnover_5y_avg?: number | null;
+            /** Dupont Equity Multiplier 5Y Avg */
+            dupont_equity_multiplier_5y_avg?: number | null;
+            /** Dupont Net Margin 5Y Avg Pct */
+            dupont_net_margin_5y_avg_pct?: number | null;
+            /** Dupont Roe 5Y Avg Pct */
+            dupont_roe_5y_avg_pct?: number | null;
+            /** Dupont Series */
+            dupont_series?: components["schemas"]["DupontYearPoint"][];
+            /** Earnings Quality Label */
+            earnings_quality_label: string;
+            /**
+             * Earnings Quality Tag
+             * @enum {string}
+             */
+            earnings_quality_tag: "core_cash_cow" | "investment_driven" | "subsidy_inflated" | "cashflow_divergent" | "leveraged_roe" | "balanced_steady" | "financial_special";
+            /** Findings */
+            findings?: components["schemas"]["ForensicFinding"][];
+            /** Interest Burden Pct */
+            interest_burden_pct?: number | null;
+            /** Invest Profit Share 3Y Pct */
+            invest_profit_share_3y_pct?: number | null;
+            /** Investment Assets Ratio Pct */
+            investment_assets_ratio_pct?: number | null;
+            /** Investment Assets Yuan */
+            investment_assets_yuan?: number | null;
+            /** Non Recurring Share 3Y Pct */
+            non_recurring_share_3y_pct?: number | null;
+            /** Ocf To Core Profit 3Y Pct */
+            ocf_to_core_profit_3y_pct?: number | null;
+            /** Verdict */
+            verdict: string;
+        };
         /** StockMetaRecord */
         StockMetaRecord: {
             /** Code */
@@ -1723,6 +2063,10 @@ export interface components {
             ct_yellow_count: number;
             /** Dividend Yield Pct */
             dividend_yield_pct?: number | null;
+            /** Earnings Quality Label */
+            earnings_quality_label?: string | null;
+            /** Earnings Quality Tag */
+            earnings_quality_tag?: ("core_cash_cow" | "investment_driven" | "subsidy_inflated" | "cashflow_divergent" | "leveraged_roe" | "balanced_steady" | "financial_special") | null;
             /**
              * Exchange
              * @enum {string}
@@ -1732,6 +2076,10 @@ export interface components {
             implied_fcf_cagr_pct?: number | null;
             /** Industry Sw1 */
             industry_sw1?: string | null;
+            /** Invest Profit Share 3Y Pct */
+            invest_profit_share_3y_pct?: number | null;
+            /** Investment Assets Ratio Pct */
+            investment_assets_ratio_pct?: number | null;
             /**
              * Is Financial
              * @default false
@@ -1791,6 +2139,7 @@ export interface components {
              */
             exchange: "SH" | "SZ" | "BJ";
             financial_ct: components["schemas"]["FinancialCtSection"];
+            forensics?: components["schemas"]["StockForensicsSection"] | null;
             /** Formula Notes */
             formula_notes: {
                 [key: string]: string;
@@ -1824,6 +2173,40 @@ export interface components {
             schema_version: number;
             shareholder_return: components["schemas"]["ShareholderReturnSection"];
             valuation: components["schemas"]["ValuationSection"];
+        };
+        /** StyleRegimeIndex */
+        StyleRegimeIndex: {
+            /** As Of */
+            as_of?: string | null;
+            /** Change 1D Pct */
+            change_1d_pct?: number | null;
+            /** Change 20D Pct */
+            change_20d_pct?: number | null;
+            /** Change 5D Pct */
+            change_5d_pct?: number | null;
+            /** Close */
+            close?: number | null;
+            /** Code */
+            code: string;
+            /**
+             * Drawdown 60D Pct
+             * @description 相对近60个交易日高点回撤，百分数（<= 0 表示回撤幅度）
+             */
+            drawdown_60d_pct?: number | null;
+            /**
+             * Market
+             * @default A
+             * @enum {string}
+             */
+            market: "A" | "US";
+            /** Name */
+            name: string;
+            /**
+             * Style
+             * @default broad
+             * @enum {string}
+             */
+            style: "tech" | "dividend" | "broad";
         };
         /**
          * TemperatureLevel
@@ -2855,6 +3238,26 @@ export interface operations {
             };
         };
     };
+    market_market_discovery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketDiscoveryResponse"];
+                };
+            };
+        };
+    };
     market_market_overview: {
         parameters: {
             query?: never;
@@ -2915,6 +3318,7 @@ export interface operations {
                 min_dividend_yield?: number | null;
                 industry?: string | null;
                 q?: string | null;
+                quality_filter?: "all" | "core_only" | "hide_investment_heavy" | "dividend_fortress";
                 sort_by?: "total_score" | "pe_percentile_10y" | "roe_5y_avg_pct" | "dividend_yield_pct" | "pe_ttm" | "total_mv_yuan";
                 sort_dir?: "asc" | "desc";
                 limit?: number;

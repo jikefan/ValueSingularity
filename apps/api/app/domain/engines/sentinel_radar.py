@@ -158,6 +158,27 @@ _SCALAR_CANONICAL_ALIASES: dict[str, tuple[str, ...]] = {
     "revenue_cagr_3y_pct": ("revenue_cagr_3y_pct",),
     "revenue_cagr_5y_pct": ("revenue_cagr_5y_pct",),
     "profit_cagr_5y_pct": ("profit_cagr_5y_pct",),
+    "invest_profit_share_3y_pct": (
+        "invest_profit_share_3y_pct",
+        "forensics.invest_profit_share_3y_pct",
+        "投资收益占比",
+    ),
+    "non_recurring_share_3y_pct": (
+        "non_recurring_share_3y_pct",
+        "forensics.non_recurring_share_3y_pct",
+        "非经补贴占比",
+    ),
+    "ocf_to_core_profit_3y_pct": (
+        "ocf_to_core_profit_3y_pct",
+        "forensics.ocf_to_core_profit_3y_pct",
+        "核心利润净现比",
+    ),
+    "interest_burden_pct": ("interest_burden_pct", "forensics.interest_burden_pct", "利息负担率"),
+    "investment_assets_ratio_pct": (
+        "investment_assets_ratio_pct",
+        "forensics.investment_assets_ratio_pct",
+        "投资资产占比",
+    ),
 }
 
 _SCALAR_CANONICAL_MAP: dict[str, str] = {
@@ -192,6 +213,21 @@ _CANONICAL_SCALAR_EXTRACTORS: dict[str, Callable[[StockSnapshotPayload], float |
     "revenue_cagr_3y_pct": lambda s: s.growth.revenue_cagr_3y_pct,
     "revenue_cagr_5y_pct": lambda s: s.growth.revenue_cagr_5y_pct,
     "profit_cagr_5y_pct": lambda s: s.growth.profit_cagr_5y_pct,
+    "invest_profit_share_3y_pct": (
+        lambda s: s.forensics.invest_profit_share_3y_pct if s.forensics is not None else None
+    ),
+    "non_recurring_share_3y_pct": (
+        lambda s: s.forensics.non_recurring_share_3y_pct if s.forensics is not None else None
+    ),
+    "ocf_to_core_profit_3y_pct": (
+        lambda s: s.forensics.ocf_to_core_profit_3y_pct if s.forensics is not None else None
+    ),
+    "interest_burden_pct": (
+        lambda s: s.forensics.interest_burden_pct if s.forensics is not None else None
+    ),
+    "investment_assets_ratio_pct": (
+        lambda s: s.forensics.investment_assets_ratio_pct if s.forensics is not None else None
+    ),
 }
 
 _SCALAR_EXTRACTORS: dict[str, Callable[[StockSnapshotPayload], float | int | None]] = {

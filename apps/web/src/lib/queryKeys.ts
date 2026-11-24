@@ -10,6 +10,7 @@ export const queryKeys = {
   market: {
     all: ['market'] as const,
     overview: () => ['market', 'overview'] as const,
+    discovery: () => ['market', 'discovery'] as const,
   },
   watchlist: {
     all: ['watchlist'] as const,
@@ -39,6 +40,7 @@ export const queryKeys = {
           minDividendYield: filters.minDividendYield ?? null,
           industry: filters.industry?.trim() || null,
           q: filters.q?.trim() || null,
+          qualityFilter: filters.qualityFilter ?? 'all',
           sortBy: filters.sortBy ?? 'total_score',
           sortDir: filters.sortDir ?? 'desc',
           limit: filters.limit ?? 50,

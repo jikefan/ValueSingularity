@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
+import math
 from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -15,6 +15,7 @@ import akshare as ak
 import pandas as pd
 
 from app.adapters.akshare._common import (
+    MINI_RACER_LOCK,
     SHANGHAI_TZ,
     STOCK_CODE_RE,
     coerce_cn_amount_yuan,
@@ -42,8 +43,6 @@ _VALID_DIVIDEND_PROGRESS = frozenset({"实施分配", "股东大会通过"})
 _VALID_REPURCHASE_PROGRESS = frozenset({"完成实施", "实施中"})
 _PLEDGE_LOOKBACK_WEEKS = 5
 _VALUATION_MAX_LAG_DAYS = 10
-# CNInfo endpoints invoke py_mini_racer.MiniRacer; V8 aborts on macOS if entered concurrently.
-_CNINFO_V8_LOCK = threading.Lock()
 
 _SW1_CANONICAL_SET = frozenset(
     {
@@ -256,6 +255,56 @@ def _first_float(row: dict[str, Any], *keys: str) -> float | None:
             if val is not None:
                 return val
     return None
+
+
+def _sum_available(row: dict[str, Any], *keys: str) -> float | None:
+    total = 0.0
+    found = False
+    for key in keys:
+        if key in row:
+            val = coerce_float(row.get(key))
+            if val is not None:
+                total += val
+                found = True
+    return total if found and math.isfinite(total) else None
+
+
+def _compute_nonbusiness_net(ps: dict[str, Any]) -> float | None:
+    inc = _first_float(ps, "NONBUSINESS_INCOME")
+    exp = _first_float(ps, "NONBUSINESS_EXPENSE")
+    if inc is None and exp is None:
+        return None
+    return (inc or 0.0) - (exp or 0.0)
+
+
+def _compute_impairment_net(ps: dict[str, Any], report_year: int) -> float | None:
+    asset_inc = _first_float(ps, "ASSET_IMPAIRMENT_INCOME")
+    credit_inc = _first_float(ps, "CREDIT_IMPAIRMENT_INCOME")
+    if asset_inc is not None or credit_inc is not None:
+        total = (asset_inc or 0.0) + (credit_inc or 0.0)
+        if not math.isfinite(total):
+            return None
+        return 0.0 if total == 0 else total
+
+    asset_loss = _first_float(ps, "ASSET_IMPAIRMENT_LOSS")
+    credit_loss = _first_float(ps, "CREDIT_IMPAIRMENT_LOSS")
+    if asset_loss is None and credit_loss is None:
+        return None
+
+    # Pre-2018 bank reports often emit restated CREDIT_IMPAIRMENT_LOSS alongside ASSET.
+    if (
+        report_year < 2018
+        and asset_loss is not None
+        and credit_loss is not None
+        and abs(asset_loss - credit_loss) <= 0.1 * max(abs(asset_loss), abs(credit_loss), 1.0)
+    ):
+        loss_sum = asset_loss
+    else:
+        loss_sum = (asset_loss or 0.0) + (credit_loss or 0.0)
+    if not math.isfinite(loss_sum):
+        return None
+    net = -loss_sum
+    return 0.0 if net == 0 else net
 
 
 def _first_str(row: dict[str, Any], *keys: str) -> str | None:
@@ -673,6 +722,27 @@ def parse_annual_reports(
                 accept_invest_cash_yuan=_first_float(cf, "ACCEPT_INVEST_CASH"),
                 subsidiary_accept_invest_yuan=_first_float(cf, "SUBSIDIARY_ACCEPT_INVEST"),
                 cash_dividend_paid_yuan=_first_float(cf, "ASSIGN_DIVIDEND_PORFIT"),
+                operate_profit_yuan=_first_float(ps, "OPERATE_PROFIT"),
+                sale_expense_yuan=_first_float(ps, "SALE_EXPENSE"),
+                manage_expense_yuan=_first_float(ps, "MANAGE_EXPENSE"),
+                operate_tax_add_yuan=_first_float(ps, "OPERATE_TAX_ADD"),
+                invest_income_yuan=_first_float(ps, "INVEST_INCOME"),
+                invest_joint_income_yuan=_first_float(ps, "INVEST_JOINT_INCOME"),
+                fair_value_change_yuan=_first_float(ps, "FAIRVALUE_CHANGE_INCOME"),
+                other_income_yuan=_first_float(ps, "OTHER_INCOME"),
+                asset_disposal_yuan=_first_float(ps, "ASSET_DISPOSAL_INCOME"),
+                impairment_net_yuan=_compute_impairment_net(ps, year),
+                nonbusiness_net_yuan=_compute_nonbusiness_net(ps),
+                long_equity_invest_yuan=_first_float(bs, "LONG_EQUITY_INVEST"),
+                invest_property_and_other_fin_yuan=_sum_available(
+                    bs,
+                    "OTHER_EQUITY_INVEST",
+                    "OTHER_NONCURRENT_FINASSET",
+                    "INVEST_REALESTATE",
+                    "CREDITOR_INVEST",
+                    "OTHER_CREDITOR_INVEST",
+                    "AVAILABLE_SALE_FINASSET",
+                ),
             )
         )
 
@@ -937,15 +1007,20 @@ class AkshareStockFactFeed:
         sina_symbol = f"{exchange.lower()}{code}"
 
         used_tx_fallback = False
+
+        def _fetch_sina_hist() -> pd.DataFrame:
+            with MINI_RACER_LOCK:
+                return ak.stock_zh_a_hist_sina(
+                    symbol=sina_symbol,
+                    start_date=start_str,
+                    end_date=end_str,
+                )
+
         try:
             bars_df = await self._run_call(
                 code,
                 "stock_zh_a_hist_sina",
-                lambda: ak.stock_zh_a_hist_sina(
-                    symbol=sina_symbol,
-                    start_date=start_str,
-                    end_date=end_str,
-                ),
+                _fetch_sina_hist,
             )
         except Exception as primary_exc:
             logger.warning("Sina 个股日线失败 (%s)，切换至腾讯备用源: %s", code, primary_exc)
@@ -1162,7 +1237,7 @@ class AkshareStockFactFeed:
     ) -> pd.DataFrame | None:
         def _invoke() -> pd.DataFrame:
             if serialized:
-                with _CNINFO_V8_LOCK:
+                with MINI_RACER_LOCK:
                     return fn()
             return fn()
 

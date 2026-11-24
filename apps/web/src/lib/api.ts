@@ -17,6 +17,7 @@ import type {
   JournalCreate,
   JournalEntryItem,
   LoginRequest,
+  MarketDiscoveryResponse,
   MarketOverview,
   MdaDiffRequest,
   MdaDiffResponse,
@@ -371,6 +372,9 @@ export const api = {
   marketOverview: async (signal?: AbortSignal): Promise<MarketOverview> =>
     unwrap(await client.GET('/api/market/overview', { signal })),
 
+  getMarketDiscovery: async (signal?: AbortSignal): Promise<MarketDiscoveryResponse> =>
+    unwrap(await client.GET('/api/market/discovery', { signal })),
+
   listWatchlist: async (signal?: AbortSignal): Promise<WatchlistItem[]> =>
     unwrap(await client.GET('/api/watchlist', { signal })),
 
@@ -463,6 +467,9 @@ export const api = {
     const trimmedQuery = filters.q?.trim()
     if (trimmedQuery) {
       query.q = trimmedQuery
+    }
+    if (filters.qualityFilter !== undefined) {
+      query.quality_filter = filters.qualityFilter
     }
     if (filters.sortBy !== undefined) {
       query.sort_by = filters.sortBy

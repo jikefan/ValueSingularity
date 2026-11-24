@@ -101,6 +101,7 @@ _THOUSANDS_COMMA_RE = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
 _ISO_DATE_RE = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")
 _YEAR_LABEL_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})\s*年(?:报|度)?")
 _YEAR_FOUR_DIGIT_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
+_PROSE_HORIZON_RE = re.compile(r"(?<!\d)(?:近\s*)?(?:3|5|10)\s*年")
 _SCHEMA_HORIZON_RE = re.compile(
     r"(?<!\d)(?:近\s*)?(?:3|5|10)\s*年"
     r"(?=\s*(?:平均|均值|最低|最高|分位|历史|复合|累计|营收|净利|扣非|净现比|分红|回购|股东回报|ROE|CAGR|FCF|自由现金流|\d))"
@@ -211,6 +212,30 @@ def _add_scalar_metric(
     _add_number_variants(metric_allowed, value)
 
 
+def _add_prose_metric_tokens(
+    all_allowed: set[str],
+    metric_allowed: set[str],
+    text: str,
+    *,
+    snapshot: StockSnapshotPayload,
+) -> None:
+    if not text:
+        return
+    cleaned = _scrub_identity(
+        text,
+        stock_code=snapshot.code,
+        stock_name=snapshot.name,
+        normalize_nfkc=True,
+    )
+    cleaned = _THOUSANDS_COMMA_RE.sub("", cleaned)
+    cleaned = _ISO_DATE_RE.sub(" ", cleaned)
+    cleaned = _YEAR_FOUR_DIGIT_RE.sub(" ", cleaned)
+    cleaned = _PROSE_HORIZON_RE.sub(" ", cleaned)
+    for tok in _NUMBER_TOKEN_RE.findall(cleaned):
+        with contextlib.suppress(ValueError):
+            _add_scalar_metric(all_allowed, metric_allowed, float(tok))
+
+
 def collect_allowed_snapshot_numbers(snapshot: StockSnapshotPayload) -> tuple[set[str], set[str]]:
     """Collect (all_allowed, primary_metric_allowed) formatted number tokens from snapshot."""
     all_allowed: set[str] = set()
@@ -293,6 +318,8 @@ def collect_allowed_snapshot_numbers(snapshot: StockSnapshotPayload) -> tuple[se
         radar.total_score,
     ):
         _add_scalar_metric(all_allowed, metric_allowed, score_val)
+    for bear_case in radar.bear_cases:
+        _add_prose_metric_tokens(all_allowed, metric_allowed, bear_case, snapshot=snapshot)
 
     pm = snapshot.peer_metrics
     _add_scalar_metric(all_allowed, metric_allowed, pm.close)
@@ -338,6 +365,61 @@ def collect_allowed_snapshot_numbers(snapshot: StockSnapshotPayload) -> tuple[se
         _add_scalar_metric(all_allowed, metric_allowed, trend.rd_ratio_pct)
 
     _add_scalar_metric(all_allowed, metric_allowed, snapshot.pledge_ratio_pct)
+    if snapshot.forensics is not None:
+        f = snapshot.forensics
+        _add_scalar_metric(all_allowed, metric_allowed, f.core_profit_share_3y_pct)
+        _add_scalar_metric(all_allowed, metric_allowed, f.invest_profit_share_3y_pct)
+        _add_scalar_metric(all_allowed, metric_allowed, f.non_recurring_share_3y_pct)
+        _add_scalar_metric(all_allowed, metric_allowed, f.ocf_to_core_profit_3y_pct)
+        _add_scalar_metric(all_allowed, metric_allowed, f.interest_burden_pct)
+        _add_yuan_metric(all_allowed, metric_allowed, f.investment_assets_yuan)
+        _add_scalar_metric(all_allowed, metric_allowed, f.investment_assets_ratio_pct)
+        _add_scalar_metric(all_allowed, metric_allowed, f.dupont_roe_5y_avg_pct)
+        _add_scalar_metric(all_allowed, metric_allowed, f.dupont_net_margin_5y_avg_pct)
+        _add_scalar_metric(all_allowed, metric_allowed, f.dupont_asset_turnover_5y_avg)
+        _add_scalar_metric(all_allowed, metric_allowed, f.dupont_equity_multiplier_5y_avg)
+        for pt in f.annual_decomposition:
+            _add_number_variants(all_allowed, pt.year)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.revenue_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.operate_profit_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.core_operating_profit_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.investment_and_fair_value_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.subsidy_and_oneoff_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.impairment_net_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.net_profit_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.deduct_net_profit_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, pt.ocf_yuan)
+            _add_scalar_metric(all_allowed, metric_allowed, pt.core_operating_margin_pct)
+            _add_scalar_metric(all_allowed, metric_allowed, pt.invest_share_of_op_profit_pct)
+        for dp in f.dupont_series:
+            _add_number_variants(all_allowed, dp.year)
+            _add_scalar_metric(all_allowed, metric_allowed, dp.roe_pct)
+            _add_scalar_metric(all_allowed, metric_allowed, dp.net_margin_pct)
+            _add_scalar_metric(all_allowed, metric_allowed, dp.asset_turnover)
+            _add_scalar_metric(all_allowed, metric_allowed, dp.equity_multiplier)
+        _add_prose_metric_tokens(all_allowed, metric_allowed, f.verdict, snapshot=snapshot)
+        for finding in f.findings:
+            _add_prose_metric_tokens(
+                all_allowed, metric_allowed, finding.headline, snapshot=snapshot
+            )
+            _add_prose_metric_tokens(all_allowed, metric_allowed, finding.detail, snapshot=snapshot)
+            _add_prose_metric_tokens(
+                all_allowed, metric_allowed, finding.metric_text, snapshot=snapshot
+            )
+        if f.capital_allocation is not None:
+            ca = f.capital_allocation
+            _add_number_variants(all_allowed, ca.window_years)
+            _add_yuan_metric(all_allowed, metric_allowed, ca.total_ocf_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, ca.total_capex_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, ca.total_dividends_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, ca.total_repurchases_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, ca.total_equity_financing_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, ca.net_debt_change_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, ca.ending_net_cash_yuan)
+            _add_yuan_metric(all_allowed, metric_allowed, ca.ending_investment_assets_yuan)
+            _add_scalar_metric(all_allowed, metric_allowed, ca.capex_to_ocf_pct)
+            _add_scalar_metric(all_allowed, metric_allowed, ca.payout_to_ocf_pct)
+            _add_prose_metric_tokens(all_allowed, metric_allowed, ca.summary, snapshot=snapshot)
     return all_allowed, metric_allowed
 
 
@@ -352,6 +434,11 @@ def _collect_allowed_years(snapshot: StockSnapshotPayload) -> set[int]:
             years.add(evidence.year)
     for trend in snapshot.annual_trends:
         years.add(trend.year)
+    if snapshot.forensics is not None:
+        for pt in snapshot.forensics.annual_decomposition:
+            years.add(pt.year)
+        for dp in snapshot.forensics.dupont_series:
+            years.add(dp.year)
     return years
 
 
@@ -576,6 +663,33 @@ def trim_snapshot_context(
         }
         for pt in sort_reports_like(snapshot.annual_trends)[-3:]
     ]
+    if snapshot.forensics is not None:
+        f = snapshot.forensics
+        payload["forensics"] = {
+            "earnings_quality_tag": f.earnings_quality_tag,
+            "earnings_quality_label": f.earnings_quality_label,
+            "core_profit_share_3y_pct": f.core_profit_share_3y_pct,
+            "invest_profit_share_3y_pct": f.invest_profit_share_3y_pct,
+            "non_recurring_share_3y_pct": f.non_recurring_share_3y_pct,
+            "investment_assets_ratio_pct": f.investment_assets_ratio_pct,
+            "ocf_to_core_profit_3y_pct": f.ocf_to_core_profit_3y_pct,
+            "interest_burden_pct": f.interest_burden_pct,
+            "findings": [
+                {
+                    "finding_id": item.finding_id,
+                    "title": item.title,
+                    "status": item.status,
+                    "headline": item.headline,
+                    "detail": item.detail,
+                }
+                for item in f.findings[:4]
+            ],
+            "capital_allocation": (
+                {"allocation_style": f.capital_allocation.allocation_style}
+                if f.capital_allocation is not None
+                else None
+            ),
+        }
     return payload
 
 
@@ -963,6 +1077,136 @@ def _build_snapshot_candidates(
         built = _ct_challenge_for_check(check, snapshot, is_financial=is_financial)
         if built is not None:
             candidates.append(built)
+
+    if not is_financial and snapshot.forensics is not None:
+        f = snapshot.forensics
+        if f.earnings_quality_tag == "investment_driven" or (
+            f.invest_profit_share_3y_pct is not None and f.invest_profit_share_3y_pct >= 35.0
+        ):
+            inv_facts: list[CitedMetricFact] = []
+            inv_parts: list[str] = []
+            if f.invest_profit_share_3y_pct is not None:
+                inv_txt = f"{_fmt_num(f.invest_profit_share_3y_pct, 2)}%"
+                inv_facts.append(
+                    CitedMetricFact(
+                        label="3年投资收益占比", value_text=inv_txt, source_section="forensics"
+                    )
+                )
+                inv_parts.append(f"近3年投资与公允价值变动占营业利润 {inv_txt}")
+            if f.core_profit_share_3y_pct is not None:
+                core_txt = f"{_fmt_num(f.core_profit_share_3y_pct, 2)}%"
+                inv_facts.append(
+                    CitedMetricFact(
+                        label="3年主业利润占比", value_text=core_txt, source_section="forensics"
+                    )
+                )
+                inv_parts.append(f"主业核心利润占比 {core_txt}")
+            if f.investment_assets_ratio_pct is not None:
+                ia_txt = f"{_fmt_num(f.investment_assets_ratio_pct, 2)}%"
+                inv_facts.append(
+                    CitedMetricFact(
+                        label="表内投资资产占比", value_text=ia_txt, source_section="forensics"
+                    )
+                )
+                inv_parts.append(f"表内投资类资产占总资产 {ia_txt}")
+            if inv_facts:
+                priority = 106 if f.earnings_quality_tag == "investment_driven" else 88
+                candidates.append(
+                    (
+                        priority,
+                        "forensics_investment_driven",
+                        DevilsAdvocateChallenge(
+                            index=1,
+                            title="利润高度依赖对外投资与公允价值波动",
+                            thesis=(
+                                f"{'，'.join(inv_parts)}；即使扣非净利润看似稳健，"
+                                "联营合营投资收益或二级市场公允价值变动仍可能掩盖主业真实造血走弱，"
+                                "需警惕资产估值周期反转对盈利的冲击。"
+                            ),
+                            cited_facts=inv_facts,
+                            suggested_falsify_rule=FalsifyRule(
+                                metric="ocf_to_profit_5y_pct", op="lt", value=70.0, periods=1
+                            ),
+                        ),
+                    )
+                )
+        elif f.earnings_quality_tag == "subsidy_inflated":
+            sub_facts: list[CitedMetricFact] = []
+            sub_parts: list[str] = []
+            if f.non_recurring_share_3y_pct is not None:
+                nr_txt = f"{_fmt_num(f.non_recurring_share_3y_pct, 2)}%"
+                sub_facts.append(
+                    CitedMetricFact(
+                        label="3年非经/补贴占比", value_text=nr_txt, source_section="forensics"
+                    )
+                )
+                sub_parts.append(f"近3年非经常性损益与补贴影响占比达 {nr_txt}")
+            if f.core_profit_share_3y_pct is not None:
+                core_txt = f"{_fmt_num(f.core_profit_share_3y_pct, 2)}%"
+                sub_facts.append(
+                    CitedMetricFact(
+                        label="3年主业利润占比", value_text=core_txt, source_section="forensics"
+                    )
+                )
+                sub_parts.append(f"主业核心利润占比 {core_txt}")
+            if sub_facts:
+                candidates.append(
+                    (
+                        105,
+                        "forensics_subsidy_inflated",
+                        DevilsAdvocateChallenge(
+                            index=1,
+                            title="非经常性损益与政府补贴占比过高",
+                            thesis=(
+                                f"{'，'.join(sub_parts)}；当账面利润高度依赖财政补贴、"
+                                "资产处置或一次性营业外收入时，一旦政策退坡或偶发收益消失，"
+                                "主业真实盈利水平将面临大幅下修。"
+                            ),
+                            cited_facts=sub_facts,
+                            suggested_falsify_rule=FalsifyRule(
+                                metric="net_margin_pct", op="lt", value=5.0, periods=2
+                            ),
+                        ),
+                    )
+                )
+        elif f.earnings_quality_tag == "cashflow_divergent":
+            cf_facts: list[CitedMetricFact] = []
+            cf_parts: list[str] = []
+            if f.ocf_to_core_profit_3y_pct is not None:
+                ocf_txt = f"{_fmt_num(f.ocf_to_core_profit_3y_pct, 2)}%"
+                cf_facts.append(
+                    CitedMetricFact(
+                        label="3年OCF/核心利润", value_text=ocf_txt, source_section="forensics"
+                    )
+                )
+                cf_parts.append(f"近3年 OCF/主业核心利润为 {ocf_txt}")
+            if f.interest_burden_pct is not None:
+                ib_txt = f"{_fmt_num(f.interest_burden_pct, 2)}%"
+                cf_facts.append(
+                    CitedMetricFact(
+                        label="利息负担率", value_text=ib_txt, source_section="forensics"
+                    )
+                )
+                cf_parts.append(f"利息费用占息税前核心利润 {ib_txt}")
+            if cf_facts:
+                candidates.append(
+                    (
+                        98,
+                        "forensics_cashflow_divergent",
+                        DevilsAdvocateChallenge(
+                            index=1,
+                            title="主业核心利润现金转化偏弱或利息侵蚀显著",
+                            thesis=(
+                                f"{'，'.join(cf_parts)}；主业账面盈利未能顺畅转化为经营现金流或被有息负债利息大量吞噬，"
+                                "需核查营运资金占款及再融资偿债压力。"
+                            ),
+                            cited_facts=cf_facts,
+                            suggested_falsify_rule=FalsifyRule(
+                                metric="ocf_to_profit_5y_pct", op="lt", value=70.0, periods=1
+                            ),
+                        ),
+                    )
+                )
 
     industry = meta.industry_sw1 or snapshot.industry_sw1 or "金融"
     if is_financial:

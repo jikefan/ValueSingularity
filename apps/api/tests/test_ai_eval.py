@@ -1876,3 +1876,119 @@ async def test_ssrf_site_local_response_size_limit_sni_and_azure_endpoint(
             metric_shifts=[],
             text_highlights=[],
         )
+
+
+def test_forensics_context_challenge_and_bear_case_self_grounding() -> None:
+    meta_inv = StockMetaRecord(code="600177", name="雅戈尔", exchange="SH", industry_sw1="纺织服饰")
+    bars = [
+        StockDailyBar(
+            code="600177",
+            trade_date=date(2026, 11, 20),
+            open=8.0,
+            high=8.1,
+            low=7.9,
+            close=8.0,
+            total_mv_yuan=360e8,
+            pe_ttm=12.0,
+            pb=0.9,
+        )
+    ]
+    reports = [
+        StockAnnualReport(
+            code="600177",
+            report_year=y,
+            report_date=date(y, 12, 31),
+            audit_opinion="标准无保留意见",
+            revenue_yuan=100e8,
+            operate_cost_yuan=50e8,
+            operate_profit_yuan=20e8,
+            invest_income_yuan=21e8,
+            fair_value_change_yuan=3e8,
+            other_income_yuan=0.5e8,
+            net_profit_yuan=18e8,
+            deduct_net_profit_yuan=17e8,
+            total_assets_yuan=500e8,
+            total_equity_yuan=200e8,
+            parent_equity_yuan=200e8,
+            trade_fin_assets_yuan=50e8,
+            long_equity_invest_yuan=150e8,
+            invest_property_and_other_fin_yuan=60e8,
+            ocf_yuan=8e8,
+            capex_yuan=2e8,
+        )
+        for y in range(2021, 2026)
+    ]
+    bundle = StockFactBundle(
+        code="600177",
+        as_of=date(2026, 11, 20),
+        daily_bars=bars,
+        annual_reports=reports,
+        dividends=[],
+        repurchases=[],
+        pledge=StockPledgeSnapshot(
+            code="600177", trade_date=date(2026, 11, 20), pledge_ratio_pct=1.0
+        ),
+        equity_financings=[],
+    )
+    snap = build_stock_snapshot(
+        meta_inv, bundle, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+    )
+    assert snap.forensics is not None
+
+    ctx = trim_snapshot_context(
+        meta_inv,
+        snap,
+        action=JournalAction.BUY,
+        reason="股息率高且市净率破净",
+        falsify_condition="投资收益占比维持50%以上",
+    )
+    assert "forensics" in ctx
+    assert ctx["forensics"]["earnings_quality_tag"] == "investment_driven"
+    assert len(ctx["forensics"]["findings"]) <= 4
+    assert ctx["forensics"]["capital_allocation"] is not None
+
+    challenges = build_deterministic_challenges(
+        meta_inv,
+        snap,
+        action=JournalAction.BUY,
+        reason="低估值高股息",
+        falsify_condition="ROE跌破8%",
+    )
+    assert any("对外投资" in ch.title for ch in challenges)
+    ok, err = verify_llm_challenges(
+        challenges, snap, stock_code=meta_inv.code, stock_name=meta_inv.name
+    )
+    assert ok is True, err
+
+    # Citing 3Y cumulative numbers embedded in radar.bear_cases / forensics.findings must verify.
+    bear_case_citation = [
+        DevilsAdvocateChallenge(
+            index=1,
+            title="对外投资掩盖主业亏损",
+            thesis=(
+                "公司近3年投资与公允价值变动收益占营业利润 120.0%，"
+                "最新年报主业核心营业利润 -4.50亿元，且表内投资类资产占总资产 52.0%。"
+            ),
+            cited_facts=[
+                CitedMetricFact(
+                    label="主业核心营业利润", value_text="-4.50亿元", source_section="forensics"
+                ),
+                CitedMetricFact(
+                    label="投资收益占比", value_text="120.0%", source_section="forensics"
+                ),
+            ],
+        ),
+        DevilsAdvocateChallenge(
+            index=2,
+            title="扣非与归母利润对比",
+            thesis="近3年扣非净利润 51.00亿元 vs 归母净利润 54.00亿元。",
+            cited_facts=[
+                CitedMetricFact(label="3年扣非", value_text="51.00亿元", source_section="forensics")
+            ],
+        ),
+        challenges[2],
+    ]
+    ok_bear, err_bear = verify_llm_challenges(
+        bear_case_citation, snap, stock_code=meta_inv.code, stock_name=meta_inv.name
+    )
+    assert ok_bear is True, err_bear

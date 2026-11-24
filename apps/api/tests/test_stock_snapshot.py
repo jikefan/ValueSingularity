@@ -6,8 +6,9 @@ import asyncio
 import threading
 import time
 from collections.abc import AsyncIterator, Sequence
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 
 import akshare as ak
 import duckdb
@@ -1598,3 +1599,102 @@ async def test_stock_sync_service_enriches_meta_and_exempts_600036_bank_snapshot
         assert ct_by_id[rule_id].status == "na"
         assert "金融行业结构特殊" in ct_by_id[rule_id].summary
         assert ct_by_id[rule_id].value_text == "不适用"
+
+
+async def test_stock_feed_uses_shared_v8_lock_and_snapshot_repo_offloads_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from app.adapters.akshare._common import MINI_RACER_LOCK
+
+    seen_locked = False
+
+    def locked_sina(**_kwargs: object) -> pd.DataFrame:
+        nonlocal seen_locked
+        seen_locked = MINI_RACER_LOCK.locked()
+        return pd.DataFrame(
+            [
+                {
+                    "date": date(2026, 11, 20),
+                    "open": 100.0,
+                    "high": 102.0,
+                    "low": 99.0,
+                    "close": 101.0,
+                    "volume": 1000.0,
+                    "amount": 101000.0,
+                }
+            ]
+        )
+
+    monkeypatch.setattr(ak, "stock_zh_a_hist_sina", locked_sina)
+    monkeypatch.setattr(ak, "stock_zh_valuation_baidu", lambda **_kwargs: pd.DataFrame())
+
+    feed = AkshareStockFactFeed(timeout_seconds=5.0, max_attempts=1, retry_wait_seconds=0.0)
+    bars, used_tx = await feed._fetch_bars_and_valuation(
+        "600519", exchange="SH", as_of=date(2026, 11, 20)
+    )
+    assert seen_locked is True
+    assert used_tx is False
+    assert len(bars) == 1
+
+    to_thread_calls = 0
+    orig_to_thread = asyncio.to_thread
+
+    async def spy_to_thread(fn: Any, *args: Any, **kwargs: Any) -> Any:
+        nonlocal to_thread_calls
+        to_thread_calls += 1
+        return await orig_to_thread(fn, *args, **kwargs)
+
+    monkeypatch.setattr("app.adapters.postgres.snapshot.asyncio.to_thread", spy_to_thread)
+
+    class _FakeScalars:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        def all(self) -> list[Any]:
+            return self._rows
+
+    class _FakeSession:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        async def scalars(self, _stmt: Any) -> _FakeScalars:
+            return _FakeScalars(self._rows)
+
+    valid_payload = persisted_stub_payload()
+    repo = PostgresStockSnapshotRepository(
+        _FakeSession([SimpleNamespace(payload=valid_payload), SimpleNamespace(payload={"bad": 1})])  # type: ignore[arg-type]
+    )
+    snaps = await repo.list_all_snapshots()
+    assert to_thread_calls == 1
+    assert [s.code for s in snaps] == ["600519"]
+
+
+def persisted_stub_payload() -> dict[str, Any]:
+    meta = StockMetaRecord(code="600519", name="贵州茅台", exchange="SH", industry_sw1="食品饮料")
+    bundle = StockFactBundle(
+        code="600519",
+        as_of=date(2026, 11, 20),
+        daily_bars=[
+            StockDailyBar(
+                code="600519",
+                trade_date=date(2026, 11, 20),
+                open=100.0,
+                high=101.0,
+                low=99.0,
+                close=100.0,
+                total_mv_yuan=1000e8,
+                pe_ttm=20.0,
+                pb=5.0,
+            )
+        ],
+        annual_reports=[],
+        dividends=[],
+        repurchases=[],
+        pledge=None,
+        equity_financings=[],
+    )
+    return build_stock_snapshot(
+        meta, bundle, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+    ).model_dump(mode="json")

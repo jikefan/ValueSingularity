@@ -87,6 +87,19 @@ STOCK_ANNUAL_REPORT_SCHEMA = pa.schema(
         ("accept_invest_cash_yuan", pa.float64()),
         ("subsidiary_accept_invest_yuan", pa.float64()),
         ("cash_dividend_paid_yuan", pa.float64()),
+        ("operate_profit_yuan", pa.float64()),
+        ("sale_expense_yuan", pa.float64()),
+        ("manage_expense_yuan", pa.float64()),
+        ("operate_tax_add_yuan", pa.float64()),
+        ("invest_income_yuan", pa.float64()),
+        ("invest_joint_income_yuan", pa.float64()),
+        ("fair_value_change_yuan", pa.float64()),
+        ("other_income_yuan", pa.float64()),
+        ("asset_disposal_yuan", pa.float64()),
+        ("impairment_net_yuan", pa.float64()),
+        ("nonbusiness_net_yuan", pa.float64()),
+        ("long_equity_invest_yuan", pa.float64()),
+        ("invest_property_and_other_fin_yuan", pa.float64()),
     ]
 )
 
@@ -154,6 +167,19 @@ _ANNUAL_FLOAT_FIELDS: tuple[str, ...] = (
     "accept_invest_cash_yuan",
     "subsidiary_accept_invest_yuan",
     "cash_dividend_paid_yuan",
+    "operate_profit_yuan",
+    "sale_expense_yuan",
+    "manage_expense_yuan",
+    "operate_tax_add_yuan",
+    "invest_income_yuan",
+    "invest_joint_income_yuan",
+    "fair_value_change_yuan",
+    "other_income_yuan",
+    "asset_disposal_yuan",
+    "impairment_net_yuan",
+    "nonbusiness_net_yuan",
+    "long_equity_invest_yuan",
+    "invest_property_and_other_fin_yuan",
 )
 
 _BAR_OPTIONAL_FLOAT_FIELDS: tuple[str, ...] = (
@@ -484,7 +510,7 @@ def _sync_load_stock_facts(
                     con,
                     """
                     SELECT * EXCLUDE (report_year), report_year
-                    FROM read_parquet(?, hive_partitioning=true)
+                    FROM read_parquet(?, hive_partitioning=true, union_by_name=true)
                     WHERE code = ? AND report_date <= ?
                     ORDER BY report_year ASC
                     """,
@@ -495,7 +521,7 @@ def _sync_load_stock_facts(
                     con,
                     """
                     SELECT * EXCLUDE (report_year), report_year
-                    FROM read_parquet(?, hive_partitioning=true)
+                    FROM read_parquet(?, hive_partitioning=true, union_by_name=true)
                     WHERE code = ?
                     ORDER BY report_year ASC
                     """,

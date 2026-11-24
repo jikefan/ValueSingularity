@@ -332,6 +332,7 @@ const SAMPLE_SNAPSHOT: StockSnapshotPayload = {
     ct_red_count: 0,
     ct_yellow_count: 1,
     total_score: 89,
+    is_financial: false,
   },
   pledge_ratio_pct: 0.0,
   pledge_date: '2026-11-20',
@@ -543,7 +544,7 @@ describe('StockPage', () => {
     })
   })
 
-  it('lights up all 9 tabs from StockSnapshotPayload including Reverse DCF matrix and CT drill-down', async () => {
+  it('lights up all 10 tabs from StockSnapshotPayload including Forensics, Reverse DCF matrix, and CT drill-down', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const request = asRequest(input)
       const pathname = new URL(request.url).pathname
@@ -573,11 +574,16 @@ describe('StockPage', () => {
     )
 
     const tabs = screen.getAllByRole('tab')
-    expect(tabs).toHaveLength(9)
+    expect(tabs).toHaveLength(10)
+    expect(tabs[1]).toHaveTextContent('利润真相')
 
     expect(await screen.findByRole('img', { name: '五维评分雷达图' })).toBeInTheDocument()
     expect(screen.getByText('综合评分 89 / 100')).toBeInTheDocument()
     expect(screen.getByText('高端白酒商务消费景气度受宏观周期影响。')).toBeInTheDocument()
+    expect(screen.queryByText('利润含金量与表内结构速览')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '利润真相' }))
+    expect(await screen.findByText('当前快照暂未包含利润真相深拆字段')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('tab', { name: '财务分析' }))
     expect(await screen.findByRole('img', { name: '十年财务趋势图' })).toBeInTheDocument()
@@ -2542,6 +2548,13 @@ describe('StockPage', () => {
         total_score: 83,
         bear_cases: ['净息差收窄周期对银行盈利增速形成约束。'],
       },
+      peer_metrics: {
+        ...SAMPLE_SNAPSHOT.peer_metrics,
+        code: '600036',
+        name: '招商银行',
+        industry_sw1: '银行',
+        is_financial: true,
+      },
     }
 
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
@@ -2631,5 +2644,308 @@ describe('StockPage', () => {
     expect(capturedChartOptions.get('股东净回报柱状图')).toMatchObject({
       grid: { top: 72 },
     })
+  })
+
+  it('displays header quality badge, forensic caution banner, Overview forensics summary, drill-down jump CTA, and dossier forensics section', async () => {
+    const youngorStock: StockDetail = {
+      code: '600177',
+      name: '雅戈尔',
+      exchange: 'SH',
+      industry_sw1: '纺织服饰',
+      industry_sw2: '服装家纺',
+      list_date: '1998-11-19',
+      is_st: false,
+      is_active: true,
+      snapshot_available: true,
+    }
+
+    const youngorSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      code: '600177',
+      name: '雅戈尔',
+      industry_sw1: '纺织服饰',
+      industry_sw2: '服装家纺',
+      forensics: {
+        earnings_quality_tag: 'investment_driven',
+        earnings_quality_label: '盈利高度依赖对外投资',
+        verdict:
+          '近3年投资与公允价值变动收益占营业利润 64.2%，表内投资类资产占总资产 47.6%，需警惕投资波动掩盖主业盈利。',
+        core_profit_share_3y_pct: 33.4,
+        invest_profit_share_3y_pct: 64.2,
+        non_recurring_share_3y_pct: 4.8,
+        ocf_to_core_profit_3y_pct: 118.5,
+        interest_burden_pct: 19.4,
+        investment_assets_yuan: 3.85e10,
+        investment_assets_ratio_pct: 47.6,
+        dupont_roe_5y_avg_pct: 11.8,
+        dupont_net_margin_5y_avg_pct: 23.5,
+        dupont_asset_turnover_5y_avg: 0.24,
+        dupont_equity_multiplier_5y_avg: 2.09,
+        findings: [
+          {
+            finding_id: 'investment_reliance',
+            title: '对外投资驱动诊断',
+            status: 'red',
+            headline: '盈利高度依赖对外投资',
+            detail: '近3年投资与公允价值变动收益占营业利润 64.2%。',
+            metric_text: '投资收益占比 64.2%',
+          },
+        ],
+        annual_decomposition: [
+          {
+            year: 2025,
+            revenue_yuan: 1.51e10,
+            operate_profit_yuan: 3.55e9,
+            core_operating_profit_yuan: 1.12e9,
+            core_operating_margin_pct: 7.42,
+            investment_and_fair_value_yuan: 2.28e9,
+            invest_share_of_op_profit_pct: 64.2,
+            subsidy_and_oneoff_yuan: 1.5e8,
+            impairment_net_yuan: -6e7,
+            net_profit_yuan: 3.18e9,
+            deduct_net_profit_yuan: 2.98e9,
+            ocf_yuan: 1.49e9,
+          },
+        ],
+        dupont_series: [
+          {
+            year: 2025,
+            roe_pct: 11.8,
+            net_margin_pct: 21.06,
+            asset_turnover: 0.24,
+            equity_multiplier: 2.09,
+          },
+        ],
+        capital_allocation: {
+          window_years: 5,
+          total_ocf_yuan: 1.68e10,
+          total_capex_yuan: 2.9e9,
+          capex_to_ocf_pct: 17.3,
+          total_dividends_yuan: 1.05e10,
+          total_repurchases_yuan: 5e8,
+          total_equity_financing_yuan: 0,
+          payout_to_ocf_pct: 65.5,
+          net_debt_change_yuan: 1.2e9,
+          ending_net_cash_yuan: -4.2e9,
+          ending_investment_assets_yuan: 3.85e10,
+          allocation_style: '盈余留存·金融资产配置型',
+          summary: '近5年累计 OCF 168.00 亿元，同时保留高比例表内金融投资资产。',
+        },
+      },
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600177') {
+        return Promise.resolve(jsonResponse(youngorStock, 200))
+      }
+      if (pathname === '/api/stocks/600177/snapshot') {
+        return Promise.resolve(jsonResponse(youngorSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600177')
+
+    expect(await screen.findByRole('heading', { name: '雅戈尔' })).toBeInTheDocument()
+    expect(await screen.findByText('利润含金量与表内结构速览')).toBeInTheDocument()
+    const headerRow = screen.getByRole('heading', { name: '雅戈尔' }).closest('.stock-title-row')
+    expect(headerRow).not.toBeNull()
+    expect(headerRow).toHaveTextContent('盈利高度依赖对外投资')
+    expect(headerRow?.querySelector('.quality-badge-red')).toBeInTheDocument()
+
+    const cautionStrip = screen.getByRole('note', { name: '利润成色鉴真提示' })
+    expect(cautionStrip).toHaveClass('discovery-caution-strip-red')
+    expect(cautionStrip).toHaveTextContent('近3年投资与公允价值变动收益占营业利润 64.2%')
+
+    expect(screen.getByText('主业核心占比')).toBeInTheDocument()
+
+    const jumpBtn = screen.getByRole('button', { name: '下钻「利润真相」 →' })
+    fireEvent.click(jumpBtn)
+
+    expect(screen.getByRole('tab', { name: '利润真相' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('利润含金量深度鉴真')).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '年度利润构成拆解图' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '杜邦三因子趋势图' })).toBeInTheDocument()
+    expect(screen.getByText('盈余留存·金融资产配置型')).toBeInTheDocument()
+
+    const dossier = formatStockDossierMarkdown(youngorStock, youngorSnapshot)
+    expect(dossier).toContain('## 利润真相与盈利成色深度鉴真')
+    expect(dossier).toContain('盈利高度依赖对外投资')
+    expect(dossier).toContain('近 3 年主业核心利润占比：33.4%')
+    expect(dossier).toContain('投资与公允价值占比：64.2%')
+    expect(dossier).toContain('表内投资类资产占比：47.6%')
+    expect(dossier).toContain('对外投资驱动诊断')
+  })
+
+  it('exempts financial_special banks from caution strips and bridge warnings while rendering Chinese formula note titles for forensics and financial_radar', async () => {
+    const bankStock: StockDetail = {
+      code: '600036',
+      name: '招商银行',
+      exchange: 'SH',
+      industry_sw1: '银行',
+      industry_sw2: '股份制银行Ⅱ',
+      list_date: '2002-04-09',
+      is_st: false,
+      is_active: true,
+      snapshot_available: true,
+    }
+
+    const bankSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      code: '600036',
+      name: '招商银行',
+      industry_sw1: '银行',
+      industry_sw2: '股份制银行Ⅱ',
+      radar: {
+        scoring_profile: 'financial',
+        profitability: 84,
+        moat: 86,
+        balance_sheet: 78,
+        cashflow_quality: 85,
+        valuation_margin: 82,
+        total_score: 83,
+        bear_cases: ['净息差收窄周期对银行盈利增速形成约束。'],
+      },
+      peer_metrics: {
+        ...SAMPLE_SNAPSHOT.peer_metrics,
+        code: '600036',
+        name: '招商银行',
+        industry_sw1: '银行',
+        is_financial: true,
+      },
+      formula_notes: {
+        ...SAMPLE_SNAPSHOT.formula_notes,
+        forensics: '主业利润拆解与杜邦三因子口径说明。',
+        financial_radar: '金融业五维雷达与 PB-ROE 专项评估口径。',
+      },
+      forensics: {
+        earnings_quality_tag: 'financial_special',
+        earnings_quality_label: '金融特殊结构',
+        verdict: '金融业态豁免工业利润剥离惩罚，重点核查 ROE 与分红耐力。',
+        core_profit_share_3y_pct: 82.0,
+        invest_profit_share_3y_pct: 42.0,
+        non_recurring_share_3y_pct: 2.5,
+        ocf_to_core_profit_3y_pct: null,
+        interest_burden_pct: null,
+        investment_assets_yuan: 3.2e12,
+        investment_assets_ratio_pct: 48.0,
+        dupont_roe_5y_avg_pct: 14.2,
+        dupont_net_margin_5y_avg_pct: 41.0,
+        dupont_asset_turnover_5y_avg: null,
+        dupont_equity_multiplier_5y_avg: 11.2,
+        findings: [],
+        annual_decomposition: [],
+        dupont_series: [],
+        capital_allocation: null,
+      },
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600036') {
+        return Promise.resolve(jsonResponse(bankStock, 200))
+      }
+      if (pathname === '/api/stocks/600036/snapshot') {
+        return Promise.resolve(jsonResponse(bankSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const { container } = renderStockPage('/stock/600036')
+
+    expect(await screen.findByRole('heading', { name: '招商银行' })).toBeInTheDocument()
+    expect(await screen.findByText('利润含金量与表内结构速览')).toBeInTheDocument()
+    expect(screen.queryByRole('note', { name: '利润成色鉴真提示' })).not.toBeInTheDocument()
+    expect(container.querySelectorAll('.discovery-caution-strip')).toHaveLength(0)
+    expect(container.querySelectorAll('.forensic-bridge-danger')).toHaveLength(0)
+    expect(container.querySelectorAll('.forensic-bridge-warn')).toHaveLength(0)
+
+    fireEvent.click(screen.getByText(/展开查看全部定量指标计算公式/))
+    expect(screen.getByText('利润含金量与杜邦/资本配置口径')).toBeInTheDocument()
+    expect(screen.getByText('金融业专项五维评价口径')).toBeInTheDocument()
+
+    const dossier = formatStockDossierMarkdown(bankStock, bankSnapshot)
+    expect(dossier).toContain('**利润含金量与杜邦/资本配置口径**')
+    expect(dossier).toContain('**金融业专项五维评价口径**')
+  })
+
+  it('renders red badge and red caution strip for subsidy_inflated and supports force-resync from legacy forensics fallback inside StockPage', async () => {
+    const legacySnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      forensics: null,
+    }
+    const hydratedSubsidySnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      forensics: {
+        earnings_quality_tag: 'subsidy_inflated',
+        earnings_quality_label: '非经常性损益或补贴占比偏高',
+        verdict: '近3年非经常性损益与补贴占比 51.4%，需警惕主业真实造血能力不足。',
+        core_profit_share_3y_pct: 48.6,
+        invest_profit_share_3y_pct: 3.2,
+        non_recurring_share_3y_pct: 51.4,
+        ocf_to_core_profit_3y_pct: 82.0,
+        interest_burden_pct: 12.0,
+        investment_assets_yuan: 4.5e9,
+        investment_assets_ratio_pct: 6.8,
+        dupont_roe_5y_avg_pct: 9.4,
+        dupont_net_margin_5y_avg_pct: 12.1,
+        dupont_asset_turnover_5y_avg: 0.62,
+        dupont_equity_multiplier_5y_avg: 1.25,
+        findings: [],
+        annual_decomposition: [],
+        dupont_series: [],
+        capital_allocation: null,
+      },
+    }
+
+    const syncUrls: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
+      if (url.pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (url.pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (url.pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(legacySnapshot, 200))
+      }
+      if (
+        url.pathname === '/api/stocks/600519/sync' &&
+        url.searchParams.get('force') === 'true' &&
+        request.method === 'POST'
+      ) {
+        syncUrls.push(request.url)
+        return Promise.resolve(jsonResponse(hydratedSubsidySnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600519')
+
+    fireEvent.click(await screen.findByRole('tab', { name: '利润真相' }))
+    expect(await screen.findByText('当前快照暂未包含利润真相深拆字段')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '查看财务分析' }))
+    expect(screen.getByRole('tab', { name: '财务分析' })).toHaveAttribute('aria-selected', 'true')
+
+    fireEvent.click(screen.getByRole('tab', { name: '利润真相' }))
+    fireEvent.click(await screen.findByRole('button', { name: '立即重算并刷新利润真相' }))
+
+    expect(await screen.findByText('利润含金量深度鉴真')).toBeInTheDocument()
+    expect(syncUrls.some((u) => u.endsWith('/api/stocks/600519/sync?force=true'))).toBe(true)
+
+    const headerRow = screen.getByRole('heading', { name: '贵州茅台' }).closest('.stock-title-row')
+    expect(headerRow?.querySelector('.quality-badge-red')).toBeInTheDocument()
+    const cautionStrip = screen.getByRole('note', { name: '利润成色鉴真提示' })
+    expect(cautionStrip).toHaveClass('discovery-caution-strip-red')
   })
 })

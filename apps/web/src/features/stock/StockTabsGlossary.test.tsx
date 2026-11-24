@@ -336,6 +336,7 @@ const STANDARD_SNAPSHOT: StockSnapshotPayload = {
     ct_red_count: 0,
     ct_yellow_count: 1,
     total_score: 89,
+    is_financial: false,
   },
   pledge_ratio_pct: 0.0,
   pledge_date: '2026-11-20',
@@ -379,6 +380,13 @@ const FINANCIAL_SNAPSHOT: StockSnapshotPayload = {
       cashflow_quality: '资本与分红耐力',
       valuation_margin: '估值安全边际',
     },
+  },
+  peer_metrics: {
+    ...STANDARD_SNAPSHOT.peer_metrics,
+    code: '600036',
+    name: '招商银行',
+    industry_sw1: '银行',
+    is_financial: true,
   },
 }
 

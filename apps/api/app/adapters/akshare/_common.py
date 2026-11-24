@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import math
 import re
+import threading
 from collections.abc import Callable
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -25,6 +26,8 @@ from app.domain.models import StockExchange
 
 SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
 STOCK_CODE_RE = re.compile(r"^\d{6}$")
+# Serialize py_mini_racer.MiniRacer invocations across endpoints to prevent macOS V8 aborts.
+MINI_RACER_LOCK = threading.Lock()
 
 
 def is_missing(value: object) -> bool:

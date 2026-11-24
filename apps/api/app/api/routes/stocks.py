@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from app.api.deps import DatabaseUnavailableError, StockServiceDep, StockSyncCoordinatorDep
 from app.domain.models import (
+    ScreenerQualityFilter,
     ScreenerSortDir,
     ScreenerSortField,
     StockCompareItem,
@@ -104,6 +105,7 @@ async def screen_stocks(
     ] = None,
     industry: Annotated[str | None, Query(max_length=64)] = None,
     q: Annotated[str | None, Query(max_length=64)] = None,
+    quality_filter: ScreenerQualityFilter = "all",
     sort_by: ScreenerSortField = "total_score",
     sort_dir: ScreenerSortDir = "desc",
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
@@ -126,6 +128,7 @@ async def screen_stocks(
             min_dividend_yield=min_dividend_yield,
             industry=industry,
             query=q,
+            quality_filter=quality_filter,
             sort_by=sort_by,
             sort_dir=sort_dir,
             limit=limit,

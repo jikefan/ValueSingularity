@@ -395,6 +395,140 @@
         "title": "AlertScanSummary",
         "type": "object"
       },
+      "AnnualEarningsDecompositionPoint": {
+        "properties": {
+          "core_operating_margin_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Operating Margin Pct"
+          },
+          "core_operating_profit_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Operating Profit Yuan"
+          },
+          "deduct_net_profit_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deduct Net Profit Yuan"
+          },
+          "impairment_net_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impairment Net Yuan"
+          },
+          "invest_share_of_op_profit_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invest Share Of Op Profit Pct"
+          },
+          "investment_and_fair_value_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment And Fair Value Yuan"
+          },
+          "net_profit_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Profit Yuan"
+          },
+          "ocf_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocf Yuan"
+          },
+          "operate_profit_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operate Profit Yuan"
+          },
+          "revenue_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue Yuan"
+          },
+          "subsidy_and_oneoff_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subsidy And Oneoff Yuan"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year"
+        ],
+        "title": "AnnualEarningsDecompositionPoint",
+        "type": "object"
+      },
       "AnnualFinancialTrendPoint": {
         "properties": {
           "deduct_net_profit_yuan": {
@@ -607,6 +741,122 @@
         "title": "AuthenticatedEmailCodeRequest",
         "type": "object"
       },
+      "CapitalAllocationSummary": {
+        "properties": {
+          "allocation_style": {
+            "title": "Allocation Style",
+            "type": "string"
+          },
+          "capex_to_ocf_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capex To Ocf Pct"
+          },
+          "ending_investment_assets_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ending Investment Assets Yuan"
+          },
+          "ending_net_cash_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ending Net Cash Yuan"
+          },
+          "net_debt_change_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Debt Change Yuan"
+          },
+          "payout_to_ocf_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payout To Ocf Pct"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "total_capex_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Capex Yuan"
+          },
+          "total_dividends_yuan": {
+            "default": 0.0,
+            "title": "Total Dividends Yuan",
+            "type": "number"
+          },
+          "total_equity_financing_yuan": {
+            "default": 0.0,
+            "title": "Total Equity Financing Yuan",
+            "type": "number"
+          },
+          "total_ocf_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Ocf Yuan"
+          },
+          "total_repurchases_yuan": {
+            "default": 0.0,
+            "title": "Total Repurchases Yuan",
+            "type": "number"
+          },
+          "window_years": {
+            "minimum": 0.0,
+            "title": "Window Years",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "window_years",
+          "allocation_style",
+          "summary"
+        ],
+        "title": "CapitalAllocationSummary",
+        "type": "object"
+      },
       "CitedMetricFact": {
         "properties": {
           "label": {
@@ -634,6 +884,264 @@
           "source_section"
         ],
         "title": "CitedMetricFact",
+        "type": "object"
+      },
+      "CrossAssetMacroSnapshot": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "cn_10y_yield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cn 10Y Yield"
+          },
+          "gold_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold As Of"
+          },
+          "gold_change_20d_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Change 20D Pct"
+          },
+          "gold_change_5d_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Change 5D Pct"
+          },
+          "gold_etf_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Etf As Of"
+          },
+          "gold_etf_delta_tonnes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Etf Delta Tonnes"
+          },
+          "gold_etf_tonnes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Etf Tonnes"
+          },
+          "gold_percentile_1y": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Percentile 1Y"
+          },
+          "gold_price_cny": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Price Cny"
+          },
+          "gold_symbol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gold Symbol"
+          },
+          "style_indices": {
+            "items": {
+              "$ref": "#/components/schemas/StyleRegimeIndex"
+            },
+            "title": "Style Indices",
+            "type": "array"
+          },
+          "us_10y_2y_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us 10Y 2Y Spread"
+          },
+          "us_10y_change_20d_bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us 10Y Change 20D Bps"
+          },
+          "us_10y_yield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us 10Y Yield"
+          },
+          "us_2y_change_20d_bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us 2Y Change 20D Bps"
+          },
+          "us_2y_yield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us 2Y Yield"
+          },
+          "us_bond_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us Bond As Of"
+          },
+          "us_cn_10y_spread": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us Cn 10Y Spread"
+          },
+          "us_cpi_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us Cpi As Of"
+          },
+          "us_cpi_yoy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us Cpi Yoy"
+          },
+          "us_real_yield_proxy_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Us Real Yield Proxy Pct"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "title": "CrossAssetMacroSnapshot",
         "type": "object"
       },
       "CtCheckItem": {
@@ -1043,6 +1551,427 @@
         "title": "DevilsAdvocateResponse",
         "type": "object"
       },
+      "DiscoveryCandidateBuckets": {
+        "properties": {
+          "core_cash_cows": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryStockPick"
+            },
+            "title": "Core Cash Cows",
+            "type": "array"
+          },
+          "deep_value": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryStockPick"
+            },
+            "title": "Deep Value",
+            "type": "array"
+          },
+          "dividend_fortresses": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryStockPick"
+            },
+            "title": "Dividend Fortresses",
+            "type": "array"
+          },
+          "gold_resources": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryStockPick"
+            },
+            "title": "Gold Resources",
+            "type": "array"
+          },
+          "investment_cautions": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryStockPick"
+            },
+            "title": "Investment Cautions",
+            "type": "array"
+          }
+        },
+        "title": "DiscoveryCandidateBuckets",
+        "type": "object"
+      },
+      "DiscoveryStockPick": {
+        "properties": {
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "ct_red_count": {
+            "minimum": 0.0,
+            "title": "Ct Red Count",
+            "type": "integer"
+          },
+          "dividend_spread_over_bond_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Spread Over Bond Pct"
+          },
+          "dividend_yield_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield Pct"
+          },
+          "earnings_quality_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earnings Quality Label"
+          },
+          "earnings_quality_tag": {
+            "anyOf": [
+              {
+                "enum": [
+                  "core_cash_cow",
+                  "investment_driven",
+                  "subsidy_inflated",
+                  "cashflow_divergent",
+                  "leveraged_roe",
+                  "balanced_steady",
+                  "financial_special"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earnings Quality Tag"
+          },
+          "fcf_coverage_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fcf Coverage Ratio"
+          },
+          "graham_margin_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Graham Margin Pct"
+          },
+          "industry_sw1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry Sw1"
+          },
+          "invest_profit_share_3y_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invest Profit Share 3Y Pct"
+          },
+          "investment_assets_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Assets Ratio Pct"
+          },
+          "is_financial": {
+            "default": false,
+            "title": "Is Financial",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "net_cash_to_mv_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Cash To Mv Pct"
+          },
+          "pb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pb"
+          },
+          "pe_percentile_10y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe Percentile 10Y"
+          },
+          "pe_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe Ttm"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "roe_5y_avg_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roe 5Y Avg Pct"
+          },
+          "total_score": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Total Score",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "ct_red_count",
+          "total_score",
+          "reason"
+        ],
+        "title": "DiscoveryStockPick",
+        "type": "object"
+      },
+      "DiscoveryThemeCard": {
+        "properties": {
+          "caution_picks": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryStockPick"
+            },
+            "title": "Caution Picks",
+            "type": "array"
+          },
+          "compare_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Compare Codes",
+            "type": "array"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryThemeMetric"
+            },
+            "title": "Metrics",
+            "type": "array"
+          },
+          "picks": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryStockPick"
+            },
+            "title": "Picks",
+            "type": "array"
+          },
+          "regime_summary": {
+            "title": "Regime Summary",
+            "type": "string"
+          },
+          "signal": {
+            "enum": [
+              "green",
+              "yellow",
+              "red",
+              "na"
+            ],
+            "title": "Signal",
+            "type": "string"
+          },
+          "subtitle": {
+            "title": "Subtitle",
+            "type": "string"
+          },
+          "theme_id": {
+            "enum": [
+              "gold_fed_cycle",
+              "tech_vs_dividend_rotation",
+              "earnings_quality_radar",
+              "deep_value_fortress"
+            ],
+            "title": "Theme Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme_id",
+          "title",
+          "subtitle",
+          "signal",
+          "verdict",
+          "regime_summary"
+        ],
+        "title": "DiscoveryThemeCard",
+        "type": "object"
+      },
+      "DiscoveryThemeMetric": {
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "tone": {
+            "default": "na",
+            "enum": [
+              "green",
+              "yellow",
+              "red",
+              "na"
+            ],
+            "title": "Tone",
+            "type": "string"
+          },
+          "value_text": {
+            "title": "Value Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label",
+          "value_text"
+        ],
+        "title": "DiscoveryThemeMetric",
+        "type": "object"
+      },
+      "DupontYearPoint": {
+        "properties": {
+          "asset_turnover": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asset Turnover"
+          },
+          "equity_multiplier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equity Multiplier"
+          },
+          "net_margin_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Net Margin Pct"
+          },
+          "roe_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roe Pct"
+          },
+          "year": {
+            "title": "Year",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "year"
+        ],
+        "title": "DupontYearPoint",
+        "type": "object"
+      },
       "EmailCodeSendRequest": {
         "properties": {
           "email": {
@@ -1242,6 +2171,50 @@
           "checks"
         ],
         "title": "FinancialCtSection",
+        "type": "object"
+      },
+      "ForensicFinding": {
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "string"
+          },
+          "headline": {
+            "title": "Headline",
+            "type": "string"
+          },
+          "metric_text": {
+            "title": "Metric Text",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "green",
+              "yellow",
+              "red",
+              "na"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "finding_id",
+          "title",
+          "status",
+          "headline",
+          "detail",
+          "metric_text"
+        ],
+        "title": "ForensicFinding",
         "type": "object"
       },
       "GrowthSection": {
@@ -2028,6 +3001,57 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MarketDiscoveryResponse": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "candidate_buckets": {
+            "$ref": "#/components/schemas/DiscoveryCandidateBuckets"
+          },
+          "cross_asset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossAssetMacroSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "synced_stock_count": {
+            "minimum": 0.0,
+            "title": "Synced Stock Count",
+            "type": "integer"
+          },
+          "temperature": {
+            "$ref": "#/components/schemas/MarketTemperature"
+          },
+          "themes": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryThemeCard"
+            },
+            "title": "Themes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "as_of",
+          "generated_at",
+          "synced_stock_count",
+          "temperature",
+          "candidate_buckets"
+        ],
+        "title": "MarketDiscoveryResponse",
+        "type": "object"
+      },
       "MarketOverview": {
         "properties": {
           "as_of": {
@@ -2041,6 +3065,16 @@
             },
             "title": "Benchmark Indices",
             "type": "array"
+          },
+          "cross_asset": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CrossAssetMacroSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "data_source": {
             "default": "akshare",
@@ -2643,6 +3677,37 @@
             "title": "Ct Yellow Count",
             "type": "integer"
           },
+          "earnings_quality_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earnings Quality Label"
+          },
+          "earnings_quality_tag": {
+            "anyOf": [
+              {
+                "enum": [
+                  "core_cash_cow",
+                  "investment_driven",
+                  "subsidy_inflated",
+                  "cashflow_divergent",
+                  "leveraged_roe",
+                  "balanced_steady",
+                  "financial_special"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earnings Quality Tag"
+          },
           "exchange": {
             "enum": [
               "SH",
@@ -2684,6 +3749,33 @@
               }
             ],
             "title": "Industry Sw1"
+          },
+          "invest_profit_share_3y_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invest Profit Share 3Y Pct"
+          },
+          "investment_assets_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Assets Ratio Pct"
+          },
+          "is_financial": {
+            "default": false,
+            "title": "Is Financial",
+            "type": "boolean"
           },
           "name": {
             "title": "Name",
@@ -3283,6 +4375,190 @@
         "title": "StockDetail",
         "type": "object"
       },
+      "StockForensicsSection": {
+        "properties": {
+          "annual_decomposition": {
+            "items": {
+              "$ref": "#/components/schemas/AnnualEarningsDecompositionPoint"
+            },
+            "title": "Annual Decomposition",
+            "type": "array"
+          },
+          "capital_allocation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapitalAllocationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "core_profit_share_3y_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Core Profit Share 3Y Pct"
+          },
+          "dupont_asset_turnover_5y_avg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dupont Asset Turnover 5Y Avg"
+          },
+          "dupont_equity_multiplier_5y_avg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dupont Equity Multiplier 5Y Avg"
+          },
+          "dupont_net_margin_5y_avg_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dupont Net Margin 5Y Avg Pct"
+          },
+          "dupont_roe_5y_avg_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dupont Roe 5Y Avg Pct"
+          },
+          "dupont_series": {
+            "items": {
+              "$ref": "#/components/schemas/DupontYearPoint"
+            },
+            "title": "Dupont Series",
+            "type": "array"
+          },
+          "earnings_quality_label": {
+            "title": "Earnings Quality Label",
+            "type": "string"
+          },
+          "earnings_quality_tag": {
+            "enum": [
+              "core_cash_cow",
+              "investment_driven",
+              "subsidy_inflated",
+              "cashflow_divergent",
+              "leveraged_roe",
+              "balanced_steady",
+              "financial_special"
+            ],
+            "title": "Earnings Quality Tag",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ForensicFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "interest_burden_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interest Burden Pct"
+          },
+          "invest_profit_share_3y_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invest Profit Share 3Y Pct"
+          },
+          "investment_assets_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Assets Ratio Pct"
+          },
+          "investment_assets_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Assets Yuan"
+          },
+          "non_recurring_share_3y_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Non Recurring Share 3Y Pct"
+          },
+          "ocf_to_core_profit_3y_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocf To Core Profit 3Y Pct"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "earnings_quality_tag",
+          "earnings_quality_label",
+          "verdict"
+        ],
+        "title": "StockForensicsSection",
+        "type": "object"
+      },
       "StockMetaRecord": {
         "properties": {
           "code": {
@@ -3412,6 +4688,37 @@
             ],
             "title": "Dividend Yield Pct"
           },
+          "earnings_quality_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earnings Quality Label"
+          },
+          "earnings_quality_tag": {
+            "anyOf": [
+              {
+                "enum": [
+                  "core_cash_cow",
+                  "investment_driven",
+                  "subsidy_inflated",
+                  "cashflow_divergent",
+                  "leveraged_roe",
+                  "balanced_steady",
+                  "financial_special"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earnings Quality Tag"
+          },
           "exchange": {
             "enum": [
               "SH",
@@ -3442,6 +4749,28 @@
               }
             ],
             "title": "Industry Sw1"
+          },
+          "invest_profit_share_3y_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invest Profit Share 3Y Pct"
+          },
+          "investment_assets_ratio_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investment Assets Ratio Pct"
           },
           "is_financial": {
             "default": false,
@@ -3628,6 +4957,16 @@
           "financial_ct": {
             "$ref": "#/components/schemas/FinancialCtSection"
           },
+          "forensics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StockForensicsSection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "formula_notes": {
             "additionalProperties": {
               "type": "string"
@@ -3745,6 +5084,111 @@
           "formula_notes"
         ],
         "title": "StockSnapshotPayload",
+        "type": "object"
+      },
+      "StyleRegimeIndex": {
+        "properties": {
+          "as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "As Of"
+          },
+          "change_1d_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change 1D Pct"
+          },
+          "change_20d_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change 20D Pct"
+          },
+          "change_5d_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change 5D Pct"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "drawdown_60d_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "相对近60个交易日高点回撤，百分数（<= 0 表示回撤幅度）",
+            "title": "Drawdown 60D Pct"
+          },
+          "market": {
+            "default": "A",
+            "enum": [
+              "A",
+              "US"
+            ],
+            "title": "Market",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "style": {
+            "default": "broad",
+            "enum": [
+              "tech",
+              "dividend",
+              "broad"
+            ],
+            "title": "Style",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "title": "StyleRegimeIndex",
         "type": "object"
       },
       "TemperatureLevel": {
@@ -5583,6 +7027,27 @@
         ]
       }
     },
+    "/api/market/discovery": {
+      "get": {
+        "operationId": "market_market_discovery",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Market Discovery",
+        "tags": [
+          "market"
+        ]
+      }
+    },
     "/api/market/overview": {
       "get": {
         "operationId": "market_market_overview",
@@ -5752,6 +7217,22 @@
                 }
               ],
               "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "quality_filter",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "core_only",
+                "hide_investment_heavy",
+                "dividend_fortress"
+              ],
+              "title": "Quality Filter",
+              "type": "string"
             }
           },
           {

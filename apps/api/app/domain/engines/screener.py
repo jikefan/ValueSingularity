@@ -7,6 +7,7 @@ from collections.abc import Sequence
 
 from app.domain.engines._helpers import is_financial_institution
 from app.domain.models import (
+    ScreenerQualityFilter,
     ScreenerSortDir,
     ScreenerSortField,
     StockMetaRecord,
@@ -35,6 +36,7 @@ def snapshot_to_screener_item(snapshot: StockSnapshotPayload) -> StockScreenerIt
     val = snapshot.valuation
     pm = snapshot.peer_metrics
     sr = snapshot.shareholder_return
+    f = snapshot.forensics
     return StockScreenerItem(
         code=snapshot.code,
         name=snapshot.name,
@@ -71,7 +73,57 @@ def snapshot_to_screener_item(snapshot: StockSnapshotPayload) -> StockScreenerIt
         total_score=snapshot.radar.total_score,
         valuation_margin=snapshot.radar.valuation_margin,
         is_financial=is_financial_institution_from_snapshot(snapshot),
+        earnings_quality_tag=(f.earnings_quality_tag if f is not None else pm.earnings_quality_tag),
+        earnings_quality_label=(
+            f.earnings_quality_label if f is not None else pm.earnings_quality_label
+        ),
+        invest_profit_share_3y_pct=(
+            f.invest_profit_share_3y_pct if f is not None else pm.invest_profit_share_3y_pct
+        ),
+        investment_assets_ratio_pct=(
+            f.investment_assets_ratio_pct if f is not None else pm.investment_assets_ratio_pct
+        ),
     )
+
+
+def _matches_quality_filter(
+    item: StockScreenerItem,
+    snapshot: StockSnapshotPayload,
+    quality_filter: ScreenerQualityFilter,
+) -> bool:
+    if quality_filter == "all":
+        return True
+    if quality_filter == "core_only":
+        return item.earnings_quality_tag == "core_cash_cow" and item.ct_red_count == 0
+    if quality_filter in {"hide_investment_heavy", "dividend_fortress"}:
+        non_rec = (
+            snapshot.forensics.non_recurring_share_3y_pct
+            if snapshot.forensics is not None
+            else None
+        )
+        has_caution = not item.is_financial and (
+            item.earnings_quality_tag in {"investment_driven", "subsidy_inflated"}
+            or (
+                item.invest_profit_share_3y_pct is not None
+                and item.invest_profit_share_3y_pct >= 30.0
+            )
+            or (
+                item.investment_assets_ratio_pct is not None
+                and item.investment_assets_ratio_pct >= 40.0
+            )
+            or (non_rec is not None and non_rec >= 30.0)
+        )
+        if quality_filter == "hide_investment_heavy":
+            return not has_caution
+        fcf_cov = snapshot.shareholder_return.fcf_coverage_ratio
+        return (
+            item.ct_red_count == 0
+            and item.dividend_yield_pct is not None
+            and item.dividend_yield_pct >= 3.0
+            and not has_caution
+            and (item.is_financial or (fcf_cov is not None and fcf_cov >= 0.8))
+        )
+    return True
 
 
 def _sortable_metric_value(item: StockScreenerItem, sort_by: ScreenerSortField) -> float | None:
@@ -91,17 +143,18 @@ def screen_snapshots(
     min_dividend_yield: float | None = None,
     industry: str | None = None,
     query: str | None = None,
+    quality_filter: ScreenerQualityFilter = "all",
     sort_by: ScreenerSortField = "total_score",
     sort_dir: ScreenerSortDir = "desc",
     limit: int = 50,
 ) -> StockScreenerResponse:
     """Filter, sort (null-last), and paginate precomputed synced-pool snapshots."""
-    all_items = [snapshot_to_screener_item(snap) for snap in snapshots]
-    total_synced = len(all_items)
+    paired_items = [(snapshot_to_screener_item(snap), snap) for snap in snapshots]
+    total_synced = len(paired_items)
     industries = sorted(
         {
             item.industry_sw1.strip()
-            for item in all_items
+            for item, _ in paired_items
             if item.industry_sw1 and item.industry_sw1.strip()
         }
     )
@@ -121,8 +174,10 @@ def screen_snapshots(
     )
 
     filtered: list[StockScreenerItem] = []
-    for item in all_items:
+    for item, snap in paired_items:
         if zero_red_only and item.ct_red_count > 0:
+            continue
+        if not _matches_quality_filter(item, snap, quality_filter):
             continue
         if pe_cap is not None and (
             item.pe_percentile_10y is None or item.pe_percentile_10y > pe_cap

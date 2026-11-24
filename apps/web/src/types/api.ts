@@ -12,6 +12,14 @@ export type TemperatureLevel = Schemas['TemperatureLevel']
 export type IndexQuote = Schemas['IndexQuote']
 export type MarketTemperature = Schemas['MarketTemperature']
 export type IndustryFlow = Schemas['IndustryFlow']
+export type StyleRegimeIndex = Schemas['StyleRegimeIndex']
+export type CrossAssetMacroSnapshot = Schemas['CrossAssetMacroSnapshot']
+export type DiscoveryThemeId = Schemas['DiscoveryThemeCard']['theme_id']
+export type DiscoveryThemeMetric = Schemas['DiscoveryThemeMetric']
+export type DiscoveryStockPick = Schemas['DiscoveryStockPick']
+export type DiscoveryThemeCard = Schemas['DiscoveryThemeCard']
+export type DiscoveryCandidateBuckets = Schemas['DiscoveryCandidateBuckets']
+export type MarketDiscoveryResponse = Schemas['MarketDiscoveryResponse']
 export type MarketOverview = Schemas['MarketOverview']
 export type WatchlistItem = Schemas['WatchlistItem']
 export type WatchlistUpsert = Schemas['WatchlistUpsert']
@@ -67,10 +75,17 @@ export type MoatSection = Schemas['MoatSection']
 export type GrowthSection = Schemas['GrowthSection']
 export type RadarScoreSection = Schemas['RadarScoreSection']
 export type PeerBenchmarkMetrics = Schemas['PeerBenchmarkMetrics']
+export type EarningsQualityTag = Schemas['StockForensicsSection']['earnings_quality_tag']
+export type AnnualEarningsDecompositionPoint = Schemas['AnnualEarningsDecompositionPoint']
+export type DupontYearPoint = Schemas['DupontYearPoint']
+export type CapitalAllocationSummary = Schemas['CapitalAllocationSummary']
+export type ForensicFinding = Schemas['ForensicFinding']
+export type StockForensicsSection = Schemas['StockForensicsSection']
 export type StockSnapshotPayload = Schemas['StockSnapshotPayload']
 export type StockCompareItem = Schemas['StockCompareItem']
 export type CtNaReason = Schemas['CtCheckItem']['na_reason']
 export type ScoringProfile = Schemas['RadarScoreSection']['scoring_profile']
+export type ScreenerQualityFilter = NonNullable<ScreenerQuery['quality_filter']>
 export type ScreenerSortField = NonNullable<ScreenerQuery['sort_by']>
 export type ScreenerSortDir = NonNullable<ScreenerQuery['sort_dir']>
 export type StockScreenerItem = Schemas['StockScreenerItem']
@@ -82,6 +97,7 @@ export type StockScreenerFilters = {
   minDividendYield?: number
   industry?: string
   q?: string
+  qualityFilter?: ScreenerQualityFilter
   sortBy?: ScreenerSortField
   sortDir?: ScreenerSortDir
   limit?: number

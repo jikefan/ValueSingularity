@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, status
 
 from app.api.deps import DatabaseUnavailableError, MarketServiceDep
-from app.domain.models import MarketOverview
+from app.domain.models import MarketDiscoveryResponse, MarketOverview
 from app.services.market import MarketSnapshotUnavailableError
 
 router = APIRouter(tags=["market"])
@@ -13,6 +13,22 @@ router = APIRouter(tags=["market"])
 async def market_overview(service: MarketServiceDep) -> MarketOverview:
     try:
         return await service.overview()
+    except MarketSnapshotUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"数据库不可用: {exc}",
+        ) from exc
+
+
+@router.get("/market/discovery", response_model=MarketDiscoveryResponse)
+async def market_discovery(service: MarketServiceDep) -> MarketDiscoveryResponse:
+    try:
+        return await service.discovery()
     except MarketSnapshotUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

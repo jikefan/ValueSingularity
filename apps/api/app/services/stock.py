@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from app.domain.engines.screener import screen_snapshots
 from app.domain.errors import SnapshotNotReadyError, StockNotFoundError
 from app.domain.models import (
+    ScreenerQualityFilter,
     ScreenerSortDir,
     ScreenerSortField,
     StockCompareItem,
@@ -83,6 +84,7 @@ class StockService:
         min_dividend_yield: float | None = None,
         industry: str | None = None,
         query: str | None = None,
+        quality_filter: ScreenerQualityFilter = "all",
         sort_by: ScreenerSortField = "total_score",
         sort_dir: ScreenerSortDir = "desc",
         limit: int = 50,
@@ -100,6 +102,7 @@ class StockService:
             min_dividend_yield=min_dividend_yield,
             industry=industry,
             query=query,
+            quality_filter=quality_filter,
             sort_by=sort_by,
             sort_dir=sort_dir,
             limit=limit,

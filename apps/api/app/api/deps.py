@@ -67,7 +67,10 @@ DbSessionDep = Annotated[AsyncSession, Depends(get_db)]
 
 
 def get_market_service(session: DbSessionDep) -> MarketService:
-    return MarketService(PostgresMarketRepository(session))
+    return MarketService(
+        PostgresMarketRepository(session),
+        PostgresStockSnapshotRepository(session),
+    )
 
 
 @lru_cache

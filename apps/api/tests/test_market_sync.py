@@ -495,6 +495,12 @@ async def test_akshare_feed_retries_and_switches_to_fallbacks(
     monkeypatch.setattr(ak, "stock_info_a_code_name", _sample_stock_df)
     monkeypatch.setattr(ak, "stock_a_ttm_lyr", _sample_pe_df)
     monkeypatch.setattr(ak, "bond_zh_us_yield_em", lambda **_kwargs: _sample_bond_df())
+    monkeypatch.setattr(ak, "macro_usa_cpi_yoy", lambda: pd.DataFrame())
+    monkeypatch.setattr(ak, "spot_hist_sge", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "futures_zh_daily_sina", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "fund_gold_etf_holding_js", lambda: pd.DataFrame())
+    monkeypatch.setattr(ak, "index_zh_daily_sina", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "index_us_daily_sina", lambda **_kwargs: pd.DataFrame())
 
     sina_calls = 0
 
@@ -564,6 +570,12 @@ async def test_akshare_feed_rejects_historical_backfill_and_rate_limit_retries(
     monkeypatch.setattr(ak, "stock_info_a_code_name", _sample_stock_df)
     monkeypatch.setattr(ak, "stock_a_ttm_lyr", _sample_pe_df)
     monkeypatch.setattr(ak, "bond_zh_us_yield_em", lambda **_kwargs: _sample_bond_df())
+    monkeypatch.setattr(ak, "macro_usa_cpi_yoy", lambda: pd.DataFrame())
+    monkeypatch.setattr(ak, "spot_hist_sge", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "futures_zh_daily_sina", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "fund_gold_etf_holding_js", lambda: pd.DataFrame())
+    monkeypatch.setattr(ak, "index_zh_daily_sina", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "index_us_daily_sina", lambda **_kwargs: pd.DataFrame())
     monkeypatch.setattr(
         ak, "stock_fund_flow_industry_ths", lambda **_kwargs: _sample_ths_flows_df()
     )
@@ -1089,3 +1101,121 @@ def test_settings_resolves_relative_data_dir_consistently_across_cwd(
     custom_abs = tmp_path / "custom-market"
     monkeypatch.setenv("VS_DATA_DIR", str(custom_abs))
     assert Settings().data_dir == custom_abs
+
+
+async def test_jin10_single_page_gold_etf_shared_lock_and_cross_asset_singleflight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    import httpx
+
+    from app.adapters.akshare import _common, market_feed, stock_feed
+
+    assert _common.MINI_RACER_LOCK is not None
+    assert not hasattr(market_feed, "_SINA_V8_LOCK")
+    assert not hasattr(stock_feed, "_CNINFO_V8_LOCK")
+
+    jin10_calls = 0
+
+    def fake_httpx_get(url: str, **kwargs: object) -> httpx.Response:
+        nonlocal jin10_calls
+        jin10_calls += 1
+        assert "datacenter-api.jin10.com/reports/list_v2" in url
+        raw_timeout = kwargs.get("timeout")
+        assert isinstance(raw_timeout, int | float) and 0 < raw_timeout <= 5.0
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "values": [
+                        ["2026-11-20", "875.50", "2.30", "75000000000"],
+                        ["2026-11-19", "873.20", "0.00", "74500000000"],
+                    ]
+                }
+            },
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(httpx, "get", fake_httpx_get)
+    etf_df = market_feed._fetch_latest_spdr_gold_etf_df(timeout_seconds=4.5)
+    assert jin10_calls == 1
+    assert list(etf_df.columns) == ["日期", "总库存", "增持/减持", "总价值"]
+    assert float(etf_df.iloc[-1]["总库存"]) == pytest.approx(875.50)
+
+    as_of = date(2026, 11, 20)
+    cpi_calls = 0
+
+    def slow_cpi() -> pd.DataFrame:
+        nonlocal cpi_calls
+        cpi_calls += 1
+        return pd.DataFrame(
+            [{"时间": date(2026, 10, 1), "发布日期": date(2026, 11, 13), "现值": 2.6}]
+        )
+
+    monkeypatch.setattr(ak, "macro_usa_cpi_yoy", slow_cpi)
+    monkeypatch.setattr(ak, "spot_hist_sge", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(ak, "futures_zh_daily_sina", lambda **_kwargs: pd.DataFrame())
+    monkeypatch.setattr(
+        ak,
+        "index_zh_daily_sina",
+        lambda **_kwargs: pd.DataFrame({"date": [as_of], "close": [1000.0]}),
+    )
+    monkeypatch.setattr(ak, "index_us_daily_sina", lambda **_kwargs: pd.DataFrame())
+
+    feed = market_feed.AkshareMarketFeed(
+        timeout_seconds=12.0,
+        max_attempts=1,
+        retry_wait_seconds=0.0,
+        cross_asset_ttl_seconds=180.0,
+    )
+    timeout_before = ak.get_timeout()
+    bond_df = pd.DataFrame(
+        [
+            {
+                "日期": as_of,
+                "中国国债收益率10年": 1.60,
+                "美国国债收益率2年": 4.10,
+                "美国国债收益率10年": 4.25,
+                "美国国债收益率10年-2年": 0.15,
+            }
+        ]
+    )
+    snap1, snap2 = await asyncio.gather(
+        feed._fetch_cross_asset(bond_df, as_of=as_of),
+        feed._fetch_cross_asset(bond_df, as_of=as_of),
+    )
+    snap3 = await feed._fetch_cross_asset(bond_df, as_of=as_of)
+    assert cpi_calls == 1
+    assert jin10_calls == 2
+    assert snap1.gold_etf_tonnes == pytest.approx(875.50)
+    assert snap2.gold_etf_tonnes == pytest.approx(875.50)
+    assert snap3.gold_etf_tonnes == pytest.approx(875.50)
+    assert ak.get_timeout() == timeout_before
+
+    # Disabling cache via cross_asset_ttl_seconds=0 executes fresh aux fetches every time.
+    uncached_feed = market_feed.AkshareMarketFeed(
+        timeout_seconds=12.0,
+        max_attempts=1,
+        retry_wait_seconds=0.0,
+        cross_asset_ttl_seconds=0.0,
+    )
+    await uncached_feed._fetch_cross_asset(bond_df, as_of=as_of)
+    await uncached_feed._fetch_cross_asset(bond_df, as_of=as_of)
+    assert cpi_calls == 3
+
+    # Sequential style index loop isolates individual failures without starving remaining styles.
+    seen_style_calls: list[str] = []
+
+    def style_with_partial_error(symbol: str = "sh000688") -> pd.DataFrame:
+        seen_style_calls.append(symbol)
+        assert _common.MINI_RACER_LOCK.locked()
+        if symbol == "sh000688":
+            raise TimeoutError("star50 timeout")
+        return pd.DataFrame({"date": [as_of], "close": [3000.0]})
+
+    monkeypatch.setattr(ak, "index_zh_daily_sina", style_with_partial_error)
+    style_snap = await uncached_feed._fetch_cross_asset(bond_df, as_of=as_of)
+    assert seen_style_calls == ["sh000688", "sz399006", "sh000015", "sh000300"]
+    assert [idx.code for idx in style_snap.style_indices] == ["sz399006", "sh000015", "sh000300"]
+    assert "部分跨市场风格指数暂时超时" in style_snap.warnings
