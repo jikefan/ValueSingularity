@@ -122,6 +122,10 @@ class StockSnapshotRepository(Protocol):
         """Return precomputed snapshot payloads keyed by code for comparison."""
         ...
 
+    async def list_all_snapshots(self) -> list[StockSnapshotPayload]:
+        """Return all validated precomputed stock snapshots ordered by code."""
+        ...
+
     async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
         """Idempotently persist a precomputed stock snapshot."""
         ...

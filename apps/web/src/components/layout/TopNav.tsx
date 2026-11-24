@@ -281,6 +281,9 @@ export function TopNav({
                     </span>
                     <span className="nav-search-item-tags">
                       <Tag color="blue">{stock.exchange}</Tag>
+                      <Tag color={stock.snapshot_available ? 'green' : 'gray'}>
+                        {stock.snapshot_available ? '已同步快照' : '仅基础信息'}
+                      </Tag>
                       {stock.is_st ? <Tag color="amber">ST</Tag> : null}
                       {!stock.is_active ? <Tag color="rose">已退市</Tag> : null}
                     </span>

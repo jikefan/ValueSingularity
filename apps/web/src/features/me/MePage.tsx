@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { GuestPreviewGrid, type GuestPreviewItem } from '../../components/ui/GuestPreviewGrid'
 import { JournalEntryCard } from '../../components/ui/JournalEntryCard'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
@@ -63,6 +64,33 @@ function renderThresholdBadges(item: WatchlistItem) {
     </div>
   )
 }
+
+const ME_GUEST_PREVIEWS: readonly GuestPreviewItem[] = [
+  {
+    id: 'sentinel',
+    badge: '到价哨兵示例',
+    badgeColor: 'green',
+    title: '击球区价格与分位自动哨兵',
+    metrics: ['目标价 ≤ 1,400', '10Y PE 分位 ≤ 20%'],
+    description: '为自选愿望单设定目标价、PE 分位或股息率阈值，触达击球区自动站内与 Webhook 提醒。',
+  },
+  {
+    id: 'ledger',
+    badge: 'Alpha 归因示例',
+    badgeColor: 'blue',
+    title: '决策质量账本与基准超额归因',
+    metrics: ['相对沪深300 +14.2%', 'Pass 观察池避险'],
+    description: '回溯每笔决策记录创建以来的个股收益、沪深 300 超额表现与否证红线触发情况。',
+  },
+  {
+    id: 'emotion',
+    badge: '情绪复盘示例',
+    badgeColor: 'amber',
+    title: '情绪胜率分布与行为纠偏',
+    metrics: ['冷静胜率 100%', '贪婪胜率对照'],
+    description: '量化统计不同情绪标签下的长期决策胜率与平均超额收益，持续校准交易纪律。',
+  },
+]
 
 export function MePage() {
   const { user, isAuthLoading } = useAuth()
@@ -198,16 +226,19 @@ export function MePage() {
 
   if (!user) {
     return (
-      <div className="container">
+      <div className="container stack" style={{ gap: 16 }}>
         <Card title="我的" extra={<Tag color="gray">未登录</Tag>}>
-          <EmptyBlock
-            title="登录后同步你的自选愿望单与投资日记"
-            hint={
-              <Link className="btn-primary mt-16" to="/login" state={{ from: '/me' }}>
-                前往登录 / 注册
-              </Link>
-            }
-          />
+          <div className="stack" style={{ gap: 16 }}>
+            <EmptyBlock
+              title="登录后同步你的自选愿望单与投资日记"
+              hint={
+                <Link className="btn-primary mt-16" to="/login" state={{ from: '/me' }}>
+                  前往登录 / 注册
+                </Link>
+              }
+            />
+            <GuestPreviewGrid items={ME_GUEST_PREVIEWS} />
+          </div>
         </Card>
       </div>
     )

@@ -1,6 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import type { StockScreenerFilters } from '../types/api'
 import { ApiError, api } from './api'
 import { queryKeys } from './queryKeys'
+
+export type { StockScreenerFilters }
 
 const STOCK_CODE_RE = /^[0-9]{6}$/
 
@@ -43,5 +46,14 @@ export function useStockCompare(codes: readonly string[]) {
     queryKey: queryKeys.stocks.compare(normalized),
     queryFn: ({ signal }) => api.compareStocks(normalized, signal),
     enabled: normalized.length > 0,
+  })
+}
+
+export function useStockScreener(filters: StockScreenerFilters = {}, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.stocks.screener(filters),
+    queryFn: ({ signal }) => api.getStockScreener(filters, signal),
+    enabled,
+    placeholderData: keepPreviousData,
   })
 }

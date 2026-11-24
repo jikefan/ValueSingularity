@@ -7,9 +7,12 @@ from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from app.api.deps import DatabaseUnavailableError, StockServiceDep
 from app.domain.models import (
+    ScreenerSortDir,
+    ScreenerSortField,
     StockCompareItem,
     StockDetail,
     StockMetaRecord,
+    StockScreenerResponse,
     StockSnapshotPayload,
 )
 from app.services.stock import SnapshotNotReadyError, StockNotFoundError
@@ -82,6 +85,50 @@ async def compare_stocks(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"数据库不可用: {exc}",
+        ) from exc
+
+
+@router.get("/screener", response_model=StockScreenerResponse)
+async def screen_stocks(
+    service: StockServiceDep,
+    zero_red_only: bool = False,
+    max_pe_percentile: Annotated[float | None, Query(ge=0.0, le=100.0, allow_inf_nan=False)] = None,
+    min_roe: Annotated[float | None, Query(ge=-1000.0, le=1000.0, allow_inf_nan=False)] = None,
+    min_dividend_yield: Annotated[
+        float | None, Query(ge=0.0, le=100.0, allow_inf_nan=False)
+    ] = None,
+    industry: Annotated[str | None, Query(max_length=64)] = None,
+    q: Annotated[str | None, Query(max_length=64)] = None,
+    sort_by: ScreenerSortField = "total_score",
+    sort_dir: ScreenerSortDir = "desc",
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> StockScreenerResponse:
+    if industry is not None and "\x00" in industry:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="行业筛选参数不能包含空字符",
+        )
+    if q is not None and "\x00" in q:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="搜索关键词不能包含空字符",
+        )
+    try:
+        return await service.screener(
+            zero_red_only=zero_red_only,
+            max_pe_percentile=max_pe_percentile,
+            min_roe=min_roe,
+            min_dividend_yield=min_dividend_yield,
+            industry=industry,
+            query=q,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            limit=limit,
+        )
     except DatabaseUnavailableError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

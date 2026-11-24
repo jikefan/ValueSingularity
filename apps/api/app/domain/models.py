@@ -96,10 +96,11 @@ class StockMetaRecord(BaseModel):
     list_date: date | None = None
     is_st: bool = False
     is_active: bool = True
+    snapshot_available: bool = False
 
 
 class StockDetail(StockMetaRecord):
-    snapshot_available: bool = False
+    pass
 
 
 class TradeCalendarEntry(BaseModel):
@@ -810,6 +811,7 @@ class CtCheckItem(BaseModel):
     rule_id: str
     title: str
     status: SignalLight
+    na_reason: Literal["industry_exempt", "missing_data"] | None = None
     summary: str
     threshold: str
     value_text: str
@@ -939,6 +941,8 @@ class RadarScoreSection(BaseModel):
     cashflow_quality: int = Field(ge=0, le=100)
     valuation_margin: int = Field(ge=0, le=100)
     total_score: int = Field(ge=0, le=100)
+    scoring_profile: Literal["standard", "financial"] = "standard"
+    dimension_labels: dict[str, str] = Field(default_factory=dict)
     bear_cases: list[str]
 
 
@@ -995,6 +999,48 @@ class StockCompareItem(BaseModel):
     snapshot_available: bool
     snapshot_as_of: date | None = None
     metrics: PeerBenchmarkMetrics | None = None
+
+
+ScreenerSortField = Literal[
+    "total_score",
+    "pe_percentile_10y",
+    "roe_5y_avg_pct",
+    "dividend_yield_pct",
+    "pe_ttm",
+    "total_mv_yuan",
+]
+ScreenerSortDir = Literal["asc", "desc"]
+
+
+class StockScreenerItem(BaseModel):
+    code: str = Field(pattern=_ASCII_STOCK_CODE_PATTERN)
+    name: str
+    exchange: StockExchange
+    industry_sw1: str | None = None
+    as_of: date
+    close: FiniteFloat | None = None
+    total_mv_yuan: FiniteFloat | None = None
+    pe_ttm: FiniteFloat | None = None
+    pe_percentile_10y: FiniteFloat | None = None
+    pb: FiniteFloat | None = None
+    pb_percentile_10y: FiniteFloat | None = None
+    roe_5y_avg_pct: FiniteFloat | None = None
+    dividend_yield_pct: FiniteFloat | None = None
+    shareholder_yield_pct: FiniteFloat | None = None
+    implied_fcf_cagr_pct: FiniteFloat | None = None
+    ct_red_count: int = Field(ge=0)
+    ct_yellow_count: int = Field(ge=0)
+    ct_green_count: int = Field(ge=0)
+    total_score: int = Field(ge=0, le=100)
+    valuation_margin: int = Field(ge=0, le=100)
+    is_financial: bool = False
+
+
+class StockScreenerResponse(BaseModel):
+    total_synced: int = Field(ge=0)
+    filtered_count: int = Field(ge=0)
+    industries: list[str]
+    items: list[StockScreenerItem]
 
 
 class StockSyncSummary(BaseModel):

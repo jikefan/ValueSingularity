@@ -11,9 +11,21 @@ API_PID=$!
 WEB_PID=$!
 
 cleanup() {
+  trap - INT TERM EXIT
   kill "$API_PID" "$WEB_PID" 2>/dev/null || true
   wait "$API_PID" "$WEB_PID" 2>/dev/null || true
 }
 trap cleanup INT TERM EXIT
 
-wait -n "$API_PID" "$WEB_PID"
+# macOS ships Bash 3.2 without `wait -n`; poll child liveness portably.
+while kill -0 "$API_PID" 2>/dev/null && kill -0 "$WEB_PID" 2>/dev/null; do
+  sleep 1
+done
+
+EXIT_CODE=0
+if ! kill -0 "$API_PID" 2>/dev/null; then
+  wait "$API_PID" || EXIT_CODE=$?
+elif ! kill -0 "$WEB_PID" 2>/dev/null; then
+  wait "$WEB_PID" || EXIT_CODE=$?
+fi
+exit "$EXIT_CODE"

@@ -457,6 +457,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stocks/screener": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Screen Stocks */
+        get: operations["stocks_screen_stocks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stocks/search": {
         parameters: {
             query?: never;
@@ -774,6 +791,8 @@ export interface components {
         CtCheckItem: {
             /** Evidences */
             evidences: components["schemas"]["CtRuleEvidence"][];
+            /** Na Reason */
+            na_reason?: ("industry_exempt" | "missing_data") | null;
             /** Rule Id */
             rule_id: string;
             /**
@@ -1492,10 +1511,20 @@ export interface components {
             bear_cases: string[];
             /** Cashflow Quality */
             cashflow_quality: number;
+            /** Dimension Labels */
+            dimension_labels?: {
+                [key: string]: string;
+            };
             /** Moat */
             moat: number;
             /** Profitability */
             profitability: number;
+            /**
+             * Scoring Profile
+             * @default standard
+             * @enum {string}
+             */
+            scoring_profile: "standard" | "financial";
             /** Total Score */
             total_score: number;
             /** Valuation Margin */
@@ -1652,6 +1681,76 @@ export interface components {
             list_date?: string | null;
             /** Name */
             name: string;
+            /**
+             * Snapshot Available
+             * @default false
+             */
+            snapshot_available: boolean;
+        };
+        /** StockScreenerItem */
+        StockScreenerItem: {
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /** Close */
+            close?: number | null;
+            /** Code */
+            code: string;
+            /** Ct Green Count */
+            ct_green_count: number;
+            /** Ct Red Count */
+            ct_red_count: number;
+            /** Ct Yellow Count */
+            ct_yellow_count: number;
+            /** Dividend Yield Pct */
+            dividend_yield_pct?: number | null;
+            /**
+             * Exchange
+             * @enum {string}
+             */
+            exchange: "SH" | "SZ" | "BJ";
+            /** Implied Fcf Cagr Pct */
+            implied_fcf_cagr_pct?: number | null;
+            /** Industry Sw1 */
+            industry_sw1?: string | null;
+            /**
+             * Is Financial
+             * @default false
+             */
+            is_financial: boolean;
+            /** Name */
+            name: string;
+            /** Pb */
+            pb?: number | null;
+            /** Pb Percentile 10Y */
+            pb_percentile_10y?: number | null;
+            /** Pe Percentile 10Y */
+            pe_percentile_10y?: number | null;
+            /** Pe Ttm */
+            pe_ttm?: number | null;
+            /** Roe 5Y Avg Pct */
+            roe_5y_avg_pct?: number | null;
+            /** Shareholder Yield Pct */
+            shareholder_yield_pct?: number | null;
+            /** Total Mv Yuan */
+            total_mv_yuan?: number | null;
+            /** Total Score */
+            total_score: number;
+            /** Valuation Margin */
+            valuation_margin: number;
+        };
+        /** StockScreenerResponse */
+        StockScreenerResponse: {
+            /** Filtered Count */
+            filtered_count: number;
+            /** Industries */
+            industries: string[];
+            /** Items */
+            items: components["schemas"]["StockScreenerItem"][];
+            /** Total Synced */
+            total_synced: number;
         };
         /** StockSnapshotPayload */
         StockSnapshotPayload: {
@@ -2777,6 +2876,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StockCompareItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stocks_screen_stocks: {
+        parameters: {
+            query?: {
+                zero_red_only?: boolean;
+                max_pe_percentile?: number | null;
+                min_roe?: number | null;
+                min_dividend_yield?: number | null;
+                industry?: string | null;
+                q?: string | null;
+                sort_by?: "total_score" | "pe_percentile_10y" | "roe_5y_avg_pct" | "dividend_yield_pct" | "pe_ttm" | "total_mv_yuan";
+                sort_dir?: "asc" | "desc";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockScreenerResponse"];
                 };
             };
             /** @description Validation Error */

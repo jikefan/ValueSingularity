@@ -8,6 +8,7 @@ import { setAccessToken } from '../../lib/api'
 import type { ChartOption } from '../../lib/charts'
 import { LIGHT_CHART_COLORS } from '../../lib/chartTheme'
 import { createQueryClient } from '../../lib/queryClient'
+import { solveImpliedFcfCagrPct } from '../../lib/reverseDcfSolver'
 import type {
   AiPreferences,
   DevilsAdvocateRequest,
@@ -18,6 +19,7 @@ import type {
   MdaDiffRequest,
   MdaDiffResponse,
   StockDetail,
+  StockScreenerResponse,
   StockSnapshotPayload,
   TokenResponse,
   UserProfile,
@@ -25,6 +27,7 @@ import type {
   WatchlistUpsert,
 } from '../../types/api'
 import { StockPage } from './StockPage'
+import { formatStockDossierMarkdown } from './stockHelpers'
 
 const capturedChartOptions = new Map<string, ChartOption>()
 
@@ -300,6 +303,7 @@ const SAMPLE_SNAPSHOT: StockSnapshotPayload = {
     capex_to_ocf_latest_pct: 3.26,
   },
   radar: {
+    scoring_profile: 'standard',
     profitability: 95,
     moat: 94,
     balance_sheet: 92,
@@ -532,6 +536,11 @@ describe('StockPage', () => {
     vi.restoreAllMocks()
     delete document.documentElement.dataset.theme
     window.localStorage.clear()
+    Object.defineProperty(window, 'innerWidth', {
+      value: 1024,
+      configurable: true,
+      writable: true,
+    })
   })
 
   it('lights up all 9 tabs from StockSnapshotPayload including Reverse DCF matrix and CT drill-down', async () => {
@@ -591,9 +600,8 @@ describe('StockPage', () => {
       legend: { top: 0, type: 'scroll' },
       yAxis: [{ nameGap: 14 }, { nameGap: 14 }],
     })
-    expect(
-      screen.getByText(/小白提示：格雷厄姆公式偏重静态净资产，对茅台等高 ROE/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/估值口径提示：格雷厄姆公式偏重静态净资产/)).toBeInTheDocument()
+    expect(screen.queryByText(/对茅台/)).not.toBeInTheDocument()
     expect(screen.getByText('Reverse DCF 逆向估值反推器')).toBeInTheDocument()
     expect(screen.getAllByText('+8.42%')).toHaveLength(2)
     expect(screen.getByText('+14.80%')).toBeInTheDocument()
@@ -684,7 +692,7 @@ describe('StockPage', () => {
     expect(screen.getByText('近 3 年平均自由现金流为负，无法反推隐含增速。')).toBeInTheDocument()
   })
 
-  it('falls back cleanly on snapshot_available=false and 404 snapshot while keeping Decision tab usable', async () => {
+  it('falls back cleanly on snapshot_available=false and 404 snapshot with curated discovery links and no CLI leaks', async () => {
     const unsyncedDetail: StockDetail = {
       ...SAMPLE_STOCK,
       code: '000999',
@@ -693,6 +701,51 @@ describe('StockPage', () => {
       is_st: true,
       is_active: false,
       snapshot_available: false,
+    }
+    const screenerSample: StockScreenerResponse = {
+      total_synced: 2,
+      filtered_count: 2,
+      industries: ['食品饮料', '银行'],
+      items: [
+        {
+          code: '600519',
+          name: '贵州茅台',
+          exchange: 'SH',
+          industry_sw1: '食品饮料',
+          as_of: '2026-11-20',
+          close: 1520,
+          pe_ttm: 22.1,
+          pe_percentile_10y: 26.5,
+          pb: 7.8,
+          roe_5y_avg_pct: 31.8,
+          dividend_yield_pct: 3.45,
+          ct_red_count: 0,
+          ct_yellow_count: 1,
+          ct_green_count: 6,
+          valuation_margin: 74,
+          total_score: 89,
+          is_financial: false,
+        },
+        {
+          code: '600036',
+          name: '招商银行',
+          exchange: 'SH',
+          industry_sw1: '银行',
+          as_of: '2026-11-20',
+          close: 38.5,
+          pe_ttm: 6.2,
+          pe_percentile_10y: 22.0,
+          pb: 0.92,
+          roe_5y_avg_pct: 14.2,
+          dividend_yield_pct: 5.4,
+          ct_red_count: 0,
+          ct_yellow_count: 0,
+          ct_green_count: 3,
+          valuation_margin: 82,
+          total_score: 82,
+          is_financial: true,
+        },
+      ],
     }
     let snapshot404Count = 0
 
@@ -711,6 +764,9 @@ describe('StockPage', () => {
         snapshot404Count += 1
         return Promise.resolve(jsonResponse({ detail: '尚未生成快照' }, 404))
       }
+      if (pathname === '/api/stocks/screener') {
+        return Promise.resolve(jsonResponse(screenerSample, 200))
+      }
       return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
     })
 
@@ -721,24 +777,57 @@ describe('StockPage', () => {
     expect(
       screen.getByText(/该标的暂未生成深度财报与历史估值快照，暂不展示图表与排雷数据/),
     ).toBeInTheDocument()
-    expect(screen.getByText('管理员离线同步命令')).toBeInTheDocument()
-    expect(screen.getByText('python -m app.cli.sync_stocks --codes 000999')).toBeInTheDocument()
+    expect(screen.queryByText('管理员离线同步命令')).not.toBeInTheDocument()
+    expect(screen.queryByText(/python -m app\.cli\.sync/)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '返回价值击球区' })).toHaveAttribute('href', '/')
+    expect(await screen.findByRole('link', { name: /招商银行/ })).toHaveAttribute(
+      'href',
+      '/stock/600036',
+    )
 
     fireEvent.click(screen.getByRole('button', { name: '前往投资决策' }))
     expect(await screen.findByText('登录后记录你的投资决策与否证红线')).toBeInTheDocument()
+    expect(screen.getByText('能力示例预览 · 登录后使用实时个人数据')).toBeInTheDocument()
     unsyncedView.unmount()
 
     renderStockPage('/stock/600519')
     expect(await screen.findByText('公司画像尚无深度分析快照')).toBeInTheDocument()
-    expect(screen.getByText('python -m app.cli.sync_stocks --codes 600519')).toBeInTheDocument()
+    expect(screen.queryByText(/python -m app\.cli\.sync/)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '返回价值击球区' })).toHaveAttribute('href', '/')
     expect(snapshot404Count).toBe(1)
 
     fireEvent.click(screen.getByRole('tab', { name: '投资决策' }))
     expect(await screen.findByText('登录后记录你的投资决策与否证红线')).toBeInTheDocument()
   })
 
-  it('shows invalid code state and 404 sync guidance plus 503 retry recovery', async () => {
+  it('shows invalid code state and 404 coverage guidance plus 503 retry recovery without CLI leaks', async () => {
     let stockAttempts = 0
+    const screenerSample: StockScreenerResponse = {
+      total_synced: 1,
+      filtered_count: 1,
+      industries: ['食品饮料'],
+      items: [
+        {
+          code: '600519',
+          name: '贵州茅台',
+          exchange: 'SH',
+          industry_sw1: '食品饮料',
+          as_of: '2026-11-20',
+          close: 1520,
+          pe_ttm: 22.1,
+          pe_percentile_10y: 26.5,
+          pb: 7.8,
+          roe_5y_avg_pct: 31.8,
+          dividend_yield_pct: 3.45,
+          ct_red_count: 0,
+          ct_yellow_count: 1,
+          ct_green_count: 6,
+          valuation_margin: 74,
+          total_score: 89,
+          is_financial: false,
+        },
+      ],
+    }
 
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const request = asRequest(input)
@@ -749,6 +838,9 @@ describe('StockPage', () => {
       }
       if (pathname === '/api/stocks/999999') {
         return Promise.resolve(jsonResponse({ detail: '未找到股票 999999' }, 404))
+      }
+      if (pathname === '/api/stocks/screener') {
+        return Promise.resolve(jsonResponse(screenerSample, 200))
       }
       if (pathname === '/api/stocks/600519') {
         stockAttempts += 1
@@ -769,7 +861,12 @@ describe('StockPage', () => {
 
     const notFoundView = renderStockPage('/stock/999999')
     expect(await screen.findByText('未找到股票 999999')).toBeInTheDocument()
-    expect(screen.getByText(/python -m app\.cli\.sync/)).toBeInTheDocument()
+    expect(screen.queryByText(/python -m app\.cli\.sync/)).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '返回价值击球区' })).toHaveAttribute('href', '/')
+    expect(await screen.findByRole('link', { name: /贵州茅台/ })).toHaveAttribute(
+      'href',
+      '/stock/600519',
+    )
     notFoundView.unmount()
 
     renderStockPage('/stock/600519')
@@ -2153,5 +2250,313 @@ describe('StockPage', () => {
       { itemStyle: { color: LIGHT_CHART_COLORS.negative } },
       { itemStyle: { color: LIGHT_CHART_COLORS.amber } },
     ])
+  })
+
+  it('renders 5-second workstation header without duplicate industry subtitle, exports Markdown dossier, and toggles 3D Singularity fallback', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(SAMPLE_SNAPSHOT, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const createObjectUrlSpy = vi.fn(() => 'blob:mock-dossier-url')
+    const revokeObjectUrlSpy = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectUrlSpy,
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectUrlSpy,
+      configurable: true,
+      writable: true,
+    })
+    const anchorClickSpy = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => {})
+
+    renderStockPage('/stock/600519')
+
+    expect(await screen.findByText('快照日期 2026-11-20 · 数据源 akshare')).toBeInTheDocument()
+    expect(screen.queryByText(/申万行业：/)).not.toBeInTheDocument()
+    expect(screen.getByText('申万一级')).toBeInTheDocument()
+    expect(screen.getByText('食品饮料')).toBeInTheDocument()
+    expect(screen.getByText('高质低估 · 击球区特征')).toBeInTheDocument()
+    expect(screen.getByLabelText('核心定量速览')).toBeInTheDocument()
+
+    const exportBtn = screen.getByRole('button', { name: '导出研报 (.md)' })
+    fireEvent.click(exportBtn)
+    expect(await screen.findByText('已导出 .md')).toBeInTheDocument()
+    expect(createObjectUrlSpy).toHaveBeenCalledTimes(1)
+    expect(anchorClickSpy).toHaveBeenCalledTimes(1)
+    expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:mock-dossier-url')
+
+    const markdown = formatStockDossierMarkdown(SAMPLE_STOCK, SAMPLE_SNAPSHOT)
+    expect(markdown).toContain('# 贵州茅台 (600519) 定量研究简报')
+    expect(markdown).toContain('高质低估 · 击球区特征')
+    expect(markdown).toContain('现金流质量：90 / 100')
+    expect(markdown).toContain('Reverse DCF 逆向估值反推')
+
+    fireEvent.click(screen.getByRole('button', { name: '3D 奇点球' }))
+    expect(
+      await screen.findByRole('img', { name: '贵州茅台 3D 价值奇点球（静态几何降级视图）' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('3D 价值奇点球 · 89/100')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '2D 雷达图' }))
+    expect(await screen.findByRole('img', { name: '五维评分雷达图' })).toBeInTheDocument()
+  })
+
+  it('updates Reverse DCF implied CAGR and spread live via WACC and multiple sliders and resets cleanly', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(SAMPLE_SNAPSHOT, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600519')
+    fireEvent.click(await screen.findByRole('tab', { name: '估值' }))
+
+    const waccSlider = await screen.findByLabelText('折现率 WACC (%)')
+    const multipleSlider = screen.getByLabelText('终值倍数 (x)')
+    const resetBtn = screen.getByRole('button', { name: '恢复默认参数' })
+    expect(resetBtn).toBeDisabled()
+
+    fireEvent.change(waccSlider, { target: { value: '10' } })
+    fireEvent.change(multipleSlider, { target: { value: '10' } })
+    expect(resetBtn).not.toBeDisabled()
+
+    const expectedSolved = solveImpliedFcfCagrPct({
+      enterpriseValueYuan: 1.725e12,
+      baseFcfYuan: 8.35e10,
+      discountRatePct: 10,
+      terminalMultiple: 10,
+    })
+    expect(expectedSolved).not.toBeNull()
+    const expectedText = `+${(expectedSolved ?? 0).toFixed(2)}%`
+    expect(
+      screen.getByText('市场隐含 10Y FCF CAGR').parentElement?.querySelector('.metric-value'),
+    ).toHaveTextContent(expectedText)
+    expect(screen.getByText('折现率 10.0% · 终值 10.0x')).toBeInTheDocument()
+    expect(screen.getByText('+11.10%').closest('td')).toHaveClass('sensitivity-base')
+
+    fireEvent.click(resetBtn)
+    expect(resetBtn).toBeDisabled()
+    expect(screen.getAllByText('+8.42%')).toHaveLength(2)
+  })
+
+  it('renders financial sector radar labels, PB-ROE estimator, and 行业不适用 CT exemptions (including legacy compatibility)', async () => {
+    const bankStock: StockDetail = {
+      code: '600036',
+      name: '招商银行',
+      exchange: 'SH',
+      industry_sw1: '银行',
+      industry_sw2: '股份制银行Ⅱ',
+      list_date: '2002-04-09',
+      is_st: false,
+      is_active: true,
+      snapshot_available: true,
+    }
+
+    const bankSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      code: '600036',
+      name: '招商银行',
+      industry_sw1: '银行',
+      industry_sw2: '股份制银行Ⅱ',
+      valuation: {
+        ...SAMPLE_SNAPSHOT.valuation,
+        close: 38.5,
+        pe_ttm: 6.2,
+        pe_percentile_5y: 25.0,
+        pe_percentile_10y: 22.0,
+        pb: 0.92,
+        pb_percentile_10y: 18.0,
+        dividend_yield_pct: 5.4,
+        graham_number: 52.4,
+        graham_margin_pct: 26.53,
+      },
+      moat: {
+        ...SAMPLE_SNAPSHOT.moat,
+        roe_5y_avg_pct: 14.2,
+        roe_10y_min_pct: 12.1,
+      },
+      reverse_dcf: {
+        solvable: false,
+        note: '金融行业受存贷款净现金流波动影响，传统自由现金流贴现与净现金假设失真，建议采用 PB / ROE 与股息率估值',
+        market_cap_yuan: 9.7e11,
+        enterprise_value_yuan: null,
+        net_cash_yuan: null,
+        base_fcf_yuan: null,
+        base_fcf_years: 0,
+        discount_rate_pct: 9.0,
+        terminal_multiple: 12.0,
+        implied_fcf_cagr_pct: null,
+        historical_revenue_cagr_pct: 4.5,
+        implied_vs_history_gap_pct: null,
+        sensitivity: [],
+      },
+      financial_ct: {
+        overall_status: 'green',
+        red_count: 0,
+        yellow_count: 0,
+        green_count: 3,
+        checks: [
+          {
+            rule_id: 'dual_high_cash_debt',
+            title: '存贷双高扫描',
+            status: 'na',
+            na_reason: 'industry_exempt',
+            summary: '金融行业结构特殊 — 不适用常规存贷双高指标。',
+            threshold: '金融业豁免',
+            value_text: '行业不适用',
+            evidences: [],
+          },
+          {
+            rule_id: 'ocf_profit_divergence',
+            title: '现金流与利润背离',
+            status: 'na',
+            na_reason: null,
+            summary: '金融行业结构特殊 — 不适用传统净现比指标（兼容旧版快照）。',
+            threshold: '金融业豁免',
+            value_text: '行业不适用',
+            evidences: [],
+          },
+          {
+            rule_id: 'goodwill_overhang',
+            title: '商誉减值悬顶',
+            status: 'na',
+            na_reason: 'missing_data',
+            summary: '暂缺少商誉科目数据。',
+            threshold: '商誉/归母净资产 >= 20%',
+            value_text: '待补充',
+            evidences: [],
+          },
+          {
+            rule_id: 'audit_opinion',
+            title: '审计意见扫描',
+            status: 'green',
+            summary: '历年均获标准无保留审计意见。',
+            threshold: '出现非标审计意见直接红灯',
+            value_text: '标准无保留意见',
+            evidences: [],
+          },
+        ],
+      },
+      radar: {
+        scoring_profile: 'financial',
+        profitability: 84,
+        moat: 86,
+        balance_sheet: 78,
+        cashflow_quality: 85,
+        valuation_margin: 82,
+        total_score: 83,
+        bear_cases: ['净息差收窄周期对银行盈利增速形成约束。'],
+      },
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600036') {
+        return Promise.resolve(jsonResponse(bankStock, 200))
+      }
+      if (pathname === '/api/stocks/600036/snapshot') {
+        return Promise.resolve(jsonResponse(bankSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600036')
+
+    expect(await screen.findByRole('heading', { name: '招商银行' })).toBeInTheDocument()
+    expect((await screen.findAllByText('金融业专项口径')).length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('稳健高息 · 估值低分位')).toBeInTheDocument()
+    expect(screen.getByText('资本与分红耐力')).toBeInTheDocument()
+    expect(screen.queryByText('现金流质量')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '估值' }))
+    expect(await screen.findByText('金融业替代估值：PB-ROE 隐含长期回报参考')).toBeInTheDocument()
+    expect(screen.getByText('15.43%')).toBeInTheDocument()
+    expect(screen.queryByLabelText('折现率 WACC (%)')).not.toBeInTheDocument()
+    expect(screen.queryByText(/对茅台/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '风险排雷' }))
+    expect(await screen.findByText('2 项行业不适用')).toBeInTheDocument()
+    expect(screen.getAllByText('行业不适用').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getAllByText('待补充').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('能力示例预览 · 登录后使用实时个人数据')).toBeInTheDocument()
+
+    const bankMd = formatStockDossierMarkdown(bankStock, bankSnapshot)
+    expect(bankMd).toContain('资本与分红耐力：85 / 100')
+    expect(bankMd).toContain('PB-ROE 隐含长期回报参考')
+    expect(bankMd).toContain('[行业不适用] 存贷双高扫描')
+  })
+
+  it('expands ECharts grid top spacing on 390px mobile viewports to avoid legend overlap', async () => {
+    Object.defineProperty(window, 'innerWidth', {
+      value: 390,
+      configurable: true,
+      writable: true,
+    })
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(SAMPLE_SNAPSHOT, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600519')
+
+    fireEvent.click(await screen.findByRole('tab', { name: '财务分析' }))
+    expect(await screen.findByRole('img', { name: '十年财务趋势图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('十年财务趋势图')).toMatchObject({
+      grid: { top: 72 },
+      legend: { itemGap: 10, itemWidth: 14 },
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: '估值' }))
+    expect(await screen.findByRole('img', { name: '历史估值走势图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('历史估值走势图')).toMatchObject({
+      grid: { top: 72 },
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: '增长引擎' }))
+    expect(await screen.findByRole('img', { name: '盈利能力与研发投入趋势图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('盈利能力与研发投入趋势图')).toMatchObject({
+      grid: { top: 72 },
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: '治理' }))
+    expect(await screen.findByRole('img', { name: '股东净回报柱状图' })).toBeInTheDocument()
+    expect(capturedChartOptions.get('股东净回报柱状图')).toMatchObject({
+      grid: { top: 72 },
+    })
   })
 })

@@ -30,12 +30,15 @@ export type ChartProps = {
   height?: number
   ariaLabel?: string
   className?: string
+  onDatumClick?: (params: { name: string }) => void
 }
 
 /** Thin ECharts wrapper: owns init/resize/dispose, re-applies option on change. */
-export function Chart({ option, height = 260, ariaLabel, className }: ChartProps) {
+export function Chart({ option, height = 260, ariaLabel, className, onDatumClick }: ChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<echarts.ECharts | null>(null)
+  const onDatumClickRef = useRef(onDatumClick)
+  onDatumClickRef.current = onDatumClick
   const { theme } = useThemeMode()
   const palette = getChartPalette(theme)
 
@@ -46,10 +49,29 @@ export function Chart({ option, height = 260, ariaLabel, className }: ChartProps
     const chart = echarts.init(container)
     chartRef.current = chart
 
+    const handleClick = (params: unknown) => {
+      if (
+        params !== null &&
+        typeof params === 'object' &&
+        'name' in params &&
+        typeof params.name === 'string' &&
+        params.name.length > 0
+      ) {
+        onDatumClickRef.current?.({ name: params.name })
+      }
+    }
+
+    if (typeof chart.on === 'function') {
+      chart.on('click', handleClick)
+    }
+
     const observer = new ResizeObserver(() => chart.resize())
     observer.observe(container)
 
     return () => {
+      if (typeof chart.off === 'function') {
+        chart.off('click', handleClick)
+      }
       observer.disconnect()
       chart.dispose()
       chartRef.current = null

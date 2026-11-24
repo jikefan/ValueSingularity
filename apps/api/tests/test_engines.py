@@ -14,6 +14,7 @@ from app.domain.engines import (
     dcf_present_value,
     is_financial_institution,
     scan_financial_ct,
+    screen_snapshots,
     solve_implied_fcf_cagr_pct,
 )
 from app.domain.models import (
@@ -25,6 +26,7 @@ from app.domain.models import (
     StockMetaRecord,
     StockPledgeSnapshot,
     StockRepurchaseRecord,
+    StockSnapshotPayload,
 )
 
 
@@ -939,6 +941,8 @@ def test_is_financial_institution_and_bank_snapshot_exemptions() -> None:
     assert snap_by_name.reverse_dcf.solvable is False
     assert "PB / ROE" in snap_by_name.reverse_dcf.note
     assert snap_by_name.peer_metrics.net_cash_to_mv_pct is None
+    assert snap_by_name.peer_metrics.ocf_to_profit_5y_pct is None
+    assert snap_by_name.peer_metrics.implied_fcf_cagr_pct is None
     fortress = next(d for d in snap_by_name.moat.dimensions if d.key == "balance_fortress")
     assert fortress.score == 65
     assert snap_by_name.radar.balance_sheet == 65
@@ -957,3 +961,298 @@ def test_is_financial_institution_and_bank_snapshot_exemptions() -> None:
     assert snap_propagated.industry_sw1 == "银行"
     assert snap_propagated.industry_sw2 == "股份制银行Ⅱ"
     assert snap_propagated.peer_metrics.industry_sw1 == "银行"
+
+
+def test_bank_radar_financial_profile_and_ct_na_reasons() -> None:
+    cmb_meta = StockMetaRecord(code="600036", name="招商银行", exchange="SH", industry_sw1="银行")
+    as_of = date(2026, 11, 20)
+
+    def _bank_bars(latest_pb: float = 0.85) -> list[StockDailyBar]:
+        bars: list[StockDailyBar] = []
+        for idx, (pe_v, pb_v) in enumerate(
+            [(5.5, 0.7), (6.5, 0.9), (7.5, 1.1), (8.5, 1.3), (6.0, latest_pb)]
+        ):
+            trade_d = date(2022 + idx, 11, 20) if idx < 4 else as_of
+            bars.append(
+                StockDailyBar(
+                    code="600036",
+                    trade_date=trade_d,
+                    open=38.0,
+                    high=39.0,
+                    low=37.0,
+                    close=38.0,
+                    total_mv_yuan=9500e8,
+                    pe_ttm=pe_v,
+                    pb=pb_v,
+                )
+            )
+        return bars
+
+    def _bank_reports(
+        *,
+        ocf_each: float,
+        profit_each: float = 1400e8,
+        equity_each: float = 9500e8,
+    ) -> list[StockAnnualReport]:
+        return [
+            StockAnnualReport(
+                code="600036",
+                report_year=y,
+                report_date=date(y, 12, 31),
+                audit_opinion="标准无保留意见",
+                revenue_yuan=3400e8,
+                operate_cost_yuan=None,
+                net_profit_yuan=profit_each,
+                deduct_net_profit_yuan=profit_each * 0.98,
+                total_assets_yuan=110000e8,
+                total_equity_yuan=equity_each,
+                parent_equity_yuan=equity_each,
+                monetary_funds_yuan=8000e8,
+                short_loan_yuan=3000e8,
+                long_loan_yuan=2000e8,
+                cip_yuan=300e8,
+                fixed_asset_yuan=500e8,
+                accounts_receivable_yuan=2000e8,
+                inventory_yuan=0.0,
+                goodwill_yuan=0.0,
+                ocf_yuan=ocf_each,
+                capex_yuan=50e8,
+            )
+            for y in range(2021, 2026)
+        ]
+
+    high_div = [
+        StockDividendRecord(
+            code="600036",
+            report_date=date(y, 12, 31),
+            report_year=y,
+            plan_progress="实施分配",
+            cash_per_10_shares=20.0,
+            total_shares=252e8,
+            dividend_cash_total_yuan=475e8,
+        )
+        for y in range(2021, 2026)
+    ]
+
+    bundle_neg_ocf = StockFactBundle(
+        code="600036",
+        as_of=as_of,
+        data_source="akshare",
+        daily_bars=_bank_bars(),
+        annual_reports=_bank_reports(ocf_each=-2000e8),
+        dividends=high_div,
+        repurchases=[],
+        pledge=None,
+        equity_financings=[],
+    )
+    bundle_huge_ocf = bundle_neg_ocf.model_copy(
+        update={"annual_reports": _bank_reports(ocf_each=5000e8)}
+    )
+
+    snap_neg = build_stock_snapshot(
+        cmb_meta, bundle_neg_ocf, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+    )
+    snap_huge = build_stock_snapshot(
+        cmb_meta, bundle_huge_ocf, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+    )
+
+    # All 4 industrial CT checks carry industry_exempt; missing pledge carries missing_data.
+    ct_by_id = {c.rule_id: c for c in snap_neg.financial_ct.checks}
+    for rule_id in (
+        "dual_high_cash_debt",
+        "stalled_cip",
+        "ocf_profit_divergence",
+        "receivable_inventory_bloat",
+    ):
+        assert ct_by_id[rule_id].status == "na"
+        assert ct_by_id[rule_id].na_reason == "industry_exempt"
+        assert ct_by_id[rule_id].value_text == "不适用"
+    assert ct_by_id["shareholder_pledge"].status == "na"
+    assert ct_by_id["shareholder_pledge"].na_reason == "missing_data"
+
+    # Financial radar profile, localized label, and OCF-invariance.
+    assert snap_neg.radar.scoring_profile == "financial"
+    assert snap_neg.radar.dimension_labels.get("cashflow_quality") == "资本与分红耐力"
+    assert snap_neg.radar.cashflow_quality == snap_huge.radar.cashflow_quality
+    assert snap_neg.radar.cashflow_quality != 100
+    assert 75 <= snap_neg.radar.cashflow_quality <= 95
+    assert "financial_radar" in snap_neg.formula_notes
+    assert not any("伪高股息" in item for item in snap_neg.radar.bear_cases)
+
+    pricing_dim = next(d for d in snap_neg.moat.dimensions if d.key == "pricing_power")
+    assert pricing_dim.score == 55
+    assert "净息差" in pricing_dim.summary
+    cash_dim = next(d for d in snap_neg.moat.dimensions if d.key == "cash_conversion")
+    assert (
+        cash_dim.score
+        == next(d for d in snap_huge.moat.dimensions if d.key == "cash_conversion").score
+    )
+    assert "分红可持续性" in cash_dim.summary
+
+    # Zero dividends & weak ROE drop cashflow_quality cleanly below the healthy dividend payer.
+    weak_bank_bundle = bundle_neg_ocf.model_copy(
+        update={
+            "annual_reports": _bank_reports(ocf_each=5000e8, profit_each=300e8),
+            "dividends": [],
+        }
+    )
+    snap_weak = build_stock_snapshot(
+        cmb_meta, weak_bank_bundle, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+    )
+    assert snap_weak.radar.cashflow_quality < snap_neg.radar.cashflow_quality
+    assert 25 <= snap_weak.radar.cashflow_quality <= 95
+
+
+def test_screen_snapshots_filters_and_null_last_sorting() -> None:
+    as_of = date(2026, 11, 20)
+
+    def _build_snap(
+        code: str,
+        name: str,
+        *,
+        industry: str | None,
+        pe_vals: list[float],
+        latest_pe: float | None,
+        profit: float,
+        div_total: float,
+        short_loan: float = 0.0,
+        monetary_funds: float = 40e8,
+        total_mv: float = 1000e8,
+        with_bars: bool = True,
+    ) -> StockSnapshotPayload:
+        meta = StockMetaRecord(
+            code=code,
+            name=name,
+            exchange="SH" if code.startswith("6") else "SZ",
+            industry_sw1=industry,
+        )
+        bars: list[StockDailyBar] = []
+        if with_bars:
+            for idx, pe_v in enumerate([*pe_vals, latest_pe] if latest_pe is not None else pe_vals):
+                trade_d = date(2021 + idx, 11, 20) if idx < len(pe_vals) else as_of
+                bars.append(
+                    StockDailyBar(
+                        code=code,
+                        trade_date=trade_d,
+                        open=10.0,
+                        high=10.0,
+                        low=10.0,
+                        close=10.0,
+                        total_mv_yuan=total_mv,
+                        pe_ttm=pe_v,
+                        pb=1.5,
+                    )
+                )
+        reports = [
+            _make_report(
+                y,
+                code=code,
+                net_profit=profit,
+                deduct_profit=profit,
+                ocf=profit * 1.1,
+                monetary_funds=monetary_funds,
+                short_loan=short_loan,
+                long_loan=0.0,
+                total_assets=200e8,
+                parent_equity=100e8,
+                total_equity=100e8,
+            )
+            for y in range(2021, 2026)
+        ]
+        dividends = (
+            [
+                StockDividendRecord(
+                    code=code,
+                    report_date=date(2025, 12, 31),
+                    report_year=2025,
+                    plan_progress="实施分配",
+                    cash_per_10_shares=5.0,
+                    total_shares=10e8,
+                    dividend_cash_total_yuan=div_total,
+                )
+            ]
+            if div_total > 0
+            else []
+        )
+        bundle = StockFactBundle(
+            code=code,
+            as_of=as_of,
+            data_source="akshare",
+            daily_bars=bars,
+            annual_reports=reports,
+            dividends=dividends,
+            repurchases=[],
+            pledge=StockPledgeSnapshot(code=code, trade_date=as_of, pledge_ratio_pct=1.0),
+            equity_financings=[],
+        )
+        return build_stock_snapshot(
+            meta, bundle, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+        )
+
+    snap_moutai = _build_snap(
+        "600519",
+        "贵州茅台",
+        industry="食品饮料",
+        pe_vals=[25.0, 30.0, 35.0, 40.0],
+        latest_pe=20.0,
+        profit=30e8,
+        div_total=45e8,
+        total_mv=1000e8,
+    )
+    snap_bank = _build_snap(
+        "600036",
+        "招商银行",
+        industry="银行",
+        pe_vals=[6.0, 7.0, 8.0, 9.0],
+        latest_pe=5.5,
+        profit=20e8,
+        div_total=50e8,
+        short_loan=120e8,
+        monetary_funds=80e8,
+        total_mv=900e8,
+    )
+    snap_red_null_pe = _build_snap(
+        "000999",
+        "高杠杆测试",
+        industry="制造业",
+        pe_vals=[],
+        latest_pe=None,
+        profit=8e8,
+        div_total=0.0,
+        short_loan=120e8,
+        monetary_funds=80e8,
+        total_mv=500e8,
+        with_bars=False,
+    )
+
+    pool = [snap_moutai, snap_bank, snap_red_null_pe]
+    all_res = screen_snapshots(pool)
+    assert all_res.total_synced == 3
+    assert all_res.filtered_count == 3
+    assert all_res.industries == ["制造业", "银行", "食品饮料"]
+    by_code = {item.code: item for item in all_res.items}
+    assert by_code["600036"].is_financial is True
+    assert by_code["600519"].is_financial is False
+    assert by_code["000999"].ct_red_count >= 1
+
+    # Filters: zero_red_only, max_pe_percentile, min_roe, min_dividend_yield, industry, query.
+    assert [i.code for i in screen_snapshots(pool, zero_red_only=True).items] == sorted(
+        ["600519", "600036"], key=lambda c: -by_code[c].total_score
+    )
+    assert [i.code for i in screen_snapshots(pool, max_pe_percentile=20.0).items] == sorted(
+        ["600519", "600036"], key=lambda c: -by_code[c].total_score
+    )
+    assert [i.code for i in screen_snapshots(pool, min_roe=25.0).items] == ["600519"]
+    assert [i.code for i in screen_snapshots(pool, min_dividend_yield=5.0).items] == ["600036"]
+    assert [i.code for i in screen_snapshots(pool, industry="银行").items] == ["600036"]
+    assert [i.code for i in screen_snapshots(pool, query="茅台").items] == ["600519"]
+    assert [i.code for i in screen_snapshots(pool, query="600036").items] == ["600036"]
+
+    # Null metrics sort last regardless of asc/desc.
+    pe_asc = screen_snapshots(pool, sort_by="pe_ttm", sort_dir="asc")
+    assert [item.code for item in pe_asc.items] == ["600036", "600519", "000999"]
+    pe_desc = screen_snapshots(pool, sort_by="pe_ttm", sort_dir="desc")
+    assert [item.code for item in pe_desc.items] == ["600519", "600036", "000999"]
+    assert pe_asc.industries == ["制造业", "银行", "食品饮料"]
+    assert screen_snapshots(pool, limit=1).filtered_count == 3
+    assert len(screen_snapshots(pool, limit=1).items) == 1

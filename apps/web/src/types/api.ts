@@ -3,9 +3,10 @@
  * Never hand-write interfaces here; run `make gen-api` after changing backend models.
  */
 
-import type { components } from './openapi.gen'
+import type { components, operations } from './openapi.gen'
 
 export type Schemas = components['schemas']
+type ScreenerQuery = NonNullable<operations['stocks_screen_stocks']['parameters']['query']>
 export type Health = Schemas['Health']
 export type TemperatureLevel = Schemas['TemperatureLevel']
 export type IndexQuote = Schemas['IndexQuote']
@@ -68,6 +69,23 @@ export type RadarScoreSection = Schemas['RadarScoreSection']
 export type PeerBenchmarkMetrics = Schemas['PeerBenchmarkMetrics']
 export type StockSnapshotPayload = Schemas['StockSnapshotPayload']
 export type StockCompareItem = Schemas['StockCompareItem']
+export type CtNaReason = Schemas['CtCheckItem']['na_reason']
+export type ScoringProfile = Schemas['RadarScoreSection']['scoring_profile']
+export type ScreenerSortField = NonNullable<ScreenerQuery['sort_by']>
+export type ScreenerSortDir = NonNullable<ScreenerQuery['sort_dir']>
+export type StockScreenerItem = Schemas['StockScreenerItem']
+export type StockScreenerResponse = Schemas['StockScreenerResponse']
+export type StockScreenerFilters = {
+  zeroRedOnly?: boolean
+  maxPePercentile?: number
+  minRoe?: number
+  minDividendYield?: number
+  industry?: string
+  q?: string
+  sortBy?: ScreenerSortField
+  sortDir?: ScreenerSortDir
+  limit?: number
+}
 export type AiExecutionMode = Schemas['DevilsAdvocateResponse']['mode']
 export type CitedMetricFact = Schemas['CitedMetricFact']
 export type DevilsAdvocateChallenge = Schemas['DevilsAdvocateChallenge']

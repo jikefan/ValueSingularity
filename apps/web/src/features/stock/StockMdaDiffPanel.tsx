@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AiCompanionControls } from '../../components/ui/AiCompanionControls'
 import { Card } from '../../components/ui/Card'
+import { GuestPreviewGrid, type GuestPreviewItem } from '../../components/ui/GuestPreviewGrid'
 import { EmptyBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import {
@@ -465,6 +466,33 @@ function StockMdaDiffPanelContent({
   )
 }
 
+const MDA_GUEST_PREVIEWS: readonly GuestPreviewItem[] = [
+  {
+    id: 'metric-shift',
+    badge: '指标异动示例',
+    badgeColor: 'amber',
+    title: '财务与审计口径变迁识别',
+    metrics: ['毛利率 -5.70 pct', '两金增速差 +4.2%'],
+    description: '自动对齐连续两期年报核心盈利、净现比与审计口径变化，快速定位潜在质量滑坡。',
+  },
+  {
+    id: 'semantic-diff',
+    badge: '措辞高亮示例',
+    badgeColor: 'blue',
+    title: '管理层讨论语义增删对照',
+    metrics: ['新增：渠道库存承压', '修改：坏账计提比例'],
+    description: '逐句标注上期与本期年报 MD&A 的删除、修改与新增风险表述，防微杜渐。',
+  },
+  {
+    id: 'deterministic-free',
+    badge: '本地兜底引擎',
+    badgeColor: 'green',
+    title: '纯规则差异对比零额度运行',
+    metrics: ['不消耗 AI 额度', '100% 引用原文'],
+    description: '支持在纯规则确定性引擎与 AI 协同模式间自由切换，始终保留原文追溯证据。',
+  },
+]
+
 export function StockMdaDiffPanel({ code, stockName, snapshotAvailable }: StockMdaDiffPanelProps) {
   const { user, isAuthLoading } = useAuth()
 
@@ -482,18 +510,21 @@ export function StockMdaDiffPanel({ code, stockName, snapshotAvailable }: StockM
         title={`年报 MD&A 口径变化对比器 · ${stockName}`}
         extra={<Tag color="gray">未登录</Tag>}
       >
-        <EmptyBlock
-          title="登录后对比连续两期年报管理层讨论与财务口径变化"
-          hint={
-            <Link
-              className="btn-primary mt-16"
-              to={`/login?redirect=${encodeURIComponent(`/stock/${code}`)}`}
-              state={{ from: `/stock/${code}` }}
-            >
-              前往登录 / 注册
-            </Link>
-          }
-        />
+        <div className="stack" style={{ gap: 16 }}>
+          <EmptyBlock
+            title="登录后对比连续两期年报管理层讨论与财务口径变化"
+            hint={
+              <Link
+                className="btn-primary mt-16"
+                to={`/login?redirect=${encodeURIComponent(`/stock/${code}`)}`}
+                state={{ from: `/stock/${code}` }}
+              >
+                前往登录 / 注册
+              </Link>
+            }
+          />
+          <GuestPreviewGrid items={MDA_GUEST_PREVIEWS} />
+        </div>
       </Card>
     )
   }

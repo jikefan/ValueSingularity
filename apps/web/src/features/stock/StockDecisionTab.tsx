@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AiCompanionControls } from '../../components/ui/AiCompanionControls'
 import { Card } from '../../components/ui/Card'
+import { GuestPreviewGrid, type GuestPreviewItem } from '../../components/ui/GuestPreviewGrid'
 import { JournalEntryCard } from '../../components/ui/JournalEntryCard'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
@@ -1055,6 +1056,34 @@ function StockDecisionTabContent({
   )
 }
 
+const DECISION_GUEST_PREVIEWS: readonly GuestPreviewItem[] = [
+  {
+    id: 'capsule',
+    badge: '时间胶囊示例',
+    badgeColor: 'blue',
+    title: '自动锁定估值与基准坐标',
+    metrics: ['情绪：冷静', 'PE 22.10', '沪深300 3,980'],
+    description:
+      '每条买入/Pass 日记自动留存当日收盘价、PE 分位、雷达总分与基准点位，事后严厉复盘归因。',
+  },
+  {
+    id: 'da-gate',
+    badge: '理性安检门',
+    badgeColor: 'amber',
+    title: '买入前反方质询挑刺',
+    metrics: ['3 条事实挑刺', '纯规则零额度可用'],
+    description: '在扣动扳机前基于财务 CT、逆向 DCF 与现金含金量生成反方质疑，防止情绪化追高。',
+  },
+  {
+    id: 'falsify-rules',
+    badge: '否证红线',
+    badgeColor: 'green',
+    title: '量化否证条件自动盯盘',
+    metrics: ['ROE < 12% 连续2期', 'CT红灯 ≥ 1'],
+    description: '把主观文字承诺转成可检验的硬指标阈值，基本面恶化触线时自动触发预警。',
+  },
+]
+
 export function StockDecisionTab({
   stock,
   snapshot = null,
@@ -1077,7 +1106,7 @@ export function StockDecisionTab({
   if (!user) {
     return (
       <Card title="投资决策日记" extra={<Tag color="gray">未登录</Tag>}>
-        <div className="stack" style={{ gap: 12 }}>
+        <div className="stack" style={{ gap: 16 }}>
           {valuationAnchorStrip}
           <EmptyBlock
             title="登录后记录你的投资决策与否证红线"
@@ -1091,6 +1120,7 @@ export function StockDecisionTab({
               </Link>
             }
           />
+          <GuestPreviewGrid items={DECISION_GUEST_PREVIEWS} />
         </div>
       </Card>
     )

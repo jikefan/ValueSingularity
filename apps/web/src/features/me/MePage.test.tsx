@@ -205,6 +205,9 @@ describe('MePage', () => {
     renderMePage()
 
     expect(await screen.findByText('登录后同步你的自选愿望单与投资日记')).toBeInTheDocument()
+    expect(screen.getByText('能力示例预览 · 登录后使用实时个人数据')).toBeInTheDocument()
+    expect(screen.getByText('击球区价格与分位自动哨兵')).toBeInTheDocument()
+    expect(screen.getByText('决策质量账本与基准超额归因')).toBeInTheDocument()
     const loginLink = screen.getByRole('link', { name: '前往登录 / 注册' })
     expect(loginLink).toHaveAttribute('href', '/login')
     expect(calledPaths).toEqual(['/api/auth/refresh'])

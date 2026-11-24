@@ -9,9 +9,11 @@ import { fmtNum, formatNum, formatPct, formatYi, qualityTone, toYi } from '../..
 import { useThemeMode } from '../../lib/theme'
 import type { StockSnapshotPayload } from '../../types/api'
 import { SHAREHOLDER_STATUS_META } from './stockHelpers'
+import { useCompactViewport } from './useCompactViewport'
 
 export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
   const { theme } = useThemeMode()
+  const isCompact = useCompactViewport()
   const { shareholder_return: sReturn, formula_notes: formulaNotes } = snapshot
   const statusMeta = SHAREHOLDER_STATUS_META[sReturn.status]
 
@@ -40,9 +42,22 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
         ...legend,
         top: 0,
         type: 'scroll',
+        ...(isCompact
+          ? {
+              itemGap: 10,
+              itemWidth: 14,
+              textStyle: { ...legend.textStyle, fontSize: 11 },
+            }
+          : {}),
         data: ['现金分红', '股份回购', '股权再融资', '股东净回报'],
       },
-      grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
+      grid: {
+        left: isCompact ? 8 : 12,
+        right: isCompact ? 8 : 14,
+        top: isCompact ? 72 : 56,
+        bottom: 10,
+        containLabel: true,
+      },
       xAxis: {
         ...axis,
         type: 'category',
@@ -91,7 +106,7 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
         },
       ],
     }
-  }, [asOfYear, seriesAsc, theme])
+  }, [asOfYear, isCompact, seriesAsc, theme])
 
   return (
     <div className="stack" style={{ gap: 16 }}>

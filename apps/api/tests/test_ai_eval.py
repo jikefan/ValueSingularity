@@ -249,7 +249,10 @@ class _InMemoryStockMetaRepo:
         meta = self._metas.get(code)
         if meta is None:
             return None
-        return StockDetail(**meta.model_dump(), snapshot_available=code in self._snapped)
+        return StockDetail(
+            **meta.model_dump(exclude={"snapshot_available"}),
+            snapshot_available=code in self._snapped,
+        )
 
     async def get_name(self, code: str) -> str | None:
         meta = self._metas.get(code)
@@ -276,6 +279,9 @@ class _InMemorySnapshotRepo:
         self, codes: Sequence[str]
     ) -> dict[str, StockSnapshotPayload]:
         return {c: self._snapshots[c] for c in codes if c in self._snapshots}
+
+    async def list_all_snapshots(self) -> list[StockSnapshotPayload]:
+        return [self._snapshots[c] for c in sorted(self._snapshots)]
 
     async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
         self._snapshots[snapshot.code] = snapshot

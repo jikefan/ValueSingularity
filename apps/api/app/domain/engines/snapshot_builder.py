@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 from datetime import UTC, date, datetime
+from typing import Literal
 
 from app.domain.engines._helpers import (
     clamp_score,
@@ -332,6 +333,7 @@ def _build_moat_section(
     growth: GrowthSection,
     ocf_to_profit_5y_pct: float | None,
     *,
+    shareholder_return: ShareholderReturnSection | None = None,
     meta: StockMetaRecord | None = None,
 ) -> MoatSection:
     roe_5y_vals = [t.roe_pct for t in trends[-5:] if t.roe_pct is not None]
@@ -350,6 +352,7 @@ def _build_moat_section(
     roic_pct = _compute_roic_approx_pct(ordered[-1] if ordered else None)
     net_cash = trends[-1].net_cash_yuan if trends else None
     latest_debt = report_interest_debt_yuan(ordered[-1], include_lease=True) if ordered else 0.0
+    is_financial = is_financial_institution(meta)
 
     # Score 6 moat dimensions deterministically onto [0, 100].
     roe_score = (
@@ -364,16 +367,50 @@ def _build_moat_section(
         else 50
     )
     gm_stability_bonus = max(0.0, 30.0 - gm_5y_std * 4.0) if gm_5y_std is not None else 15.0
-    pricing_score = (
-        clamp_score(min(70.0, max(0.0, gm_latest * 0.9)) + gm_stability_bonus)
-        if gm_latest is not None
-        else 50
-    )
-    cash_score = (
-        clamp_score(min(100.0, max(0.0, ocf_to_profit_5y_pct * 0.85)))
-        if ocf_to_profit_5y_pct is not None
-        else 50
-    )
+    if is_financial and gm_latest is None:
+        pricing_score = 55
+        pricing_summary = "金融业不核算传统工业毛利率，盈利能力重在净息差与中间业务收入稳健性。"
+    elif gm_latest is not None:
+        pricing_score = clamp_score(min(70.0, max(0.0, gm_latest * 0.9)) + gm_stability_bonus)
+        pricing_summary = (
+            f"最新毛利率 {gm_latest:.1f}%，5年波动标准差 {gm_5y_std:.2f}%。"
+            if gm_5y_std is not None
+            else "毛利率历史序列尚不完整。"
+        )
+    else:
+        pricing_score = 50
+        pricing_summary = "毛利率历史序列尚不完整。"
+
+    if is_financial:
+        recent_profits = [r.net_profit_yuan for r in ordered[-5:] if r.net_profit_yuan is not None]
+        profit_adj = 0.0
+        if recent_profits:
+            if all(p > 0 for p in recent_profits):
+                profit_adj = 10.0
+            elif recent_profits[-1] > 0:
+                profit_adj = 5.0
+            else:
+                profit_adj = -15.0
+        div_adj = 0.0
+        if shareholder_return is not None:
+            div_years = sum(1 for pt in shareholder_return.series[-5:] if pt.dividend_yuan > 0)
+            if div_years >= 4:
+                div_adj = 15.0
+            elif div_years >= 2:
+                div_adj = 8.0
+            if shareholder_return.net_return_yuan < 0:
+                div_adj -= 10.0
+        cash_score = max(25, min(95, clamp_score(60.0 + profit_adj + div_adj)))
+        cash_summary = (
+            "金融行业存贷款变动计入经营现金流，不适用传统净现比；已切换至分红可持续性评估。"
+        )
+    elif ocf_to_profit_5y_pct is not None:
+        cash_score = clamp_score(min(100.0, max(0.0, ocf_to_profit_5y_pct * 0.85)))
+        cash_summary = f"近5年累计净现比 {ocf_to_profit_5y_pct:.1f}%。"
+    else:
+        cash_score = 50
+        cash_summary = "缺少5年经营现金流与利润对比数据。"
+
     capex_ratio = (
         growth.capex_to_ocf_latest_pct if growth.capex_to_ocf_latest_pct is not None else 30.0
     )
@@ -383,7 +420,6 @@ def _build_moat_section(
         if roic_pct is not None
         else 50
     )
-    is_financial = is_financial_institution(meta)
     if is_financial:
         fortress_score = 65
         fortress_summary = "金融行业资产负债结构以资本充足率与拨备覆盖率为核心指标。"
@@ -425,21 +461,13 @@ def _build_moat_section(
             key="pricing_power",
             label="毛利率与定价权",
             score=pricing_score,
-            summary=(
-                f"最新毛利率 {gm_latest:.1f}%，5年波动标准差 {gm_5y_std:.2f}%。"
-                if gm_latest is not None and gm_5y_std is not None
-                else "毛利率历史序列尚不完整。"
-            ),
+            summary=pricing_summary,
         ),
         MoatDimensionItem(
             key="cash_conversion",
             label="盈利含金量",
             score=cash_score,
-            summary=(
-                f"近5年累计净现比 {ocf_to_profit_5y_pct:.1f}%。"
-                if ocf_to_profit_5y_pct is not None
-                else "缺少5年经营现金流与利润对比数据。"
-            ),
+            summary=cash_summary,
         ),
         MoatDimensionItem(
             key="capital_efficiency",
@@ -477,6 +505,49 @@ def _build_moat_section(
         roic_approx_pct=roic_pct,
         dimensions=dimensions,
     )
+
+
+def _score_financial_capital_resilience(
+    *,
+    valuation: ValuationSection,
+    shareholder_return: ShareholderReturnSection,
+    moat: MoatSection,
+) -> int:
+    div_yield = (
+        valuation.dividend_yield_pct
+        if valuation.dividend_yield_pct is not None
+        else shareholder_return.current_dividend_yield_pct
+    )
+    yield_adj = (
+        min(18.0, (div_yield / 4.0) * 15.0) if div_yield is not None and div_yield > 0 else 0.0
+    )
+
+    recent_div_years = sum(1 for pt in shareholder_return.series[-5:] if pt.dividend_yuan > 0)
+    if recent_div_years >= 4:
+        payout_adj = 10.0
+    elif recent_div_years >= 2:
+        payout_adj = 5.0
+    elif shareholder_return.total_dividend_yuan <= 0:
+        payout_adj = -15.0
+    else:
+        payout_adj = 2.0
+
+    roe_adj = 0.0
+    if moat.roe_10y_min_pct is not None:
+        if moat.roe_10y_min_pct >= 10.0:
+            roe_adj = 15.0
+        elif moat.roe_10y_min_pct >= 8.0:
+            roe_adj = 12.0
+        elif moat.roe_10y_min_pct >= 5.0:
+            roe_adj = 5.0
+        elif moat.roe_10y_min_pct < 0:
+            roe_adj = -10.0
+
+    # Net equity dilution uses net_return_yuan < 0 rather than shareholder_return.status because
+    # industrial FCF coverage flags deposit-driven negative bank OCF as false-positive red.
+    dilution_adj = -15.0 if shareholder_return.net_return_yuan < 0 else 0.0
+    raw = clamp_score(50.0 + yield_adj + payout_adj + roe_adj + dilution_adj)
+    return max(25, min(95, raw))
 
 
 def _build_radar_and_bear_cases(
@@ -523,24 +594,41 @@ def _build_radar_and_bear_cases(
     )
     balance_sheet = clamp_score(balance_base - ct.red_count * 18.0 - ct.yellow_count * 7.0)
 
-    cov = shareholder_return.fcf_coverage_ratio
-    cashflow_base = (
-        min(100.0, max(0.0, ocf_to_profit_5y_pct * 0.85))
-        if ocf_to_profit_5y_pct is not None
-        else 50.0
-    )
-    cov_bonus = (
-        10.0
-        if (cov is not None and cov >= 1.0)
-        else (-15.0 if shareholder_return.status == "red" else 0.0)
-    )
-    cashflow_quality = clamp_score(cashflow_base + cov_bonus)
+    if is_financial:
+        cashflow_quality = _score_financial_capital_resilience(
+            valuation=valuation,
+            shareholder_return=shareholder_return,
+            moat=moat,
+        )
+    else:
+        cov = shareholder_return.fcf_coverage_ratio
+        cashflow_base = (
+            min(100.0, max(0.0, ocf_to_profit_5y_pct * 0.85))
+            if ocf_to_profit_5y_pct is not None
+            else 50.0
+        )
+        cov_bonus = (
+            10.0
+            if (cov is not None and cov >= 1.0)
+            else (-15.0 if shareholder_return.status == "red" else 0.0)
+        )
+        cashflow_quality = clamp_score(cashflow_base + cov_bonus)
 
-    pct_anchor = (
-        valuation.pe_percentile_10y
-        if valuation.pe_percentile_10y is not None
-        else valuation.pb_percentile_10y
-    )
+    if is_financial:
+        if valuation.pb_percentile_10y is not None and valuation.pe_percentile_10y is not None:
+            pct_anchor: float | None = (
+                0.6 * valuation.pb_percentile_10y + 0.4 * valuation.pe_percentile_10y
+            )
+        elif valuation.pb_percentile_10y is not None:
+            pct_anchor = valuation.pb_percentile_10y
+        else:
+            pct_anchor = valuation.pe_percentile_10y
+    else:
+        pct_anchor = (
+            valuation.pe_percentile_10y
+            if valuation.pe_percentile_10y is not None
+            else valuation.pb_percentile_10y
+        )
     val_base = max(10.0, 100.0 - pct_anchor) if pct_anchor is not None else 50.0
     graham_adj = (
         max(-15.0, min(15.0, valuation.graham_margin_pct * 0.3))
@@ -548,7 +636,7 @@ def _build_radar_and_bear_cases(
         else 0.0
     )
     dcf_adj = 0.0
-    if reverse_dcf.implied_vs_history_gap_pct is not None:
+    if not is_financial and reverse_dcf.implied_vs_history_gap_pct is not None:
         dcf_adj = max(-15.0, min(10.0, -reverse_dcf.implied_vs_history_gap_pct * 0.8))
     valuation_margin = clamp_score(val_base + graham_adj + dcf_adj)
 
@@ -585,7 +673,9 @@ def _build_radar_and_bear_cases(
             f"[估值分位偏高] 当前 PE(TTM) 处于近10年 {valuation.pe_percentile_10y:.1f}% 分位，"
             "安全边际收窄。"
         )
-    if shareholder_return.status == "red":
+    if shareholder_return.status == "red" and (
+        not is_financial or shareholder_return.net_return_yuan < 0
+    ):
         bear_cases.append(f"[股东回报警示] {shareholder_return.verdict}")
     if growth.revenue_cagr_3y_pct is not None and growth.revenue_cagr_3y_pct < 0:
         bear_cases.append(
@@ -596,6 +686,9 @@ def _build_radar_and_bear_cases(
             "当前定量排雷与估值指标未见显著警示，仍需持续跟踪行业竞争格局与资本开支回报。"
         )
 
+    scoring_profile: Literal["standard", "financial"] = "financial" if is_financial else "standard"
+    dimension_labels = {"cashflow_quality": "资本与分红耐力"} if is_financial else {}
+
     return RadarScoreSection(
         profitability=profitability,
         moat=moat_score,
@@ -603,6 +696,8 @@ def _build_radar_and_bear_cases(
         cashflow_quality=cashflow_quality,
         valuation_margin=valuation_margin,
         total_score=total_score,
+        scoring_profile=scoring_profile,
+        dimension_labels=dimension_labels,
         bear_cases=bear_cases,
     )
 
@@ -650,22 +745,24 @@ def build_stock_snapshot(
         shareholder_return.current_dividend_yield_pct,
     )
 
-    recent_5y_ocf_profit = [
-        (r.ocf_yuan, r.net_profit_yuan)
-        for r in ordered_reports[-5:]
-        if r.ocf_yuan is not None and r.net_profit_yuan is not None
-    ]
     ocf_to_profit_5y_pct: float | None = None
-    if recent_5y_ocf_profit:
-        sum_ocf = sum(pair[0] for pair in recent_5y_ocf_profit)
-        sum_profit = sum(pair[1] for pair in recent_5y_ocf_profit)
-        ocf_to_profit_5y_pct = safe_pct(sum_ocf, sum_profit, 2)
+    if not is_financial:
+        recent_5y_ocf_profit = [
+            (r.ocf_yuan, r.net_profit_yuan)
+            for r in ordered_reports[-5:]
+            if r.ocf_yuan is not None and r.net_profit_yuan is not None
+        ]
+        if recent_5y_ocf_profit:
+            sum_ocf = sum(pair[0] for pair in recent_5y_ocf_profit)
+            sum_profit = sum(pair[1] for pair in recent_5y_ocf_profit)
+            ocf_to_profit_5y_pct = safe_pct(sum_ocf, sum_profit, 2)
 
     moat = _build_moat_section(
         ordered_reports,
         trends,
         growth,
         ocf_to_profit_5y_pct,
+        shareholder_return=shareholder_return,
         meta=effective_meta,
     )
     radar = _build_radar_and_bear_cases(
@@ -756,6 +853,14 @@ def build_stock_snapshot(
         (r.audit_opinion for r in reversed(ordered_reports) if r.audit_opinion),
         None,
     )
+    formula_notes = dict(_FORMULA_NOTES)
+    if is_financial:
+        formula_notes["financial_radar"] = (
+            "金融行业（银行/保险/券商等）存贷款及同业资金变动计入经营现金流，"
+            "故豁免传统净现比、在建工程及存贷双高扫描；五维雷达第四维切换为「资本与分红耐力」，"
+            "综合股息率、分红持续性、10年最低 ROE 稳定性与净稀释状态评估，"
+            "估值优先参考 PB 历史分位。"
+        )
 
     return StockSnapshotPayload(
         schema_version=1,
@@ -781,5 +886,5 @@ def build_stock_snapshot(
         else None,
         pledge_date=bundle.pledge.trade_date if bundle.pledge else None,
         latest_audit_opinion=latest_audit,
-        formula_notes=dict(_FORMULA_NOTES),
+        formula_notes=formula_notes,
     )

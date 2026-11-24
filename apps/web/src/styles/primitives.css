@@ -104,6 +104,8 @@
 .seg-well {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
+  max-width: 100%;
   gap: 2px;
   padding: 3px;
   border-radius: var(--radius-sm);
@@ -536,11 +538,11 @@
 
 @media (max-width: 900px) {
   .bento-deck {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .well-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .well-grid > .well-cell {
@@ -567,7 +569,7 @@
 
 @media (max-width: 560px) {
   .well-grid-4 {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .well-grid-4 > .well-cell {
@@ -580,7 +582,7 @@
   }
 
   .ct-grid-2 {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .bento-pad {

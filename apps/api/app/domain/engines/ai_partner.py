@@ -759,14 +759,15 @@ def _ct_challenge_for_check(
             )
             parts.append(f"归母净利润 {txt}")
         if not facts:
+            cf_label = snapshot.radar.dimension_labels.get("cashflow_quality", "现金流质量")
             facts.append(
                 CitedMetricFact(
-                    label="现金流质量评分",
+                    label=f"{cf_label}评分",
                     value_text=f"{snapshot.radar.cashflow_quality}分",
                     source_section="radar",
                 )
             )
-            parts.append(f"现金流质量评分 {snapshot.radar.cashflow_quality} 分")
+            parts.append(f"{cf_label}评分 {snapshot.radar.cashflow_quality} 分")
         return (
             severity_base + 13,
             "ct_ocf_divergence",

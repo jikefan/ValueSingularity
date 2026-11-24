@@ -7,12 +7,104 @@ import { Tag } from '../../components/ui/Tag'
 import { api } from '../../lib/api'
 import { formatNum, formatPct, formatSignedPct, formatYi, qualityTone } from '../../lib/format'
 import { queryKeys } from '../../lib/queryKeys'
-import { normalizeCompareCodes, useStockCompare } from '../../lib/useStockAnalysis'
+import {
+  normalizeCompareCodes,
+  useStockCompare,
+  useStockScreener,
+} from '../../lib/useStockAnalysis'
 import type { StockCompareItem } from '../../types/api'
 
-const PRESET_LIQUOR_CODES = ['600519', '000858', '000568'] as const
+type ComparePreset = {
+  label: string
+  title: string
+  subtitle: string
+  codes: readonly [string, ...string[]]
+}
+
+const COMPARE_PRESETS: readonly ComparePreset[] = [
+  {
+    label: '白酒龙头对比 (600519/000858/000568)',
+    title: '白酒龙头对比',
+    subtitle: '高端消费与现金流标杆',
+    codes: ['600519', '000858', '000568'],
+  },
+  {
+    label: '高股息银行 (600036/601398/000001)',
+    title: '高股息银行',
+    subtitle: '低估值高分红红利代表',
+    codes: ['600036', '601398', '000001'],
+  },
+  {
+    label: '制造消费蓝筹 (000333/002594/600887)',
+    title: '制造消费蓝筹',
+    subtitle: '跨行业龙头护城河对照',
+    codes: ['000333', '002594', '600887'],
+  },
+]
 const MAX_COMPARE_CODES = 5
 const CODE_PATTERN = /^[0-9]{6}$/
+
+const IT_BLOCK_KEYWORDS = ['软件', '信息', 'IT', '科技', '计算机', '互联网', '数据', '网络', '电子']
+const FINANCIAL_INDUSTRY_KEYWORDS = [
+  '银行',
+  '非银金融',
+  '金融',
+  '金融业',
+  '银行业',
+  '农商行',
+  '保险',
+  '证券',
+  '资本市场',
+  '信托',
+  '多元金融',
+  '期货',
+]
+const FINANCIAL_NAME_SUFFIX_RE = /(银行|农商行|人寿|财险|再保险|信托|期货|证券)$/
+
+function containsItKeyword(text: string): boolean {
+  const upper = text.toUpperCase()
+  return IT_BLOCK_KEYWORDS.some((kw) => upper.includes(kw))
+}
+
+function isFinancialCompareItem(item: StockCompareItem): boolean {
+  const candidates = [
+    item.metrics?.industry_sw1 ?? '',
+    item.meta.industry_sw1 ?? '',
+    item.meta.industry_sw2 ?? '',
+  ]
+    .map((val) => val.trim())
+    .filter(Boolean)
+
+  for (const text of candidates) {
+    if (!containsItKeyword(text) && FINANCIAL_INDUSTRY_KEYWORDS.some((kw) => text.includes(kw))) {
+      return true
+    }
+  }
+  if (candidates.length > 0) {
+    return false
+  }
+  const name = item.meta.name.trim()
+  if (!name || containsItKeyword(name)) {
+    return false
+  }
+  return FINANCIAL_NAME_SUFFIX_RE.test(name) || name.includes('保险')
+}
+
+function renderExemptibleMetric(
+  item: StockCompareItem,
+  value: number | null | undefined,
+  renderValue: (val: number | null | undefined) => ReactNode,
+  { forceExemptOnFinancial = false }: { forceExemptOnFinancial?: boolean } = {},
+): ReactNode {
+  if (
+    item.metrics &&
+    isFinancialCompareItem(item) &&
+    (forceExemptOnFinancial || value === null || value === undefined)
+  ) {
+    return <span className="small muted">行业不适用</span>
+  }
+  return renderValue(value)
+}
 
 type CompareMetricRow = {
   key: string
@@ -89,25 +181,32 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'gross_margin_latest_pct',
     label: '最新毛利率',
-    render: (item) => (
-      <span className="mono">{formatPct(item.metrics?.gross_margin_latest_pct, 2)}</span>
-    ),
+    render: (item) =>
+      renderExemptibleMetric(item, item.metrics?.gross_margin_latest_pct, (value) => (
+        <span className="mono">{formatPct(value, 2)}</span>
+      )),
   },
   {
     key: 'net_cash_to_mv_pct',
     label: '净现金 / 总市值',
-    render: (item) => (
-      <span className={`mono ${qualityTone(item.metrics?.net_cash_to_mv_pct)}`}>
-        {formatPct(item.metrics?.net_cash_to_mv_pct, 2)}
-      </span>
-    ),
+    render: (item) =>
+      renderExemptibleMetric(
+        item,
+        item.metrics?.net_cash_to_mv_pct,
+        (value) => <span className={`mono ${qualityTone(value)}`}>{formatPct(value, 2)}</span>,
+        { forceExemptOnFinancial: true },
+      ),
   },
   {
     key: 'ocf_to_profit_5y_pct',
     label: '5年 OCF / 净利润',
-    render: (item) => (
-      <span className="mono">{formatPct(item.metrics?.ocf_to_profit_5y_pct, 1)}</span>
-    ),
+    render: (item) =>
+      renderExemptibleMetric(
+        item,
+        item.metrics?.ocf_to_profit_5y_pct,
+        (value) => <span className="mono">{formatPct(value, 1)}</span>,
+        { forceExemptOnFinancial: true },
+      ),
   },
   {
     key: 'shareholder_yield_pct',
@@ -121,11 +220,15 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'implied_fcf_cagr_pct',
     label: 'Reverse DCF 隐含 FCF 增速',
-    render: (item) => (
-      <span className={`mono ${qualityTone(item.metrics?.implied_fcf_cagr_pct, true)}`}>
-        {formatSignedPct(item.metrics?.implied_fcf_cagr_pct, 2)}
-      </span>
-    ),
+    render: (item) =>
+      renderExemptibleMetric(
+        item,
+        item.metrics?.implied_fcf_cagr_pct,
+        (value) => (
+          <span className={`mono ${qualityTone(value, true)}`}>{formatSignedPct(value, 2)}</span>
+        ),
+        { forceExemptOnFinancial: true },
+      ),
   },
   {
     key: 'ct_alerts',
@@ -208,6 +311,15 @@ export function ComparePage() {
 
   const compareQuery = useStockCompare(selectedCodes)
   const compareItems = compareQuery.data ?? []
+  const screenerQuery = useStockScreener({ limit: 50 }, selectedCodes.length === 0)
+  const syncedHotCodes = useMemo(
+    () =>
+      (screenerQuery.data?.items ?? [])
+        .slice(0, 3)
+        .map((item) => item.code)
+        .filter((code) => CODE_PATTERN.test(code)),
+    [screenerQuery.data],
+  )
 
   function updateSelectedCodes(nextCodes: readonly string[]) {
     const normalized = normalizeCompareCodes(nextCodes)
@@ -301,7 +413,7 @@ export function ComparePage() {
   return (
     <div className="container stack" style={{ gap: 16 }}>
       <Card
-        title="同业横向对比矩阵"
+        title="PEER BENCHMARK · 多标的对照"
         extra={
           <span className="row" style={{ gap: 8 }}>
             <Tag color="blue">{`已选 ${selectedCodes.length} / ${MAX_COMPARE_CODES}`}</Tag>
@@ -322,6 +434,12 @@ export function ComparePage() {
         }
       >
         <div className="stack" style={{ gap: 14 }}>
+          <div className="compare-intro">
+            <h1 className="compare-title">同业横向对比</h1>
+            <p className="small muted">
+              选择 1–5 支标的，并排比较五维雷达评分、估值分位、ROE 稳定性与排雷信号。
+            </p>
+          </div>
           <form
             ref={pickerRef}
             className="compare-picker-form"
@@ -390,6 +508,11 @@ export function ComparePage() {
                         </span>
                         <span className="nav-search-item-tags">
                           <Tag color="blue">{stock.exchange}</Tag>
+                          <Tag color={stock.snapshot_available ? 'green' : 'gray'}>
+                            {stock.snapshot_available ? '已同步快照' : '仅基础信息'}
+                          </Tag>
+                          {stock.is_st ? <Tag color="amber">ST</Tag> : null}
+                          {!stock.is_active ? <Tag color="rose">已退市</Tag> : null}
                           {selectedCodes.includes(stock.code) ? (
                             <Tag color="green">已选</Tag>
                           ) : null}
@@ -447,19 +570,58 @@ export function ComparePage() {
           <EmptyBlock
             title="请添加 1–5 支标的开始同业横向对比"
             hint={
-              <span className="stack" style={{ gap: 12, alignItems: 'center' }}>
-                <span>支持直接输入 6 位代码或搜索股票名称，URL 参数可分享保存。</span>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => {
-                    submitSeqRef.current += 1
-                    updateSelectedCodes(PRESET_LIQUOR_CODES)
-                  }}
-                >
-                  白酒龙头对比 (600519/000858/000568)
-                </button>
-              </span>
+              <div className="compare-empty-body">
+                <p className="compare-empty-sub">
+                  支持直接输入 6 位代码或搜索股票名称，URL 参数可分享保存。
+                </p>
+                {syncedHotCodes.length > 0 ? (
+                  <div className="compare-empty-primary">
+                    <button
+                      type="button"
+                      className="btn-primary compare-hot-btn"
+                      title={`载入已同步标的: ${syncedHotCodes.join(', ')}`}
+                      onClick={() => {
+                        submitSeqRef.current += 1
+                        updateSelectedCodes(syncedHotCodes)
+                      }}
+                    >
+                      对比已同步热门标的
+                    </button>
+                  </div>
+                ) : null}
+                <div className="compare-empty-deck">
+                  <div className="compare-empty-divider">
+                    <span>或选择精选行业对比方案</span>
+                  </div>
+                  <div className="compare-preset-grid">
+                    {COMPARE_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        className="tk-card compare-preset-card"
+                        aria-label={preset.label}
+                        onClick={() => {
+                          submitSeqRef.current += 1
+                          updateSelectedCodes(preset.codes)
+                        }}
+                      >
+                        <span className="compare-preset-head">
+                          <span className="compare-preset-title">{preset.title}</span>
+                          <span className="small link-accent compare-preset-cta">一键对比 →</span>
+                        </span>
+                        <span className="small muted">{preset.subtitle}</span>
+                        <span className="compare-preset-codes">
+                          {preset.codes.map((code) => (
+                            <span key={code} className="compare-preset-code mono">
+                              {code}
+                            </span>
+                          ))}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
             }
           />
         </Card>
@@ -523,9 +685,11 @@ export function ComparePage() {
             <div className="notice-box notice-warn mt-16" role="note">
               <span>
                 标的 <code className="mono">{unsyncedCodes.join(', ')}</code>{' '}
-                尚未同步深度快照，仅展示基础元数据。可运行{' '}
-                <code className="mono">{`python -m app.cli.sync_stocks --codes ${unsyncedCodes.join(',')}`}</code>{' '}
-                补齐指标。
+                当前仅同步了基础行情元数据，暂未生成全量财报与估值快照。你可以先对比已同步标的，或{' '}
+                <Link className="link-accent" to="/">
+                  前往首页浏览已覆盖全量财报的标的
+                </Link>
+                。
               </span>
             </div>
           ) : null}

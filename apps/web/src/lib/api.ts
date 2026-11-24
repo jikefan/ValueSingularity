@@ -28,6 +28,8 @@ import type {
   StockCompareItem,
   StockDetail,
   StockMetaRecord,
+  StockScreenerFilters,
+  StockScreenerResponse,
   StockSnapshotPayload,
   TokenResponse,
   UserEventItem,
@@ -37,7 +39,7 @@ import type {
   WatchlistItem,
   WatchlistUpsert,
 } from '../types/api'
-import type { paths } from '../types/openapi.gen'
+import type { operations, paths } from '../types/openapi.gen'
 
 export class ApiError extends Error {
   readonly status: number
@@ -421,6 +423,48 @@ export const api = {
         signal,
       }),
     ),
+
+  getStockScreener: async (
+    filters: StockScreenerFilters = {},
+    signal?: AbortSignal,
+  ): Promise<StockScreenerResponse> => {
+    const query: NonNullable<operations['stocks_screen_stocks']['parameters']['query']> = {}
+    if (filters.zeroRedOnly) {
+      query.zero_red_only = true
+    }
+    if (filters.maxPePercentile !== undefined) {
+      query.max_pe_percentile = filters.maxPePercentile
+    }
+    if (filters.minRoe !== undefined) {
+      query.min_roe = filters.minRoe
+    }
+    if (filters.minDividendYield !== undefined) {
+      query.min_dividend_yield = filters.minDividendYield
+    }
+    const trimmedIndustry = filters.industry?.trim()
+    if (trimmedIndustry) {
+      query.industry = trimmedIndustry
+    }
+    const trimmedQuery = filters.q?.trim()
+    if (trimmedQuery) {
+      query.q = trimmedQuery
+    }
+    if (filters.sortBy !== undefined) {
+      query.sort_by = filters.sortBy
+    }
+    if (filters.sortDir !== undefined) {
+      query.sort_dir = filters.sortDir
+    }
+    if (filters.limit !== undefined) {
+      query.limit = filters.limit
+    }
+    return unwrap(
+      await client.GET('/api/stocks/screener', {
+        params: { query },
+        signal,
+      }),
+    )
+  },
 
   listJournal: async (
     options: {

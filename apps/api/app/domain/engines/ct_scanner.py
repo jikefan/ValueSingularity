@@ -44,6 +44,7 @@ def _check_dual_high_cash_debt(
             rule_id="dual_high_cash_debt",
             title="存贷双高扫描",
             status="na",
+            na_reason="industry_exempt",
             summary="金融行业结构特殊 — 不适用常规存贷双高指标（吸储与同业负债属主营金融负债）。",
             threshold=threshold,
             value_text="不适用",
@@ -80,6 +81,7 @@ def _check_dual_high_cash_debt(
             rule_id="dual_high_cash_debt",
             title="存贷双高扫描",
             status="na",
+            na_reason="missing_data",
             summary="缺少货币资金或总资产数据，暂无法评估存贷双高风险。",
             threshold=threshold,
             value_text="数据不足",
@@ -117,11 +119,28 @@ def _check_dual_high_cash_debt(
     )
 
 
-def _check_stalled_cip(reports: Sequence[StockAnnualReport]) -> CtCheckItem:
+def _check_stalled_cip(
+    reports: Sequence[StockAnnualReport],
+    meta: StockMetaRecord | None = None,
+) -> CtCheckItem:
     threshold = (
         "在建工程/总资产 ≥ 15% 且（持续≥10%或占固定资产≥50%）（红灯）；"
         "≥ 8% 或占固定资产≥30%（黄灯）"
     )
+    if is_financial_institution(meta):
+        return CtCheckItem(
+            rule_id="stalled_cip",
+            title="在建工程不转固",
+            status="na",
+            na_reason="industry_exempt",
+            summary=(
+                "金融行业结构特殊 — 银行与金融资产核心为信贷与金融投资，"
+                "不适用传统制造业在建工程长期挂账指标。"
+            ),
+            threshold=threshold,
+            value_text="不适用",
+            evidences=[],
+        )
     evidences: list[CtRuleEvidence] = []
     recent = list(reports[-_EVIDENCE_YEARS:])
     latest_cip: float | None = None
@@ -163,6 +182,7 @@ def _check_stalled_cip(reports: Sequence[StockAnnualReport]) -> CtCheckItem:
             rule_id="stalled_cip",
             title="在建工程不转固",
             status="na",
+            na_reason="missing_data",
             summary="缺少在建工程或固定资产科目数据。",
             threshold=threshold,
             value_text="数据不足",
@@ -216,6 +236,7 @@ def _check_ocf_profit_divergence(
             rule_id="ocf_profit_divergence",
             title="现金流与利润背离",
             status="na",
+            na_reason="industry_exempt",
             summary=(
                 "金融行业结构特殊 — 不适用传统净现比指标（存贷款及同业资金变动计入经营现金流）。"
             ),
@@ -251,6 +272,7 @@ def _check_ocf_profit_divergence(
             rule_id="ocf_profit_divergence",
             title="现金流与利润背离",
             status="na",
+            na_reason="missing_data",
             summary="缺少经营现金流或净利润数据。",
             threshold=threshold,
             value_text="数据不足",
@@ -319,6 +341,7 @@ def _check_receivable_inventory_bloat(
             rule_id="receivable_inventory_bloat",
             title="应收与存货膨胀",
             status="na",
+            na_reason="industry_exempt",
             summary="金融行业结构特殊 — 不适用传统应收账款与存货周转指标。",
             threshold=threshold,
             value_text="不适用",
@@ -384,6 +407,7 @@ def _check_receivable_inventory_bloat(
             rule_id="receivable_inventory_bloat",
             title="应收与存货膨胀",
             status="na",
+            na_reason="missing_data",
             summary="缺少营业收入或总资产数据。",
             threshold=threshold,
             value_text="数据不足",
@@ -474,6 +498,7 @@ def _check_goodwill_overhang(reports: Sequence[StockAnnualReport]) -> CtCheckIte
             rule_id="goodwill_overhang",
             title="商誉减值悬顶",
             status="na",
+            na_reason="missing_data",
             summary="缺少商誉或净资产数据。",
             threshold=threshold,
             value_text="数据不足",
@@ -507,6 +532,7 @@ def _check_goodwill_overhang(reports: Sequence[StockAnnualReport]) -> CtCheckIte
             rule_id="goodwill_overhang",
             title="商誉减值悬顶",
             status="na",
+            na_reason="missing_data",
             summary="缺少商誉或净资产数据。",
             threshold=threshold,
             value_text="数据不足",
@@ -560,6 +586,7 @@ def _check_shareholder_pledge(pledge: StockPledgeSnapshot | None) -> CtCheckItem
             rule_id="shareholder_pledge",
             title="股权质押比例",
             status="na",
+            na_reason="missing_data",
             summary="暂未获取到有效股权质押比例数据。",
             threshold=threshold,
             value_text="未获取",
@@ -643,6 +670,7 @@ def _check_audit_opinion(reports: Sequence[StockAnnualReport]) -> CtCheckItem:
             rule_id="audit_opinion",
             title="审计意见扫描",
             status="na",
+            na_reason="missing_data",
             summary="年报暂未披露审计意见类型。",
             threshold=threshold,
             value_text="未披露",
@@ -691,7 +719,7 @@ def scan_financial_ct(
     ordered = sort_reports_asc(reports)
     checks = [
         _check_dual_high_cash_debt(ordered, meta),
-        _check_stalled_cip(ordered),
+        _check_stalled_cip(ordered, meta),
         _check_ocf_profit_divergence(ordered, meta),
         _check_receivable_inventory_bloat(ordered, meta),
         _check_goodwill_overhang(ordered),

@@ -645,6 +645,21 @@
             "title": "Evidences",
             "type": "array"
           },
+          "na_reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "industry_exempt",
+                  "missing_data"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Na Reason"
+          },
           "rule_id": {
             "title": "Rule Id",
             "type": "string"
@@ -2811,6 +2826,13 @@
             "title": "Cashflow Quality",
             "type": "integer"
           },
+          "dimension_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Dimension Labels",
+            "type": "object"
+          },
           "moat": {
             "maximum": 100.0,
             "minimum": 0.0,
@@ -2822,6 +2844,15 @@
             "minimum": 0.0,
             "title": "Profitability",
             "type": "integer"
+          },
+          "scoring_profile": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "financial"
+            ],
+            "title": "Scoring Profile",
+            "type": "string"
           },
           "total_score": {
             "maximum": 100.0,
@@ -3317,6 +3348,11 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "snapshot_available": {
+            "default": false,
+            "title": "Snapshot Available",
+            "type": "boolean"
           }
         },
         "required": [
@@ -3325,6 +3361,235 @@
           "exchange"
         ],
         "title": "StockMetaRecord",
+        "type": "object"
+      },
+      "StockScreenerItem": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "title": "As Of",
+            "type": "string"
+          },
+          "close": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close"
+          },
+          "code": {
+            "pattern": "^[0-9]{6}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "ct_green_count": {
+            "minimum": 0.0,
+            "title": "Ct Green Count",
+            "type": "integer"
+          },
+          "ct_red_count": {
+            "minimum": 0.0,
+            "title": "Ct Red Count",
+            "type": "integer"
+          },
+          "ct_yellow_count": {
+            "minimum": 0.0,
+            "title": "Ct Yellow Count",
+            "type": "integer"
+          },
+          "dividend_yield_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividend Yield Pct"
+          },
+          "exchange": {
+            "enum": [
+              "SH",
+              "SZ",
+              "BJ"
+            ],
+            "title": "Exchange",
+            "type": "string"
+          },
+          "implied_fcf_cagr_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implied Fcf Cagr Pct"
+          },
+          "industry_sw1": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Industry Sw1"
+          },
+          "is_financial": {
+            "default": false,
+            "title": "Is Financial",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pb": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pb"
+          },
+          "pb_percentile_10y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pb Percentile 10Y"
+          },
+          "pe_percentile_10y": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe Percentile 10Y"
+          },
+          "pe_ttm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pe Ttm"
+          },
+          "roe_5y_avg_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roe 5Y Avg Pct"
+          },
+          "shareholder_yield_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shareholder Yield Pct"
+          },
+          "total_mv_yuan": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Mv Yuan"
+          },
+          "total_score": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Total Score",
+            "type": "integer"
+          },
+          "valuation_margin": {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "title": "Valuation Margin",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "exchange",
+          "as_of",
+          "ct_red_count",
+          "ct_yellow_count",
+          "ct_green_count",
+          "total_score",
+          "valuation_margin"
+        ],
+        "title": "StockScreenerItem",
+        "type": "object"
+      },
+      "StockScreenerResponse": {
+        "properties": {
+          "filtered_count": {
+            "minimum": 0.0,
+            "title": "Filtered Count",
+            "type": "integer"
+          },
+          "industries": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Industries",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StockScreenerItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total_synced": {
+            "minimum": 0.0,
+            "title": "Total Synced",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_synced",
+          "filtered_count",
+          "industries",
+          "items"
+        ],
+        "title": "StockScreenerResponse",
         "type": "object"
       },
       "StockSnapshotPayload": {
@@ -5382,6 +5647,181 @@
           }
         },
         "summary": "Compare Stocks",
+        "tags": [
+          "stocks"
+        ]
+      }
+    },
+    "/api/stocks/screener": {
+      "get": {
+        "operationId": "stocks_screen_stocks",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "zero_red_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Zero Red Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "max_pe_percentile",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Max Pe Percentile"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_roe",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 1000.0,
+                  "minimum": -1000.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Roe"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_dividend_yield",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Min Dividend Yield"
+            }
+          },
+          {
+            "in": "query",
+            "name": "industry",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Industry"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "required": false,
+            "schema": {
+              "default": "total_score",
+              "enum": [
+                "total_score",
+                "pe_percentile_10y",
+                "roe_5y_avg_pct",
+                "dividend_yield_pct",
+                "pe_ttm",
+                "total_mv_yuan"
+              ],
+              "title": "Sort By",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort_dir",
+            "required": false,
+            "schema": {
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Sort Dir",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockScreenerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Screen Stocks",
         "tags": [
           "stocks"
         ]

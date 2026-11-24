@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from './App'
@@ -42,6 +42,7 @@ const MAOTAI_META: StockMetaRecord = {
   list_date: '2001-08-27',
   is_st: false,
   is_active: true,
+  snapshot_available: true,
 }
 
 const ST_DELISTED_META: StockMetaRecord = {
@@ -53,6 +54,7 @@ const ST_DELISTED_META: StockMetaRecord = {
   list_date: '1991-01-29',
   is_st: true,
   is_active: false,
+  snapshot_available: false,
 }
 
 const MAOTAI_DETAIL: StockDetail = {
@@ -120,6 +122,16 @@ describe('App global stock search', () => {
       if (url.pathname === '/api/market/overview') {
         return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
       }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(
+          jsonResponse({ total_synced: 0, filtered_count: 0, industries: [], items: [] }, 200),
+        )
+      }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(
+          jsonResponse({ total_synced: 0, filtered_count: 0, industries: [], items: [] }, 200),
+        )
+      }
       if (url.pathname === '/api/stocks/search') {
         const q = url.searchParams.get('q') ?? ''
         searchQueries.push(q)
@@ -138,6 +150,8 @@ describe('App global stock search', () => {
 
     const maotaiOption = await screen.findByRole('option', { name: /600519.*贵州茅台/ })
     expect(maotaiOption).toBeInTheDocument()
+    expect(screen.getByText('已同步快照')).toBeInTheDocument()
+    expect(screen.getByText('仅基础信息')).toBeInTheDocument()
     expect(screen.getByText('ST')).toBeInTheDocument()
     expect(screen.getByText('已退市')).toBeInTheDocument()
     expect(searchQueries).toEqual(['茅台'])
@@ -145,7 +159,8 @@ describe('App global stock search', () => {
     fireEvent.click(maotaiOption)
 
     expect(await screen.findByRole('heading', { name: '贵州茅台' })).toBeInTheDocument()
-    expect(screen.getByText(/食品饮料 \/ 白酒Ⅱ/)).toBeInTheDocument()
+    expect(screen.getByText('食品饮料')).toBeInTheDocument()
+    expect(screen.getByText('白酒Ⅱ')).toBeInTheDocument()
     expect(searchInput).toHaveValue('')
   })
 
@@ -159,6 +174,11 @@ describe('App global stock search', () => {
       }
       if (url.pathname === '/api/market/overview') {
         return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
+      }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(
+          jsonResponse({ total_synced: 0, filtered_count: 0, industries: [], items: [] }, 200),
+        )
       }
       if (url.pathname === '/api/stocks/search') {
         return Promise.resolve(jsonResponse([MAOTAI_META], 200))
@@ -231,6 +251,11 @@ describe('App global stock search', () => {
       if (url.pathname === '/api/market/overview') {
         return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
       }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(
+          jsonResponse({ total_synced: 0, filtered_count: 0, industries: [], items: [] }, 200),
+        )
+      }
       if (url.pathname === '/api/stocks/search') {
         if (searchMode === 'empty') {
           return Promise.resolve(jsonResponse([], 200))
@@ -280,6 +305,11 @@ describe('App global stock search', () => {
       if (url.pathname === '/api/market/overview') {
         return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
       }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(
+          jsonResponse({ total_synced: 0, filtered_count: 0, industries: [], items: [] }, 200),
+        )
+      }
       if (url.pathname === '/api/stocks/search') {
         searchCalls.push(url.searchParams.get('q') ?? '')
         return Promise.resolve(jsonResponse([MAOTAI_META], 200))
@@ -320,6 +350,11 @@ describe('App global stock search', () => {
       if (url.pathname === '/api/market/overview') {
         return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
       }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(
+          jsonResponse({ total_synced: 0, filtered_count: 0, industries: [], items: [] }, 200),
+        )
+      }
       if (url.pathname === '/api/stocks/search') {
         const q = url.searchParams.get('q') ?? ''
         if (q === '茅台') {
@@ -354,10 +389,11 @@ describe('App global stock search', () => {
     searchStage = 'refetch_pending'
     void client.invalidateQueries({ queryKey: queryKeys.stocks.search('茅台') })
     expect(await screen.findByText('搜索中...')).toBeInTheDocument()
-    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    const listbox = screen.getByRole('listbox', { name: '搜索结果' })
+    expect(within(listbox).queryByRole('option')).not.toBeInTheDocument()
 
     fireEvent.keyDown(searchInput, { key: 'ArrowDown' })
-    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    expect(within(listbox).queryByRole('option')).not.toBeInTheDocument()
 
     resolveRefetch(jsonResponse([MAOTAI_META], 200))
     const singleOption = await screen.findByRole('option', { name: /600519.*贵州茅台/ })
@@ -434,6 +470,11 @@ describe('App global stock search', () => {
       }
       if (url.pathname === '/api/market/overview') {
         return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW, 200))
+      }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(
+          jsonResponse({ total_synced: 0, filtered_count: 0, industries: [], items: [] }, 200),
+        )
       }
       return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
     })

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -41,6 +42,21 @@ class PostgresStockSnapshotRepository:
         except SQLAlchemyError as exc:
             raise DatabaseUnavailableError(exc.__class__.__name__) from exc
         return {row.code: StockSnapshotPayload.model_validate(row.payload) for row in rows}
+
+    async def list_all_snapshots(self) -> list[StockSnapshotPayload]:
+        stmt = select(StockSnapshot).order_by(StockSnapshot.code.asc())
+        try:
+            rows = (await self._session.scalars(stmt)).all()
+        except SQLAlchemyError as exc:
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+
+        items: list[StockSnapshotPayload] = []
+        for row in rows:
+            try:
+                items.append(StockSnapshotPayload.model_validate(row.payload))
+            except ValidationError:
+                continue
+        return items
 
     async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
         now = datetime.now(UTC)

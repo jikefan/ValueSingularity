@@ -1,4 +1,4 @@
-import type { JournalAction } from '../types/api'
+import type { JournalAction, StockScreenerFilters } from '../types/api'
 
 export const queryKeys = {
   health: ['health'] as const,
@@ -25,6 +25,22 @@ export const queryKeys = {
         'stocks',
         'compare',
         Array.from(new Set(codes.map((code) => code.trim()).filter(Boolean))).join(','),
+      ] as const,
+    screener: (filters: StockScreenerFilters = {}) =>
+      [
+        'stocks',
+        'screener',
+        {
+          zeroRedOnly: Boolean(filters.zeroRedOnly),
+          maxPePercentile: filters.maxPePercentile ?? null,
+          minRoe: filters.minRoe ?? null,
+          minDividendYield: filters.minDividendYield ?? null,
+          industry: filters.industry?.trim() || null,
+          q: filters.q?.trim() || null,
+          sortBy: filters.sortBy ?? 'total_score',
+          sortDir: filters.sortDir ?? 'desc',
+          limit: filters.limit ?? 50,
+        },
       ] as const,
   },
   journal: {

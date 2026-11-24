@@ -129,4 +129,21 @@ describe('Chart', () => {
       textStyle: { color: LIGHT_CHART_COLORS.white, fontFamily: CHART_FONT_FAMILY },
     })
   })
+
+  it('exposes A-share flow polarity and Singularity accent colors in dark and light palettes', () => {
+    expect(CHART_COLORS.flowIn).toBe(CHART_COLORS.negative)
+    expect(CHART_COLORS.flowOut).toMatch(/^#[0-9a-f]{6}$/)
+    expect(CHART_COLORS.flowOut).not.toBe(CHART_COLORS.flowIn)
+    expect(CHART_COLORS.singularityPrimary).toMatch(/^#[0-9a-f]{6}$/)
+    expect(CHART_COLORS.singularitySecondary).toBe(CHART_COLORS.electric)
+    expect(CHART_COLORS.singularityGlow).toMatch(/^#[0-9a-f]{6}$/)
+
+    expect(LIGHT_CHART_COLORS.flowIn).toBe(LIGHT_CHART_COLORS.negative)
+    expect(LIGHT_CHART_COLORS.flowOut).toBe(LIGHT_CHART_COLORS.positive)
+    expect(LIGHT_CHART_COLORS.flowOut).not.toBe(LIGHT_CHART_COLORS.flowIn)
+    expect(LIGHT_CHART_COLORS.singularityPrimary).toMatch(/^#[0-9a-f]{6}$/)
+    expect(LIGHT_CHART_COLORS.singularityPrimary).not.toBe(CHART_COLORS.singularityPrimary)
+    expect(LIGHT_CHART_COLORS.singularitySecondary).toBe(LIGHT_CHART_COLORS.electric)
+    expect(LIGHT_CHART_COLORS.singularityGlow).toMatch(/^#[0-9a-f]{6}$/)
+  })
 })

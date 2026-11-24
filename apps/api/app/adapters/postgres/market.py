@@ -24,7 +24,11 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _to_stock_meta_record(row: StockMeta) -> StockMetaRecord:
+def _to_stock_meta_record(
+    row: StockMeta,
+    *,
+    snapshot_available: bool = False,
+) -> StockMetaRecord:
     return StockMetaRecord.model_validate(
         {
             "code": row.code,
@@ -35,6 +39,7 @@ def _to_stock_meta_record(row: StockMeta) -> StockMetaRecord:
             "list_date": row.list_date,
             "is_st": row.is_st,
             "is_active": row.is_active,
+            "snapshot_available": snapshot_available,
         }
     )
 
@@ -176,22 +181,31 @@ class PostgresStockMetaRepository:
             else_=2,
         )
         stmt = (
-            select(StockMeta)
+            select(StockMeta, StockSnapshot.code)
+            .outerjoin(StockSnapshot, StockSnapshot.code == StockMeta.code)
             .where(
                 or_(
                     StockMeta.code.ilike(substring_pattern, escape="\\"),
                     StockMeta.name.ilike(substring_pattern, escape="\\"),
                 )
             )
-            .order_by(match_rank.asc(), StockMeta.is_active.desc(), StockMeta.code.asc())
+            .order_by(
+                match_rank.asc(),
+                StockMeta.is_active.desc(),
+                StockSnapshot.code.is_not(None).desc(),
+                StockMeta.code.asc(),
+            )
             .limit(bounded_limit)
         )
         try:
-            rows = (await self._session.scalars(stmt)).all()
+            rows = (await self._session.execute(stmt)).all()
         except SQLAlchemyError as exc:
             raise DatabaseUnavailableError(exc.__class__.__name__) from exc
 
-        return [_to_stock_meta_record(row) for row in rows]
+        return [
+            _to_stock_meta_record(row, snapshot_available=(snap_code is not None))
+            for row, snap_code in rows
+        ]
 
     async def get_detail(self, code: str) -> StockDetail | None:
         try:

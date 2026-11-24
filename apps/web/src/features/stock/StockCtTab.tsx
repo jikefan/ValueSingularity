@@ -4,7 +4,12 @@ import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import type { CtCheckItem, StockSnapshotPayload } from '../../types/api'
 import { StockMdaDiffPanel } from './StockMdaDiffPanel'
-import { formatEvidenceMetric, getEvidenceMetricLabel, SIGNAL_META } from './stockHelpers'
+import {
+  formatEvidenceMetric,
+  getCtCheckStatusMeta,
+  getEvidenceMetricLabel,
+  SIGNAL_META,
+} from './stockHelpers'
 
 function collectEvidenceKeys(check: CtCheckItem): string[] {
   const keys: string[] = []
@@ -24,6 +29,11 @@ export function StockCtTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
   const { financial_ct: ct, formula_notes: formulaNotes } = snapshot
   const [expandedRules, setExpandedRules] = useState<Record<string, boolean>>({})
   const overallMeta = SIGNAL_META[ct.overall_status]
+  const exemptCount = ct.checks.filter(
+    (check) =>
+      check.status === 'na' &&
+      (check.na_reason === 'industry_exempt' || check.summary.includes('金融行业结构特殊')),
+  ).length
 
   function toggleRule(ruleId: string) {
     setExpandedRules((prev) => ({
@@ -42,6 +52,7 @@ export function StockCtTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
             <Tag color="rose">{ct.red_count} 红灯</Tag>
             <Tag color="amber">{ct.yellow_count} 黄灯</Tag>
             <Tag color="green">{ct.green_count} 绿灯</Tag>
+            {exemptCount > 0 ? <Tag color="blue">{exemptCount} 项行业不适用</Tag> : null}
           </span>
         }
       >
@@ -62,7 +73,7 @@ export function StockCtTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
       ) : (
         <div className="stack" style={{ gap: 12 }}>
           {ct.checks.map((check) => {
-            const statusMeta = SIGNAL_META[check.status]
+            const statusMeta = getCtCheckStatusMeta(check)
             const isExpanded = Boolean(expandedRules[check.rule_id])
             const metricKeys = collectEvidenceKeys(check)
             const evidencesDesc = [...check.evidences].sort((a, b) => b.year - a.year)

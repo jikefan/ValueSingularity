@@ -9,9 +9,14 @@ export type ChartPalette = {
   readonly grid: string
   readonly positive: string
   readonly negative: string
+  readonly flowIn: string
+  readonly flowOut: string
   readonly electric: string
   readonly amber: string
   readonly violet: string
+  readonly singularityPrimary: string
+  readonly singularitySecondary: string
+  readonly singularityGlow: string
 }
 
 /**
@@ -27,9 +32,14 @@ export const CHART_COLORS = {
   grid: 'rgba(255, 255, 255, 0.06)',
   positive: '#1fd07a',
   negative: '#f43f5e',
+  flowIn: '#f43f5e',
+  flowOut: '#00c46c',
   electric: '#3b82f6',
   amber: '#f59e0b',
   violet: '#a78bfa',
+  singularityPrimary: '#00f0b5',
+  singularitySecondary: '#3b82f6',
+  singularityGlow: '#10b981',
 } as const satisfies ChartPalette
 
 export const LIGHT_CHART_COLORS = {
@@ -41,9 +51,14 @@ export const LIGHT_CHART_COLORS = {
   grid: 'rgba(15, 23, 42, 0.06)',
   positive: '#0a7b48',
   negative: '#be123c',
+  flowIn: '#be123c',
+  flowOut: '#0a7b48',
   electric: '#1d4ed8',
   amber: '#92400e',
   violet: '#6d28d9',
+  singularityPrimary: '#047857',
+  singularitySecondary: '#1d4ed8',
+  singularityGlow: '#059669',
 } as const satisfies ChartPalette
 
 /** Resolves ECharts canvas palette matching the active Carbon Dark or Ceramic Light theme. */

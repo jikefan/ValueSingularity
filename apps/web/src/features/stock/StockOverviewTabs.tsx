@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { Metric } from '../../components/ui/Metric'
@@ -10,7 +10,9 @@ import { Chart, type ChartOption } from '../../lib/charts'
 import { formatNum, formatPct, formatYi, qualityTone, toYi } from '../../lib/format'
 import { useThemeMode } from '../../lib/theme'
 import type { StockSnapshotPayload } from '../../types/api'
-import { FORMULA_NOTE_TITLES } from './stockHelpers'
+import { SingularitySphereCanvas } from './SingularitySphereCanvas'
+import { FORMULA_NOTE_TITLES, getRadarDimensions, isFinancialSnapshot } from './stockHelpers'
+import { useCompactViewport } from './useCompactViewport'
 
 function clampPctWidth(score: number): number {
   return Math.min(100, Math.max(0, score))
@@ -18,6 +20,7 @@ function clampPctWidth(score: number): number {
 
 export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
   const { theme } = useThemeMode()
+  const [radarView, setRadarView] = useState<'2d' | '3d'>('2d')
   const {
     radar,
     valuation,
@@ -26,16 +29,8 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
     shareholder_return: sReturn,
   } = snapshot
 
-  const radarDimensions = useMemo(
-    () => [
-      { key: 'profitability', label: '盈利能力', score: radar.profitability },
-      { key: 'moat', label: '护城河', score: radar.moat },
-      { key: 'balance_sheet', label: '资产负债', score: radar.balance_sheet },
-      { key: 'cashflow_quality', label: '现金流质量', score: radar.cashflow_quality },
-      { key: 'valuation_margin', label: '估值安全边际', score: radar.valuation_margin },
-    ],
-    [radar],
-  )
+  const isFinancial = useMemo(() => isFinancialSnapshot(snapshot), [snapshot])
+  const radarDimensions = useMemo(() => getRadarDimensions(snapshot), [snapshot])
 
   const radarOption = useMemo<ChartOption>(() => {
     const { colors, tooltip } = createChartTheme(theme)
@@ -77,7 +72,26 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
       <Card
         title="五维定量雷达评分"
         extra={
-          <span className="row" style={{ gap: 8 }}>
+          <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+            <div className="seg-well" role="group" aria-label="五维视图切换">
+              <button
+                type="button"
+                className={radarView === '2d' ? 'seg-tab seg-tab-sm active' : 'seg-tab seg-tab-sm'}
+                aria-pressed={radarView === '2d'}
+                onClick={() => setRadarView('2d')}
+              >
+                2D 雷达图
+              </button>
+              <button
+                type="button"
+                className={radarView === '3d' ? 'seg-tab seg-tab-sm active' : 'seg-tab seg-tab-sm'}
+                aria-pressed={radarView === '3d'}
+                onClick={() => setRadarView('3d')}
+              >
+                3D 奇点球
+              </button>
+            </div>
+            {isFinancial ? <Tag color="blue">金融业专项口径</Tag> : null}
             <Tag
               color={radar.total_score >= 70 ? 'green' : radar.total_score >= 45 ? 'blue' : 'amber'}
             >
@@ -94,7 +108,16 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
           </div>
 
           <div className="overview-radar-col">
-            <Chart option={radarOption} height={240} ariaLabel="五维评分雷达图" />
+            {radarView === '2d' ? (
+              <Chart option={radarOption} height={240} ariaLabel="五维评分雷达图" />
+            ) : (
+              <SingularitySphereCanvas
+                stockName={snapshot.name}
+                totalScore={radar.total_score}
+                dimensions={radarDimensions}
+                height={340}
+              />
+            )}
           </div>
 
           <div className="stack" style={{ gap: 10 }}>
@@ -135,7 +158,13 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
           <Metric
             label="5年平均 ROE"
             value={formatPct(moat.roe_5y_avg_pct, 2)}
-            sub={`10Y PE 分位 ${formatPct(valuation.pe_percentile_10y, 1)}`}
+            sub={
+              isFinancial &&
+              valuation.pb_percentile_10y !== null &&
+              valuation.pb_percentile_10y !== undefined
+                ? `10Y PB 分位 ${formatPct(valuation.pb_percentile_10y, 1)}`
+                : `10Y PE 分位 ${formatPct(valuation.pe_percentile_10y, 1)}`
+            }
           />
         </Card>
         <Card>
@@ -186,6 +215,7 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
 
 export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
   const { theme } = useThemeMode()
+  const isCompact = useCompactViewport()
   const trendsAsc = useMemo(
     () => [...snapshot.annual_trends].sort((a, b) => a.year - b.year),
     [snapshot.annual_trends],
@@ -204,9 +234,22 @@ export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayloa
         ...legend,
         top: 0,
         type: 'scroll',
+        ...(isCompact
+          ? {
+              itemGap: 10,
+              itemWidth: 14,
+              textStyle: { ...legend.textStyle, fontSize: 11 },
+            }
+          : {}),
         data: ['营业收入', '归母净利润', '自由现金流', 'ROE (%)'],
       },
-      grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
+      grid: {
+        left: isCompact ? 8 : 12,
+        right: isCompact ? 8 : 14,
+        top: isCompact ? 72 : 56,
+        bottom: 10,
+        containLabel: true,
+      },
       xAxis: {
         ...axis,
         type: 'category',
@@ -267,7 +310,7 @@ export function StockFinancialsTab({ snapshot }: { snapshot: StockSnapshotPayloa
         },
       ],
     }
-  }, [trendsAsc, theme])
+  }, [isCompact, trendsAsc, theme])
 
   if (trendsAsc.length === 0) {
     return (
@@ -385,6 +428,7 @@ export function StockMoatTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
 
 export function StockGrowthTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
   const { theme } = useThemeMode()
+  const isCompact = useCompactViewport()
   const { growth, annual_trends: annualTrends } = snapshot
   const trendsAsc = useMemo(() => [...annualTrends].sort((a, b) => a.year - b.year), [annualTrends])
 
@@ -399,9 +443,22 @@ export function StockGrowthTab({ snapshot }: { snapshot: StockSnapshotPayload })
         ...legend,
         top: 0,
         type: 'scroll',
+        ...(isCompact
+          ? {
+              itemGap: 10,
+              itemWidth: 14,
+              textStyle: { ...legend.textStyle, fontSize: 11 },
+            }
+          : {}),
         data: ['毛利率 (%)', '净利率 (%)', '研发费用率 (%)'],
       },
-      grid: { left: 12, right: 14, top: 56, bottom: 10, containLabel: true },
+      grid: {
+        left: isCompact ? 8 : 12,
+        right: isCompact ? 8 : 14,
+        top: isCompact ? 72 : 56,
+        bottom: 10,
+        containLabel: true,
+      },
       xAxis: {
         ...axis,
         type: 'category',
@@ -438,7 +495,7 @@ export function StockGrowthTab({ snapshot }: { snapshot: StockSnapshotPayload })
         },
       ],
     }
-  }, [trendsAsc, theme])
+  }, [isCompact, trendsAsc, theme])
 
   return (
     <div className="stack" style={{ gap: 16 }}>

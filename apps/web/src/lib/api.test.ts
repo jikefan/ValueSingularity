@@ -1274,4 +1274,51 @@ describe('api auth and single-flight refresh middleware', () => {
       unsubscribe()
     }
   })
+
+  it('serializes only defined screener filters in getStockScreener', async () => {
+    const requestedUrls: URL[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      requestedUrls.push(new URL(request.url))
+      return Promise.resolve(
+        jsonResponse(
+          {
+            total_synced: 1,
+            filtered_count: 1,
+            industries: ['食品饮料'],
+            items: [],
+          },
+          200,
+        ),
+      )
+    })
+
+    await api.getStockScreener({
+      zeroRedOnly: true,
+      maxPePercentile: 30,
+      minRoe: 15,
+      minDividendYield: 2,
+      industry: '食品饮料',
+      q: '茅台',
+      sortBy: 'pe_percentile_10y',
+      sortDir: 'asc',
+      limit: 20,
+    })
+
+    await api.getStockScreener({ zeroRedOnly: false, q: '   ', industry: '' })
+
+    expect(requestedUrls).toHaveLength(2)
+    expect(requestedUrls[0]?.pathname).toBe('/api/stocks/screener')
+    expect(requestedUrls[0]?.searchParams.get('zero_red_only')).toBe('true')
+    expect(requestedUrls[0]?.searchParams.get('max_pe_percentile')).toBe('30')
+    expect(requestedUrls[0]?.searchParams.get('min_roe')).toBe('15')
+    expect(requestedUrls[0]?.searchParams.get('min_dividend_yield')).toBe('2')
+    expect(requestedUrls[0]?.searchParams.get('industry')).toBe('食品饮料')
+    expect(requestedUrls[0]?.searchParams.get('q')).toBe('茅台')
+    expect(requestedUrls[0]?.searchParams.get('sort_by')).toBe('pe_percentile_10y')
+    expect(requestedUrls[0]?.searchParams.get('sort_dir')).toBe('asc')
+    expect(requestedUrls[0]?.searchParams.get('limit')).toBe('20')
+
+    expect(requestedUrls[1]?.searchParams.toString()).toBe('')
+  })
 })

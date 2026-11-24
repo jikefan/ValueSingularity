@@ -564,6 +564,9 @@ async def test_stock_sync_service_preserves_prior_snapshot_on_feed_failure(tmp_p
         ) -> dict[str, StockSnapshotPayload]:
             return {c: self.rows[c] for c in codes if c in self.rows}
 
+        async def list_all_snapshots(self) -> list[StockSnapshotPayload]:
+            return [self.rows[c] for c in sorted(self.rows)]
+
         async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
             self.rows[snapshot.code] = snapshot
 
@@ -793,6 +796,9 @@ async def test_snapshot_and_compare_return_503_when_db_unavailable() -> None:
         async def get_snapshots_for_compare(
             self, codes: Sequence[str]
         ) -> dict[str, StockSnapshotPayload]:
+            raise DatabaseUnavailableError("OperationalError")
+
+        async def list_all_snapshots(self) -> list[StockSnapshotPayload]:
             raise DatabaseUnavailableError("OperationalError")
 
         async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
@@ -1537,6 +1543,9 @@ async def test_stock_sync_service_enriches_meta_and_exempts_600036_bank_snapshot
             self, codes: Sequence[str]
         ) -> dict[str, StockSnapshotPayload]:
             return {c: self.rows[c] for c in codes if c in self.rows}
+
+        async def list_all_snapshots(self) -> list[StockSnapshotPayload]:
+            return [self.rows[c] for c in sorted(self.rows)]
 
         async def save_snapshot(self, snapshot: StockSnapshotPayload) -> None:
             self.rows[snapshot.code] = snapshot
