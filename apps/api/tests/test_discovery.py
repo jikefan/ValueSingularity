@@ -507,7 +507,7 @@ def test_discovery_board_regime_rules_and_candidate_buckets() -> None:
     div_theme = themes_by_id["tech_vs_dividend_rotation"]
     assert div_theme.signal == "green"
     assert "红利" in div_theme.verdict
-    assert [p.code for p in div_theme.picks] == ["601398", "601088"]
+    assert [p.code for p in div_theme.picks] == ["601088", "601398"]
     assert all((p.dividend_spread_over_bond_pct or 0.0) >= 2.0 for p in div_theme.picks)
 
     eq_theme = themes_by_id["earnings_quality_radar"]
@@ -776,3 +776,117 @@ async def test_market_discovery_api_and_screener_quality_filters() -> None:
     finally:
         pg_app.dependency_overrides.clear()
         await engine.dispose()
+
+
+def test_discovery_prioritizes_hydrated_forensics_and_quality_dividend_ranking() -> None:
+    as_of = date(2026, 11, 20)
+    overview = MarketOverview(
+        as_of=as_of,
+        data_source="akshare",
+        generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC),
+        indices=[IndexQuote(code="000001", name="上证指数", price=3350.0, change_pct=0.2)],
+        temperature=MarketTemperature(
+            score=35.0,
+            level=TemperatureLevel.COOL,
+            pe_median=22.0,
+            pe_percentile=25.0,
+            bond_yield=1.60,
+            equity_bond_spread=2.80,
+            comment="偏低区间",
+        ),
+        hot_industries=[],
+        cross_asset=None,
+    )
+
+    def _strip_forensics(snap: StockSnapshotPayload) -> StockSnapshotPayload:
+        return snap.model_copy(
+            update={
+                "forensics": None,
+                "peer_metrics": snap.peer_metrics.model_copy(
+                    update={
+                        "earnings_quality_tag": None,
+                        "earnings_quality_label": None,
+                        "invest_profit_share_3y_pct": None,
+                        "investment_assets_ratio_pct": None,
+                    }
+                ),
+            }
+        )
+
+    hydrated_large = _build_test_snapshot(
+        code="601088",
+        name="中国神华",
+        industry_sw1="煤炭",
+        latest_pe=12.0,
+        pe_history=(10.0, 14.0, 18.0, 22.0, 26.0),
+        dividend_total=45e8,
+        total_mv=1000e8,
+        net_profit=22e8,
+        ocf=26e8,
+    )
+    small_cap_spike = _build_test_snapshot(
+        code="002001",
+        name="小盘高息",
+        industry_sw1="基础化工",
+        latest_pe=15.0,
+        pe_history=(10.0, 12.0, 14.0, 16.0, 18.0),
+        dividend_total=14.4e8,
+        total_mv=120e8,
+        net_profit=20e8,
+        ocf=24e8,
+    )
+    legacy_superior_raw = _strip_forensics(
+        _build_test_snapshot(
+            code="601225",
+            name="遗留高息样本",
+            industry_sw1="煤炭",
+            latest_pe=8.0,
+            pe_history=(12.0, 16.0, 20.0, 24.0, 28.0),
+            dividend_total=70e8,
+            total_mv=1000e8,
+            net_profit=40e8,
+            ocf=50e8,
+            monetary_funds=500e8,
+        )
+    )
+    hydrated_gold = _build_test_snapshot(
+        code="600547",
+        name="山东黄金",
+        industry_sw1="有色金属",
+        industry_sw2="黄金",
+        latest_pe=28.0,
+        dividend_total=10e8,
+        operate_profit=15e8,
+        net_profit=12e8,
+        ocf=14e8,
+    )
+    legacy_gold = _strip_forensics(
+        _build_test_snapshot(
+            code="600489",
+            name="中金黄金",
+            industry_sw1="有色金属",
+            industry_sw2="黄金",
+            latest_pe=10.0,
+            dividend_total=20e8,
+            net_profit=35e8,
+            ocf=42e8,
+        )
+    )
+
+    board = build_market_discovery_board(
+        overview,
+        [legacy_superior_raw, small_cap_spike, hydrated_large, legacy_gold, hydrated_gold],
+    )
+    buckets = board.candidate_buckets
+    assert [p.code for p in buckets.dividend_fortresses] == ["601088", "002001", "601225"]
+    assert [p.code for p in buckets.gold_resources] == ["600547", "600489"]
+    assert [p.code for p in buckets.core_cash_cows] == [
+        "601088",
+        "002001",
+        "600547",
+        "601225",
+        "600489",
+    ]
+    dv_codes = [p.code for p in buckets.deep_value]
+    assert set(dv_codes) == {"601088", "002001", "600547", "601225", "600489"}
+    assert [c in {"601225", "600489"} for c in dv_codes] == [False, False, False, True, True]

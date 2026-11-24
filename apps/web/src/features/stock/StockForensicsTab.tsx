@@ -464,7 +464,7 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
                 label="OCF / 主业核心利润 (3Y)"
                 hint="ocf_to_core_profit"
                 value={formatPct(forensics.ocf_to_core_profit_3y_pct, 1)}
-                sub="≥ 70% 代表主业利润扎实回流现金"
+                sub="税后OCF / 税前核心利润 · ≥ 60% 扎实 / < 35% 红灯"
               />
             </div>
             <div className="subpanel">

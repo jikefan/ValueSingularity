@@ -126,13 +126,14 @@ def _build_buckets(
     *,
     cn_10y_bond_yield: float | None,
 ) -> DiscoveryCandidateBuckets:
-    dividend_candidates: list[tuple[tuple[float, int, str], DiscoveryStockPick]] = []
-    gold_candidates: list[tuple[tuple[int, int, str], DiscoveryStockPick]] = []
-    core_cow_candidates: list[tuple[tuple[float, int, str], DiscoveryStockPick]] = []
+    dividend_candidates: list[tuple[tuple[int, int, float, str], DiscoveryStockPick]] = []
+    gold_candidates: list[tuple[tuple[int, int, int, str], DiscoveryStockPick]] = []
+    core_cow_candidates: list[tuple[tuple[int, float, int, str], DiscoveryStockPick]] = []
     caution_candidates: list[tuple[tuple[float, str], DiscoveryStockPick]] = []
-    deep_value_candidates: list[tuple[tuple[int, float, int, str], DiscoveryStockPick]] = []
+    deep_value_candidates: list[tuple[tuple[int, int, float, int, str], DiscoveryStockPick]] = []
 
     for snap in snapshots:
+        forensics_rank = 0 if snap.forensics is not None else 1
         is_fin = is_financial_institution_from_snapshot(snap)
         div_yield = _dividend_yield(snap)
         div_spread = (
@@ -163,7 +164,12 @@ def _build_buckets(
             cov_txt = "金融分红稳健" if is_fin else f"FCF 覆盖 {_fmt_num(fcf_cov, 'x')}"
             dividend_candidates.append(
                 (
-                    (-div_yield, -snap.radar.total_score, snap.code),
+                    (
+                        forensics_rank,
+                        0 if (snap.valuation.total_mv_yuan or 0) >= 300e8 else 1,
+                        -(min(div_yield, 8.0) * 8.0 + snap.radar.total_score * 0.5),
+                        snap.code,
+                    ),
                     _make_pick(
                         snap,
                         cn_10y_bond_yield=cn_10y_bond_yield,
@@ -176,7 +182,12 @@ def _build_buckets(
             sector_label = snap.industry_sw2 or snap.industry_sw1 or "黄金贵金属"
             gold_candidates.append(
                 (
-                    (-snap.radar.total_score, snap.financial_ct.red_count, snap.code),
+                    (
+                        forensics_rank,
+                        -snap.radar.total_score,
+                        snap.financial_ct.red_count,
+                        snap.code,
+                    ),
                     _make_pick(
                         snap,
                         cn_10y_bond_yield=cn_10y_bond_yield,
@@ -208,7 +219,7 @@ def _build_buckets(
                 )
                 core_cow_candidates.append(
                     (
-                        (-(roe or 0.0), -snap.radar.total_score, snap.code),
+                        (forensics_rank, -(roe or 0.0), -snap.radar.total_score, snap.code),
                         _make_pick(
                             snap,
                             cn_10y_bond_yield=cn_10y_bond_yield,
@@ -270,6 +281,7 @@ def _build_buckets(
             deep_value_candidates.append(
                 (
                     (
+                        forensics_rank,
                         -snap.radar.valuation_margin,
                         -(net_cash_mv or 0.0),
                         -snap.radar.total_score,

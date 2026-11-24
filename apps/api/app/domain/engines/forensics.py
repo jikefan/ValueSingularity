@@ -879,17 +879,18 @@ def analyze_stock_forensics(
         and sum_ocf_3y is not None
         and sum_ocf_3y >= 0
     )
+    # OCF is after corporate income/excise tax while core_operating_profit is pre-tax.
     if (
         (interest_burden_pct is not None and interest_burden_pct >= 50.0)
         or heavy_interest_unsustainable
         or core_loss_cash_outflow
-        or (ocf_to_core_3y is not None and ocf_to_core_3y < 40.0)
+        or (ocf_to_core_3y is not None and ocf_to_core_3y < 35.0)
     ):
         cf_status: SignalLight = "red"
     elif (
         (interest_burden_pct is not None and interest_burden_pct >= 25.0)
         or core_weak_nonneg_ocf
-        or (ocf_to_core_3y is not None and ocf_to_core_3y < 70.0)
+        or (ocf_to_core_3y is not None and ocf_to_core_3y < 60.0)
     ):
         cf_status = "yellow"
     elif ocf_to_core_3y is not None:
@@ -916,7 +917,7 @@ def analyze_stock_forensics(
             issues.append("主业经营亏损且现金流净流出")
         elif core_weak_nonneg_ocf:
             issues.append("主业核心利润亏损或微利，现金转化率不适用")
-        elif ocf_to_core_3y is not None and ocf_to_core_3y < 70.0:
+        elif ocf_to_core_3y is not None and ocf_to_core_3y < 60.0:
             issues.append(f"近3年 OCF/主业核心利润仅 {_fmt_pct(ocf_to_core_3y)}")
         cf_headline = "、".join(issues) if issues else "主业核心利润现金转化扎实"
 
@@ -993,8 +994,8 @@ def analyze_stock_forensics(
         label = "非经常性损益或补贴占比偏高"
         verdict = finding_by_id["non_recurring_subsidy"].detail
     elif (
-        (ocf_to_core_3y is not None and ocf_to_core_3y < 70.0)
-        or (interest_burden_pct is not None and interest_burden_pct >= 25.0)
+        (ocf_to_core_3y is not None and ocf_to_core_3y < 60.0)
+        or (interest_burden_pct is not None and interest_burden_pct >= 50.0)
         or heavy_interest_unsustainable
         or core_loss_cash_outflow
     ):
@@ -1015,7 +1016,8 @@ def analyze_stock_forensics(
         and (invest_share_3y is None or invest_share_3y < 20.0)
         and (non_recurring_share_3y is None or non_recurring_share_3y < 25.0)
         and ocf_to_core_3y is not None
-        and ocf_to_core_3y >= 80.0
+        and ocf_to_core_3y >= 65.0
+        and (interest_burden_pct is None or interest_burden_pct < 25.0)
         and (latest_core_op is None or latest_core_op > 0)
     ):
         tag = "core_cash_cow"

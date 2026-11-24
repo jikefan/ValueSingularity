@@ -872,3 +872,106 @@ def test_forensics_adversarial_math_boundaries() -> None:
     assert div_lead_forensics.capital_allocation is not None
     assert div_lead_forensics.capital_allocation.total_dividends_yuan == pytest.approx(50e8)
     assert div_lead_forensics.capital_allocation.net_debt_change_yuan == pytest.approx(-20e8)
+
+
+def test_forensics_tax_calibrated_cash_cow_and_utility_interest_thresholds() -> None:
+    high_tax_cow_reports = [
+        _forensic_report(
+            y,
+            code="600519",
+            revenue=150e8,
+            operate_profit=100e8,
+            invest_income=0.5e8,
+            fair_value_change=0.0,
+            other_income=0.5e8,
+            asset_disposal=0.0,
+            nonbusiness_net=0.0,
+            net_profit=75e8,
+            deduct_net_profit=75e8,
+            interest_expense=0.5e8,
+            total_assets=200e8,
+            total_equity=150e8,
+            parent_equity=150e8,
+            ocf=64.35e8,
+        )
+        for y in range(2021, 2026)
+    ]
+    high_tax_cow = analyze_stock_forensics(high_tax_cow_reports, is_financial=False)
+    assert high_tax_cow.core_profit_share_3y_pct == pytest.approx(99.0)
+    assert high_tax_cow.ocf_to_core_profit_3y_pct == pytest.approx(65.0)
+    assert high_tax_cow.earnings_quality_tag == "core_cash_cow"
+    cow_cf = next(f for f in high_tax_cow.findings if f.finding_id == "cashflow_core_conversion")
+    assert cow_cf.status == "green"
+
+    utility_reports = [
+        _forensic_report(
+            y,
+            code="600900",
+            revenue=1500e8,
+            operate_profit=740e8,
+            invest_income=103.6e8,
+            fair_value_change=0.0,
+            other_income=7.4e8,
+            asset_disposal=0.0,
+            nonbusiness_net=0.0,
+            net_profit=450e8,
+            deduct_net_profit=445e8,
+            interest_expense=221e8,
+            total_assets=4000e8,
+            total_equity=1600e8,
+            parent_equity=1600e8,
+            ocf=1163.65e8,
+            capex=200e8,
+        )
+        for y in range(2021, 2026)
+    ]
+    utility_forensics = analyze_stock_forensics(utility_reports, is_financial=False)
+    assert utility_forensics.core_profit_share_3y_pct == pytest.approx(85.0)
+    assert utility_forensics.ocf_to_core_profit_3y_pct == pytest.approx(185.0)
+    assert utility_forensics.interest_burden_pct == pytest.approx(26.0)
+    assert utility_forensics.earnings_quality_tag == "balanced_steady"
+    utility_cf = next(
+        f for f in utility_forensics.findings if f.finding_id == "cashflow_core_conversion"
+    )
+    assert utility_cf.status == "yellow"
+
+    weak_cf_reports = [
+        _forensic_report(
+            y,
+            operate_profit=100e8,
+            invest_income=0.0,
+            other_income=0.0,
+            net_profit=70e8,
+            deduct_net_profit=70e8,
+            interest_expense=1e8,
+            ocf=58e8,
+        )
+        for y in range(2023, 2026)
+    ]
+    weak_cf = analyze_stock_forensics(weak_cf_reports, is_financial=False)
+    assert weak_cf.earnings_quality_tag == "cashflow_divergent"
+    weak_cf_finding = next(
+        f for f in weak_cf.findings if f.finding_id == "cashflow_core_conversion"
+    )
+    assert weak_cf_finding.status == "yellow"
+    assert "58.0%" in weak_cf_finding.headline
+
+    severe_cf_reports = [
+        _forensic_report(
+            y,
+            operate_profit=100e8,
+            invest_income=0.0,
+            other_income=0.0,
+            net_profit=70e8,
+            deduct_net_profit=70e8,
+            interest_expense=1e8,
+            ocf=32e8,
+        )
+        for y in range(2023, 2026)
+    ]
+    severe_cf = analyze_stock_forensics(severe_cf_reports, is_financial=False)
+    assert severe_cf.earnings_quality_tag == "cashflow_divergent"
+    severe_cf_finding = next(
+        f for f in severe_cf.findings if f.finding_id == "cashflow_core_conversion"
+    )
+    assert severe_cf_finding.status == "red"
