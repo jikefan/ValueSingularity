@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.adapters.email.smtp import UnconfiguredEmailSender
+from app.adapters.postgres import snapshot as snapshot_adapter
 from app.api.deps import get_db, get_email_sender, get_watchlist_warmup
 from app.db.base import Base
 from app.main import create_app
@@ -14,13 +15,17 @@ from app.settings import settings
 
 
 @pytest.fixture(autouse=True)
-def _isolate_email_settings(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep tests isolated from host SMTP env config and force opt-in email verification."""
+def _isolate_email_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Keep tests isolated from host SMTP config and cross-test snapshot cache state."""
     monkeypatch.setattr(settings, "smtp_host", None)
     monkeypatch.setattr(settings, "smtp_username", None)
     monkeypatch.setattr(settings, "smtp_password", None)
     monkeypatch.setattr(settings, "smtp_from_email", None)
     monkeypatch.setattr(settings, "auth_require_email_verification", None)
+    monkeypatch.setattr(settings, "snapshot_summary_cache_ttl_seconds", 0.0)
+    snapshot_adapter._SUMMARY_CACHE.clear()
+    yield
+    snapshot_adapter._SUMMARY_CACHE.clear()
 
 
 @pytest.fixture

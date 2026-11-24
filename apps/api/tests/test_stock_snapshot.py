@@ -32,6 +32,7 @@ from app.adapters.akshare.stock_feed import (
     parse_ths_zyjs_sector,
 )
 from app.adapters.duckdb.stock_store import DuckDBStockFactStore
+from app.adapters.memory.market import default_market_overview
 from app.adapters.postgres.market import PostgresStockMetaRepository
 from app.adapters.postgres.snapshot import PostgresStockSnapshotRepository
 from app.api.deps import get_db, get_stock_service
@@ -39,7 +40,11 @@ from app.cli import sync_stocks
 from app.db.base import Base
 from app.db.models import StockSnapshot, User, WatchlistItem
 from app.db.session import DatabaseUnavailableError
-from app.domain.engines import build_stock_snapshot
+from app.domain.engines import (
+    build_market_discovery_board,
+    build_stock_snapshot,
+    screen_snapshots,
+)
 from app.domain.errors import StockFactUnavailableError
 from app.domain.models import (
     StockAnnualReport,
@@ -1698,3 +1703,165 @@ def persisted_stub_payload() -> dict[str, Any]:
     return build_stock_snapshot(
         meta, bundle, generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
     ).model_dump(mode="json")
+
+
+async def test_pg_snapshot_list_all_uses_slim_projection_and_powers_engines() -> None:
+    if not settings.test_database_url:
+        pytest.skip("设置 VS_TEST_DATABASE_URL（或 .env）后运行数据库测试")
+
+    as_of = date(2026, 11, 20)
+    base_bundle = _sample_bundle("600519", as_of)
+    rich_reports = [
+        report.model_copy(
+            update={
+                "operate_profit_yuan": 720e8 + i * 40e8,
+                "invest_income_yuan": 35e8 + i * 2e8,
+            }
+        )
+        for i, report in enumerate(base_bundle.annual_reports)
+    ]
+    full_snap = build_stock_snapshot(
+        StockMetaRecord(code="600519", name="贵州茅台", exchange="SH", industry_sw1="食品饮料"),
+        base_bundle.model_copy(update={"annual_reports": rich_reports}),
+        generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC),
+    )
+    assert full_snap.annual_trends
+    assert full_snap.formula_notes
+    assert full_snap.valuation.history
+    assert full_snap.financial_ct.checks
+    assert full_snap.shareholder_return.series
+    assert full_snap.reverse_dcf.sensitivity
+    assert full_snap.moat.dimensions
+    assert full_snap.forensics is not None
+    assert full_snap.forensics.annual_decomposition
+    assert full_snap.forensics.dupont_series
+    assert full_snap.forensics.findings
+    assert full_snap.forensics.invest_profit_share_3y_pct is not None
+
+    null_forensics_snap = build_stock_snapshot(
+        StockMetaRecord(code="000333", name="美的集团", exchange="SZ", industry_sw1="家用电器"),
+        _sample_bundle("000333", as_of),
+        generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC),
+    ).model_copy(update={"forensics": None})
+
+    engine = create_async_engine(settings.test_database_url)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
+
+        testing_session = async_sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+        async with testing_session() as session:
+            session.add_all(
+                [
+                    StockSnapshot(
+                        code="600519",
+                        as_of=as_of,
+                        payload=full_snap.model_dump(mode="json"),
+                    ),
+                    StockSnapshot(
+                        code="000333",
+                        as_of=as_of,
+                        payload=null_forensics_snap.model_dump(mode="json"),
+                    ),
+                    StockSnapshot(code="999999", as_of=as_of, payload={"code": "999999"}),
+                ]
+            )
+            await session.commit()
+
+        async with testing_session() as session:
+            repo = PostgresStockSnapshotRepository(session)
+            loaded = await repo.list_all_snapshots()
+            assert [item.code for item in loaded] == ["000333", "600519"]
+
+            by_code = {item.code: item for item in loaded}
+            slim = by_code["600519"]
+            assert slim.radar == full_snap.radar
+            assert slim.peer_metrics == full_snap.peer_metrics
+            assert slim.valuation.pe_ttm == full_snap.valuation.pe_ttm
+            assert slim.forensics is not None
+            assert slim.forensics.earnings_quality_tag == full_snap.forensics.earnings_quality_tag
+            assert (
+                slim.forensics.invest_profit_share_3y_pct
+                == full_snap.forensics.invest_profit_share_3y_pct
+            )
+
+            assert slim.annual_trends == []
+            assert slim.formula_notes == {}
+            assert slim.valuation.history == []
+            assert slim.financial_ct.checks == []
+            assert slim.shareholder_return.series == []
+            assert slim.reverse_dcf.sensitivity == []
+            assert slim.moat.dimensions == []
+            assert slim.forensics.annual_decomposition == []
+            assert slim.forensics.dupont_series == []
+            assert slim.forensics.findings == []
+            assert by_code["000333"].forensics is None
+
+            board = build_market_discovery_board(default_market_overview(), loaded)
+            assert board.synced_stock_count == 2
+            screened = screen_snapshots(loaded)
+            assert screened.total_synced == 2
+            assert {item.code for item in screened.items} == {"000333", "600519"}
+
+            full_reloaded = await repo.get_snapshot("600519")
+            assert full_reloaded is not None
+            assert len(full_reloaded.valuation.history) == len(full_snap.valuation.history)
+            assert len(full_reloaded.financial_ct.checks) == len(full_snap.financial_ct.checks)
+    finally:
+        await engine.dispose()
+
+
+async def test_snapshot_repo_singleflight_ttl_cache_and_invalidation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(settings, "snapshot_summary_cache_ttl_seconds", 30.0)
+    dummy_bind = object()
+    valid_payload = persisted_stub_payload()
+    scalars_calls = 0
+
+    class _FakeScalars:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        def all(self) -> list[Any]:
+            return self._rows
+
+    class _FakeBoundSession:
+        def __init__(self, bind: object) -> None:
+            self.bind = bind
+
+        async def scalars(self, _stmt: Any) -> _FakeScalars:
+            nonlocal scalars_calls
+            scalars_calls += 1
+            await asyncio.sleep(0.02)
+            return _FakeScalars([SimpleNamespace(payload=valid_payload)])
+
+        async def execute(self, _stmt: Any) -> None:
+            return None
+
+        async def commit(self) -> None:
+            return None
+
+        async def rollback(self) -> None:
+            return None
+
+    repo1 = PostgresStockSnapshotRepository(_FakeBoundSession(dummy_bind))  # type: ignore[arg-type]
+    repo2 = PostgresStockSnapshotRepository(_FakeBoundSession(dummy_bind))  # type: ignore[arg-type]
+
+    res1, res2 = await asyncio.gather(repo1.list_all_snapshots(), repo2.list_all_snapshots())
+    assert scalars_calls == 1
+    assert [s.code for s in res1] == ["600519"]
+    assert [s.code for s in res2] == ["600519"]
+    assert res1 is not res2
+
+    res3 = await repo2.list_all_snapshots()
+    assert scalars_calls == 1
+    assert [s.code for s in res3] == ["600519"]
+
+    await repo1.save_snapshot(res1[0])
+    res4 = await repo2.list_all_snapshots()
+    assert scalars_calls == 2
+    assert [s.code for s in res4] == ["600519"]
