@@ -267,6 +267,11 @@ class _InMemoryStockMetaRepo:
     async def list_active_codes(self, *, limit: int | None = None) -> list[str]:
         return list(self._metas)
 
+    async def list_codes_missing_snapshot(
+        self, *, min_as_of: date | None = None, limit: int | None = None
+    ) -> list[str]:
+        return [c for c in sorted(self._metas) if c not in self._snapped]
+
 
 class _InMemorySnapshotRepo:
     def __init__(self, snapshots: dict[str, StockSnapshotPayload]) -> None:

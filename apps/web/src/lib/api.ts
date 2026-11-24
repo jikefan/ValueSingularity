@@ -413,6 +413,21 @@ export const api = {
       }),
     ),
 
+  syncStockSnapshot: async (
+    code: string,
+    signal?: AbortSignal,
+    options?: { force?: boolean },
+  ): Promise<StockSnapshotPayload> =>
+    unwrap(
+      await client.POST('/api/stocks/{code}/sync', {
+        params: {
+          path: { code },
+          query: options?.force ? { force: true } : undefined,
+        },
+        signal,
+      }),
+    ),
+
   compareStocks: async (
     codes: readonly string[],
     signal?: AbortSignal,

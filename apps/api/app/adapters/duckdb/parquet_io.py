@@ -10,9 +10,10 @@ from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from pydantic import BaseModel
 
@@ -128,6 +129,94 @@ def _upsert_parquet[K](
 
         ordered = [merged[k] for k in sorted(merged, key=sort_key)]
         atomic_write_parquet(path, pa.Table.from_pylist(ordered, schema=schema))
+
+    if lock_path is not None:
+        with file_lock(lock_path):
+            _run_upsert()
+    else:
+        _run_upsert()
+
+
+def align_table_to_schema(table: pa.Table, schema: pa.Schema) -> pa.Table:
+    """Cast or add missing nullable columns so an existing Parquet table matches target schema."""
+    if table.schema.equals(schema, check_metadata=False):
+        return table
+    columns: list[Any] = []
+    for field in schema:
+        if field.name in table.column_names:
+            col = table[field.name]
+            if col.type != field.type:
+                col = col.cast(field.type)
+        else:
+            col = pa.nulls(table.num_rows, type=field.type)
+        columns.append(col)
+    return pa.Table.from_arrays(columns, schema=schema)
+
+
+def _upsert_parquet_slice[K](
+    path: Path,
+    schema: pa.Schema,
+    target_codes: Sequence[str],
+    incoming: Sequence[BaseModel] | Sequence[dict[str, Any]],
+    *,
+    normalize_existing: Callable[[dict[str, Any]], dict[str, Any]],
+    key_of: Callable[[dict[str, Any]], K],
+    sort_key: Callable[[K], SupportsRichComparison],
+    sort_by: Sequence[tuple[str, Literal["ascending", "descending"]]] | None = None,
+    prune_existing: Callable[[dict[str, Any]], bool] | None = None,
+    code_column: str = "code",
+    lock_path: Path | None = None,
+) -> None:
+    """Replace only target_codes rows in Python while keeping unrelated rows in Arrow memory."""
+    unique_codes = list(dict.fromkeys(target_codes))
+    if not unique_codes and not incoming:
+        return
+
+    def _run_upsert() -> None:
+        others_table: pa.Table | None = None
+        existing_matching: list[dict[str, Any]] = []
+        if path.exists():
+            aligned = align_table_to_schema(pq.read_table(path), schema)
+            if aligned.num_rows > 0:
+                if unique_codes:
+                    target_arr = pa.array(unique_codes, type=pa.string())
+                    match_mask = pc.fill_null(
+                        pc.is_in(aligned[code_column], value_set=target_arr),
+                        False,
+                    )
+                    others_table = aligned.filter(pc.invert(match_mask))
+                    matching_table = aligned.filter(match_mask)
+                    if matching_table.num_rows > 0:
+                        existing_matching = matching_table.to_pylist()
+                else:
+                    others_table = aligned
+
+        merged: dict[K, dict[str, Any]] = {}
+        for raw in existing_matching:
+            row = normalize_existing(raw)
+            if prune_existing is not None and prune_existing(row):
+                continue
+            merged[key_of(row)] = row
+
+        for item in incoming:
+            new_row = item.model_dump(mode="python") if isinstance(item, BaseModel) else dict(item)
+            merged[key_of(new_row)] = new_row
+
+        ordered = [merged[k] for k in sorted(merged, key=sort_key)]
+        merged_table = pa.Table.from_pylist(ordered, schema=schema)
+        if others_table is not None and others_table.num_rows > 0:
+            result_table = (
+                pa.concat_tables([others_table, merged_table])
+                if merged_table.num_rows > 0
+                else others_table
+            )
+        else:
+            result_table = merged_table
+
+        if sort_by and result_table.num_rows > 1:
+            result_table = result_table.sort_by(list(sort_by))
+
+        atomic_write_parquet(path, result_table)
 
     if lock_path is not None:
         with file_lock(lock_path):

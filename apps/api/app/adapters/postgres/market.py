@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import String, all_, bindparam, case, func, literal, or_, select, update
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -264,6 +264,30 @@ class PostgresStockMetaRepository:
         stmt = (
             select(StockMeta.code)
             .where(StockMeta.is_active.is_(True))
+            .order_by(StockMeta.code.asc())
+        )
+        if limit is not None:
+            stmt = stmt.limit(max(1, limit))
+        try:
+            return list((await self._session.scalars(stmt)).all())
+        except SQLAlchemyError as exc:
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+
+    async def list_codes_missing_snapshot(
+        self,
+        *,
+        min_as_of: date | None = None,
+        limit: int | None = None,
+    ) -> list[str]:
+        missing_filter = (
+            or_(StockSnapshot.code.is_(None), StockSnapshot.as_of < min_as_of)
+            if min_as_of is not None
+            else StockSnapshot.code.is_(None)
+        )
+        stmt = (
+            select(StockMeta.code)
+            .outerjoin(StockSnapshot, StockSnapshot.code == StockMeta.code)
+            .where(StockMeta.is_active.is_(True), missing_filter)
             .order_by(StockMeta.code.asc())
         )
         if limit is not None:

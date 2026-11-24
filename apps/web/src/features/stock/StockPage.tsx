@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { GlossaryLabel } from '../../components/ui/InfoHint'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { ApiError, api } from '../../lib/api'
@@ -147,26 +148,31 @@ function StockPageContent({ code }: { code: string }) {
   })
 
   const stock = stockQuery.data
-  const snapshotQuery = useStockSnapshot(code, Boolean(stock?.snapshot_available))
+  const snapshotQuery = useStockSnapshot(code, {
+    enabled: Boolean(stock),
+    snapshotAvailableHint: stock?.snapshot_available,
+  })
   const watchlistQuery = useWatchlist(Boolean(user))
   const addWatchlistMutation = useAddWatchlist()
   const removeWatchlistMutation = useRemoveWatchlist()
 
+  const snapshot = snapshotQuery.data ?? null
+  const isSnapshotLoading =
+    snapshotQuery.isPending || (!snapshotQuery.data && snapshotQuery.isFetching)
+  const isSnapshotUnavailableError = snapshotQuery.isError && !snapshot
+
   const isNotFoundError =
     stockQuery.isError && stockQuery.error instanceof ApiError && stockQuery.error.status === 404
-  const isSnapshot404 =
-    snapshotQuery.isError &&
-    snapshotQuery.error instanceof ApiError &&
-    snapshotQuery.error.status === 404
-  const isSnapshotUnsynced = Boolean(stock) && (!stock?.snapshot_available || isSnapshot404)
 
-  const screenerQuery = useStockScreener({ limit: 6 }, isNotFoundError || isSnapshotUnsynced)
+  const screenerQuery = useStockScreener(
+    { limit: 6 },
+    isNotFoundError || isSnapshotUnavailableError,
+  )
   const curatedTargets = useMemo(
     () => (screenerQuery.data?.items ?? []).filter((item) => item.code !== code).slice(0, 4),
     [code, screenerQuery.data?.items],
   )
 
-  const snapshot = snapshotQuery.data ?? null
   const isFinancial = useMemo(() => (snapshot ? isFinancialSnapshot(snapshot) : false), [snapshot])
   const verdict = useMemo(() => (snapshot ? deriveStockVerdict(snapshot) : null), [snapshot])
   const pbRoe = useMemo(
@@ -267,41 +273,63 @@ function StockPageContent({ code }: { code: string }) {
     if (activeTab === 'decision') {
       return <StockDecisionTab stock={currentStock} snapshot={snapshot} />
     }
-    if (isSnapshotUnsynced) {
-      const unsyncedCard = (
-        <Card title={currentTabMeta.label} extra={<Tag color="gray">未同步快照</Tag>}>
-          <EmptyBlock
-            title={`${currentTabMeta.label}尚无深度分析快照`}
-            hint={
-              <span className="stack" style={{ gap: 12, alignItems: 'center' }}>
-                <span>
-                  该标的暂未生成深度财报与历史估值快照，暂不展示图表与排雷数据；您仍可在「风险排雷」使用年报口径对比，或在「投资决策」记录笔记。
-                </span>
-                <span
-                  className="row"
-                  style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}
-                >
-                  <button
-                    type="button"
-                    className="btn-primary"
-                    onClick={() => setActiveTab('decision')}
-                  >
-                    前往投资决策
-                  </button>
-                  <Link className="btn-ghost" to={`/compare?codes=${currentStock.code}`}>
-                    打开同业对比
-                  </Link>
-                </span>
-                <CoverageDiscoveryLinks curatedTargets={curatedTargets} />
+    if (isSnapshotLoading) {
+      return (
+        <Card
+          title={currentTabMeta.label}
+          extra={
+            !currentStock.snapshot_available ? <Tag color="blue">首次按需计算</Tag> : undefined
+          }
+        >
+          <div className="stack" style={{ gap: 12 }}>
+            {!currentStock.snapshot_available ? (
+              <div className="notice-box" role="status">
+                {`正在同步并计算 ${currentStock.code} ${currentStock.name} 深度财报与估值快照（首次约需 5–8 秒）...`}
+              </div>
+            ) : null}
+            <LoadingBlock lines={5} />
+          </div>
+        </Card>
+      )
+    }
+    if (isSnapshotUnavailableError) {
+      const fallbackCard = (
+        <Card title={currentTabMeta.label} extra={<Tag color="amber">同步暂不可用</Tag>}>
+          <div className="stack" style={{ gap: 14 }}>
+            <ErrorBlock
+              title="深度分析快照加载失败"
+              message={
+                snapshotQuery.error instanceof Error ? snapshotQuery.error.message : '未知错误'
+              }
+              onRetry={() => {
+                void snapshotQuery.refetch()
+              }}
+            />
+            <div className="stack" style={{ gap: 12, alignItems: 'center' }}>
+              <span className="small muted">
+                当前无法拉取全量财报或历史估值快照，您仍可在「风险排雷」使用年报口径对比，或在「投资决策」记录笔记。
               </span>
-            }
-          />
+              <span className="row" style={{ gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => setActiveTab('decision')}
+                >
+                  前往投资决策
+                </button>
+                <Link className="btn-ghost" to={`/compare?codes=${currentStock.code}`}>
+                  打开同业对比
+                </Link>
+              </span>
+              <CoverageDiscoveryLinks curatedTargets={curatedTargets} />
+            </div>
+          </div>
         </Card>
       )
       if (activeTab === 'risks') {
         return (
           <div className="stack" style={{ gap: 16 }}>
-            {unsyncedCard}
+            {fallbackCard}
             <StockMdaDiffPanel
               code={currentStock.code}
               stockName={currentStock.name}
@@ -310,29 +338,7 @@ function StockPageContent({ code }: { code: string }) {
           </div>
         )
       }
-      return unsyncedCard
-    }
-    if (snapshotQuery.isPending || (!snapshotQuery.data && snapshotQuery.isFetching)) {
-      return (
-        <Card title={currentTabMeta.label}>
-          <LoadingBlock lines={5} />
-        </Card>
-      )
-    }
-    if (snapshotQuery.isError) {
-      return (
-        <Card title={currentTabMeta.label}>
-          <ErrorBlock
-            title="深度分析快照加载失败"
-            message={
-              snapshotQuery.error instanceof Error ? snapshotQuery.error.message : '未知错误'
-            }
-            onRetry={() => {
-              void snapshotQuery.refetch()
-            }}
-          />
-        </Card>
-      )
+      return fallbackCard
     }
     if (!snapshot) {
       return (
@@ -355,15 +361,31 @@ function StockPageContent({ code }: { code: string }) {
               <Tag color="blue">{stock.exchange}</Tag>
               {stock.is_st ? <Tag color="amber">ST</Tag> : null}
               {!stock.is_active ? <Tag color="rose">已退市</Tag> : null}
-              <Tag color={stock.snapshot_available && !isSnapshot404 ? 'green' : 'gray'}>
-                {stock.snapshot_available && !isSnapshot404 ? '已预计算快照' : '基础元数据'}
+              <Tag
+                color={
+                  snapshot || (stock.snapshot_available && !isSnapshotUnavailableError)
+                    ? 'green'
+                    : isSnapshotLoading
+                      ? 'blue'
+                      : 'gray'
+                }
+              >
+                {snapshot || (stock.snapshot_available && !isSnapshotUnavailableError)
+                  ? '已预计算快照'
+                  : isSnapshotLoading
+                    ? '自动同步中'
+                    : '基础元数据'}
               </Tag>
               {isFinancial ? <Tag color="blue">金融业专项口径</Tag> : null}
             </div>
             <div className="small muted">
               {snapshot
                 ? `快照日期 ${snapshot.as_of} · 数据源 ${snapshot.data_source}`
-                : `${stock.exchange} 交易所档案 · 尚未生成深度分析快照`}
+                : isSnapshotLoading && !stock.snapshot_available
+                  ? `正在首次同步 ${stock.code} ${stock.name} 财报与历史估值数据…`
+                  : isSnapshotLoading
+                    ? `${stock.exchange} 交易所档案 · 正在读取深度分析快照`
+                    : `${stock.exchange} 交易所档案 · 深度分析快照暂不可用`}
             </div>
           </div>
 
@@ -459,7 +481,9 @@ function StockPageContent({ code }: { code: string }) {
 
             <div className="well-grid-4 stock-workstation-ribbon" aria-label="核心定量速览">
               <div className="well-cell">
-                <div className="metric-label">综合雷达评分</div>
+                <div className="metric-label">
+                  <GlossaryLabel label="综合雷达评分" term="radar_total_score" />
+                </div>
                 <div className="metric-value tnum">{`${snapshot.radar.total_score} / 100`}</div>
                 <div className="metric-sub">
                   {isFinancial ? '金融业专项五维' : '通用五维定量雷达'}
@@ -467,7 +491,9 @@ function StockPageContent({ code }: { code: string }) {
               </div>
 
               <div className="well-cell">
-                <div className="metric-label">10Y PE / PB 分位</div>
+                <div className="metric-label">
+                  <GlossaryLabel label="10Y PE / PB 分位" term="valuation_pct_10y" />
+                </div>
                 <div className="metric-value tnum" style={{ fontSize: 18 }}>
                   {`PE ${formatPct(snapshot.valuation.pe_percentile_10y, 1)} · PB ${formatPct(snapshot.valuation.pb_percentile_10y, 1)}`}
                 </div>
@@ -477,7 +503,9 @@ function StockPageContent({ code }: { code: string }) {
               </div>
 
               <div className="well-cell">
-                <div className="metric-label">5年平均 ROE / 股息率</div>
+                <div className="metric-label">
+                  <GlossaryLabel label="5年平均 ROE / 股息率" term="roe_5y_avg" />
+                </div>
                 <div className="metric-value tnum" style={{ fontSize: 18 }}>
                   {`${formatPct(snapshot.moat.roe_5y_avg_pct, 2)} / ${formatPct(divYieldPct, 2)}`}
                 </div>
@@ -487,7 +515,9 @@ function StockPageContent({ code }: { code: string }) {
               </div>
 
               <div className="well-cell">
-                <div className="metric-label">CT 排雷与隐含预期</div>
+                <div className="metric-label">
+                  <GlossaryLabel label="CT 排雷与隐含预期" term="ct_and_implied" />
+                </div>
                 <div className="metric-value tnum" style={{ fontSize: 18 }}>
                   {`${snapshot.financial_ct.red_count} 红 / ${snapshot.financial_ct.yellow_count} 黄`}
                 </div>
@@ -505,19 +535,27 @@ function StockPageContent({ code }: { code: string }) {
 
         <div className="stock-meta-grid">
           <div>
-            <div className="metric-label">申万一级</div>
+            <div className="metric-label">
+              <GlossaryLabel label="申万一级" term="industry_sw1" />
+            </div>
             <div className="metric-sub">{stock.industry_sw1 ?? '—'}</div>
           </div>
           <div>
-            <div className="metric-label">申万二级</div>
+            <div className="metric-label">
+              <GlossaryLabel label="申万二级" term="industry_sw2" />
+            </div>
             <div className="metric-sub">{stock.industry_sw2 ?? '—'}</div>
           </div>
           <div>
-            <div className="metric-label">上市日期</div>
+            <div className="metric-label">
+              <GlossaryLabel label="上市日期" term="list_date" />
+            </div>
             <div className="metric-sub mono">{stock.list_date ?? '—'}</div>
           </div>
           <div>
-            <div className="metric-label">交易状态</div>
+            <div className="metric-label">
+              <GlossaryLabel label="交易状态" term="trade_status" />
+            </div>
             <div className="metric-sub">{stock.is_active ? '正常交易' : '已退市'}</div>
           </div>
         </div>

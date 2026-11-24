@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { InfoHint } from '../../components/ui/InfoHint'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { formatNum, formatPct } from '../../lib/format'
@@ -144,6 +145,7 @@ export function SentinelAlertsPanel({ enabled }: { enabled: boolean }) {
   return (
     <Card
       title="击球区哨兵与否证雷达"
+      hint="strike_zone_sentinel"
       extra={
         <div className="row" style={{ gap: 8 }}>
           {alertsQuery.data ? (
@@ -246,15 +248,18 @@ export function SentinelAlertsPanel({ enabled }: { enabled: boolean }) {
 
         <div className="subpanel">
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className="prefs-toggle-btn"
-              aria-expanded={prefsOpen}
-              onClick={() => setPrefsOpen((open) => !open)}
-            >
-              <span>推送渠道设置</span>
-              <span className="small muted">{prefsOpen ? '收起' : '展开'}</span>
-            </button>
+            <div className="label-with-hint">
+              <button
+                type="button"
+                className="prefs-toggle-btn"
+                aria-expanded={prefsOpen}
+                onClick={() => setPrefsOpen((open) => !open)}
+              >
+                <span>推送渠道设置</span>
+                <span className="small muted">{prefsOpen ? '收起' : '展开'}</span>
+              </button>
+              <InfoHint term="webhook_push" />
+            </div>
 
             {prefs ? (
               <Tag color={prefs.webhook_url_configured ? 'green' : 'gray'}>
@@ -293,35 +298,59 @@ export function SentinelAlertsPanel({ enabled }: { enabled: boolean }) {
                 >
                   <div className="form-grid">
                     <div className="field">
-                      <label className="checkbox-row" htmlFor="pref-in-app">
-                        <input
-                          id="pref-in-app"
-                          type="checkbox"
-                          checked={inAppEnabled}
-                          onChange={(event) => {
-                            setDraftInApp(event.target.checked)
-                            setPrefNotice(null)
+                      <div className="label-with-hint">
+                        <label className="checkbox-row" htmlFor="pref-in-app">
+                          <input
+                            id="pref-in-app"
+                            type="checkbox"
+                            checked={inAppEnabled}
+                            onChange={(event) => {
+                              setDraftInApp(event.target.checked)
+                              setPrefNotice(null)
+                            }}
+                          />
+                          <span>开启站内提醒记录</span>
+                        </label>
+                        <InfoHint
+                          title="站内提醒记录"
+                          entry={{
+                            summary:
+                              '哨兵扫描命中击球区或触发否证红线时，将触发详情持久写入站内警报列表，作为最可靠的审计记录兜底。',
+                            reading: '推荐长期保持开启，避免外部推送通道异常时遗漏重要风险信号。',
                           }}
                         />
-                        <span>开启站内提醒记录</span>
-                      </label>
+                      </div>
 
-                      <label className="checkbox-row" htmlFor="pref-webhook-enabled">
-                        <input
-                          id="pref-webhook-enabled"
-                          type="checkbox"
-                          checked={webhookEnabled}
-                          onChange={(event) => {
-                            setDraftWebhookEnabled(event.target.checked)
-                            setPrefNotice(null)
-                          }}
-                        />
-                        <span>开启 Webhook 外部推送</span>
-                      </label>
+                      <div className="label-with-hint">
+                        <label className="checkbox-row" htmlFor="pref-webhook-enabled">
+                          <input
+                            id="pref-webhook-enabled"
+                            type="checkbox"
+                            checked={webhookEnabled}
+                            onChange={(event) => {
+                              setDraftWebhookEnabled(event.target.checked)
+                              setPrefNotice(null)
+                            }}
+                          />
+                          <span>开启 Webhook 外部推送</span>
+                        </label>
+                        <InfoHint term="webhook_push" />
+                      </div>
                     </div>
 
                     <div className="field">
-                      <label htmlFor="pref-channel-type">推送渠道类型</label>
+                      <div className="field-label-row">
+                        <label htmlFor="pref-channel-type">推送渠道类型</label>
+                        <InfoHint
+                          title="推送渠道类型"
+                          entry={{
+                            summary:
+                              '选择外部 Webhook 接收端消息体格式，支持飞书机器人、企业微信机器人或自定义 JSON 回调。',
+                            reading:
+                              '需与下方配置的 Webhook URL 所属平台匹配，以免消息签名或格式校验失败。',
+                          }}
+                        />
+                      </div>
                       <select
                         id="pref-channel-type"
                         className="input"
@@ -343,7 +372,18 @@ export function SentinelAlertsPanel({ enabled }: { enabled: boolean }) {
                     </div>
 
                     <div className="field field-full">
-                      <label htmlFor="pref-webhook-url">新 Webhook URL（可选）</label>
+                      <div className="field-label-row">
+                        <label htmlFor="pref-webhook-url">新 Webhook URL（可选）</label>
+                        <InfoHint
+                          title="Webhook URL 安全约束"
+                          entry={{
+                            summary:
+                              '接收击球区命中与否证触发通知的公网 HTTPS 回调地址；留空保存将保留当前已加密存储的地址。',
+                            reading:
+                              '出于 SSRF 安全隔离考虑，禁止填写 localhost、127.0.0.1 或内网保留 IP；点击「清空 Webhook」可彻底移除。',
+                          }}
+                        />
+                      </div>
                       <input
                         id="pref-webhook-url"
                         className="input mono"

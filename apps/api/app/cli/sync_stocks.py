@@ -5,18 +5,24 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import math
 import re
 import sys
 from collections.abc import Sequence
 from datetime import date
 
+from app.adapters.akshare.market_feed import fetch_priority_index_codes
 from app.adapters.akshare.stock_feed import AkshareStockFactFeed
 from app.adapters.duckdb.stock_store import DuckDBStockFactStore
-from app.adapters.postgres.market import PostgresStockMetaRepository
+from app.adapters.postgres.market import PostgresMarketRepository, PostgresStockMetaRepository
 from app.adapters.postgres.snapshot import PostgresStockSnapshotRepository
 from app.cli.scan_alerts import run_alert_scan
 from app.db.session import AsyncSessionLocal, dispose_db
-from app.domain.errors import StockFactUnavailableError, StockNotFoundError
+from app.domain.errors import (
+    MarketSnapshotUnavailableError,
+    StockFactUnavailableError,
+    StockNotFoundError,
+)
 from app.domain.models import AlertScanSummary, StockSyncSummary
 from app.services.stock_sync import StockSyncService
 from app.settings import settings
@@ -42,6 +48,29 @@ def _parse_codes(raw_items: Sequence[str] | None) -> list[str]:
     return parsed
 
 
+def _prioritize_codes(
+    candidates: Sequence[str],
+    *,
+    watched: Sequence[str],
+    hs300: Sequence[str],
+    csi500: Sequence[str],
+) -> list[str]:
+    watched_set = set(watched)
+    hs300_set = set(hs300)
+    csi500_set = set(csi500)
+
+    def _tier(code: str) -> int:
+        if code in watched_set:
+            return 0
+        if code in hs300_set:
+            return 1
+        if code in csi500_set:
+            return 2
+        return 3
+
+    return sorted(dict.fromkeys(candidates), key=_tier)
+
+
 async def _run_sync(
     *,
     codes: Sequence[str],
@@ -49,16 +78,56 @@ async def _run_sync(
     limit: int | None,
     as_of: date | None,
     scan_alerts: bool = False,
+    missing_only: bool = False,
+    refresh_stale: bool = False,
+    priority: bool = False,
+    delay_seconds: float = 0.0,
+    batch_size: int = 1,
 ) -> tuple[list[str], list[StockSyncSummary], AlertScanSummary | None]:
     try:
         async with AsyncSessionLocal() as session:
             meta_repo = PostgresStockMetaRepository(session)
+            fetch_limit = None if priority else limit
             if codes:
-                target_codes = list(codes[:limit] if limit is not None else codes)
+                candidate_codes = list(dict.fromkeys(codes))
+            elif missing_only:
+                min_as_of: date | None = None
+                if refresh_stale:
+                    try:
+                        overview = await PostgresMarketRepository(session).overview()
+                        min_as_of = overview.as_of
+                    except MarketSnapshotUnavailableError:
+                        logger.warning("未找到市场概览快照，--refresh-stale 仅回补缺失快照。")
+                candidate_codes = await meta_repo.list_codes_missing_snapshot(
+                    min_as_of=min_as_of,
+                    limit=fetch_limit,
+                )
             elif use_watchlist:
-                target_codes = await meta_repo.list_watched_codes(limit=limit)
+                candidate_codes = await meta_repo.list_watched_codes(limit=fetch_limit)
             else:
-                target_codes = await meta_repo.list_active_codes(limit=limit or 50)
+                candidate_codes = await meta_repo.list_active_codes(
+                    limit=None if priority else (limit or 50)
+                )
+
+            if not candidate_codes:
+                return [], [], None
+
+            if priority:
+                watched_codes = await meta_repo.list_watched_codes()
+                hs300_codes, csi500_codes = await fetch_priority_index_codes(
+                    timeout_seconds=settings.market_sync_timeout_seconds
+                )
+                candidate_codes = _prioritize_codes(
+                    candidate_codes,
+                    watched=watched_codes,
+                    hs300=hs300_codes,
+                    csi500=csi500_codes,
+                )
+
+            if codes or missing_only or use_watchlist:
+                target_codes = candidate_codes[:limit] if limit is not None else candidate_codes
+            else:
+                target_codes = candidate_codes[: (limit or 50)]
 
             if not target_codes:
                 return [], [], None
@@ -75,7 +144,9 @@ async def _run_sync(
             summaries = await service.sync_many(
                 target_codes,
                 as_of=as_of,
-                continue_on_error=len(target_codes) > 1,
+                continue_on_error=len(target_codes) > 1 or missing_only,
+                delay_seconds=max(0.0, delay_seconds),
+                batch_size=max(1, batch_size),
             )
             alert_summary: AlertScanSummary | None = None
             if scan_alerts and summaries:
@@ -105,6 +176,33 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Sync distinct stock codes present in user watchlists.",
     )
     parser.add_argument(
+        "--missing",
+        action="store_true",
+        help="Sync active stocks missing snapshots in PostgreSQL.",
+    )
+    parser.add_argument(
+        "--refresh-stale",
+        action="store_true",
+        help="Only with --missing: also re-sync snapshots older than market_snapshot.as_of.",
+    )
+    parser.add_argument(
+        "--priority",
+        action="store_true",
+        help="Order targets by watchlisted -> HS300 -> CSI500 -> remaining.",
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.0,
+        help="Seconds to sleep between consecutive stock syncs (clamped >= 0.0).",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=1,
+        help="Number of stocks grouped per Parquet batch write (default: 1).",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -126,11 +224,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.limit is not None and args.limit < 1:
         logger.error("无效参数 --limit=%d: 必须 >= 1", args.limit)
         return 2
+    if args.batch_size < 1:
+        logger.error("无效参数 --batch-size=%d: 必须 >= 1", args.batch_size)
+        return 2
+    if not math.isfinite(args.delay):
+        logger.error("无效参数 --delay=%s: 必须为有限数值", args.delay)
+        return 2
+    if args.refresh_stale and not args.missing:
+        logger.error("无效参数: --refresh-stale 必须配合 --missing 使用")
+        return 2
 
     try:
         parsed_codes = _parse_codes(args.codes)
     except ValueError as exc:
         logger.error("参数 --codes 无效: %s", exc)
+        return 2
+
+    if sum(bool(flag) for flag in (parsed_codes, args.watchlist, args.missing)) > 1:
+        logger.error("参数冲突: --codes、--watchlist 与 --missing 不能同时使用")
         return 2
 
     target_date: date | None = None
@@ -149,6 +260,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 limit=args.limit,
                 as_of=target_date,
                 scan_alerts=args.scan_alerts,
+                missing_only=args.missing,
+                refresh_stale=args.refresh_stale,
+                priority=args.priority,
+                delay_seconds=max(0.0, args.delay),
+                batch_size=args.batch_size,
             )
         )
     except (StockNotFoundError, StockFactUnavailableError) as exc:

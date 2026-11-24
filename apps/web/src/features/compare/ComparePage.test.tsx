@@ -418,9 +418,92 @@ describe('ComparePage', () => {
     expect(compareRequests).toEqual(['600519,600036', '600519,000858,000568'])
   })
 
-  it('renders mixed synced/unsynced items with non-CLI guidance, financial exempt labels, and search snapshot badges', async () => {
+  it('auto-syncs unsynced compare items in background, renders 自动拉取中…, and hydrates matrix on settlement', async () => {
+    let resolveSync: ((response: Response) => void) | undefined
+    const deferredSync = new Promise<Response>((resolve) => {
+      resolveSync = resolve
+    })
+    let wuliangyeSynced = false
+    const syncCalls: string[] = []
+
+    const wuliangyeBase = COMPARE_FIXTURES['000858']
+    if (!wuliangyeBase) {
+      throw new Error('Expected 000858 compare fixture')
+    }
+    const syncedWuliangye: StockCompareItem = {
+      code: '000858',
+      meta: {
+        ...wuliangyeBase.meta,
+        snapshot_available: true,
+      },
+      snapshot_available: true,
+      snapshot_as_of: '2026-11-20',
+      metrics: {
+        code: '000858',
+        name: '五粮液',
+        exchange: 'SZ',
+        industry_sw1: '食品饮料',
+        as_of: '2026-11-20',
+        close: 148.2,
+        total_mv_yuan: 5.75e11,
+        pe_ttm: 17.6,
+        pe_percentile_10y: 19.4,
+        pb: 4.3,
+        roe_5y_avg_pct: 25.1,
+        gross_margin_latest_pct: 77.2,
+        net_cash_to_mv_pct: 18.4,
+        ocf_to_profit_5y_pct: 109.5,
+        shareholder_yield_pct: 3.9,
+        implied_fcf_cagr_pct: 5.8,
+        ct_red_count: 0,
+        ct_yellow_count: 0,
+        total_score: 85,
+      },
+    }
+
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
-      const url = new URL(asRequest(input).url)
+      const request = asRequest(input)
+      const url = new URL(request.url)
+      if (url.pathname === '/api/stocks/000858/sync' && request.method === 'POST') {
+        syncCalls.push('000858')
+        return deferredSync
+      }
+      if (url.pathname === '/api/stocks/compare') {
+        const codesParam = url.searchParams.get('codes') ?? ''
+        const items = codesParam
+          .split(',')
+          .map((code) =>
+            code === '000858' && wuliangyeSynced ? syncedWuliangye : COMPARE_FIXTURES[code],
+          )
+          .filter((item): item is StockCompareItem => Boolean(item))
+        return Promise.resolve(jsonResponse(items, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    renderComparePage('/compare?codes=600519,000858')
+
+    expect(await screen.findByText('自动拉取中…')).toBeInTheDocument()
+    expect(screen.getByText(/正在为/)).toHaveTextContent('000858')
+
+    wuliangyeSynced = true
+    if (!resolveSync) {
+      throw new Error('Expected sync resolver')
+    }
+    resolveSync(jsonResponse({ code: '000858' }, 200))
+
+    expect(await screen.findByText('85 / 100')).toBeInTheDocument()
+    expect(screen.queryByText('自动拉取中…')).not.toBeInTheDocument()
+    expect(screen.getAllByText('已同步 2026-11-20')).toHaveLength(2)
+    expect(syncCalls).toEqual(['000858'])
+  })
+
+  it('renders mixed synced/unsynced items with one-shot failure fallback, financial exempt labels, glossary hints, and search snapshot badges', async () => {
+    const syncAttempts = new Map<string, number>()
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const request = asRequest(input)
+      const url = new URL(request.url)
       if (url.pathname === '/api/stocks/screener') {
         return Promise.resolve(jsonResponse(SAMPLE_SCREENER, 200))
       }
@@ -430,6 +513,11 @@ describe('ComparePage', () => {
           (item) => item.name.includes(q) || item.code.includes(q),
         )
         return Promise.resolve(jsonResponse(matched, 200))
+      }
+      if (url.pathname.endsWith('/sync') && request.method === 'POST') {
+        const code = url.pathname.split('/')[3] ?? ''
+        syncAttempts.set(code, (syncAttempts.get(code) ?? 0) + 1)
+        return Promise.resolve(jsonResponse({ detail: '上游数据源暂不可用' }, 503))
       }
       if (url.pathname === '/api/stocks/compare') {
         const codesParam = url.searchParams.get('codes') ?? ''
@@ -451,7 +539,15 @@ describe('ComparePage', () => {
     expect(screen.getByText('3.66%')).toHaveClass('tone-good')
     expect(screen.getByText('9.69%')).toHaveClass('tone-good')
     expect(screen.getByText('0 红 / 1 黄')).toBeInTheDocument()
-    expect(screen.getByText('未同步快照')).toBeInTheDocument()
+    expect(await screen.findByText('同步失败（暂缺）')).toBeInTheDocument()
+    expect(syncAttempts.get('000858')).toBe(1)
+
+    // Glossary hints open cleanly for matrix title and metric rows.
+    fireEvent.click(screen.getByRole('button', { name: '解释：净现金 / 总市值' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('货币资金 + 交易性金融资产')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
     // Financial metrics on bank display 行业不适用 across all 4 bank-exempt rows rather than em dash.
     expect(screen.getAllByText('行业不适用')).toHaveLength(4)
     for (const label of [
@@ -485,6 +581,8 @@ describe('ComparePage', () => {
     fireEvent.click(option)
     expect(await screen.findByText('81 / 100')).toBeInTheDocument()
     expect(screen.getByText('1 红 / 0 黄')).toBeInTheDocument()
+    // Adding 000568 must not re-attempt failed sync for 000858.
+    expect(syncAttempts.get('000858')).toBe(1)
 
     // Search for an unsynced stock shows 仅基础信息 badge.
     fireEvent.change(addInput, { target: { value: '洋河' } })
@@ -539,6 +637,9 @@ describe('ComparePage', () => {
       const url = new URL(asRequest(input).url)
       if (url.pathname === '/api/stocks/search') {
         return deferredSearch
+      }
+      if (url.pathname === '/api/stocks/000858/sync') {
+        return Promise.resolve(jsonResponse({ detail: '同步暂不可用' }, 503))
       }
       if (url.pathname === '/api/stocks/compare') {
         const codesParam = url.searchParams.get('codes') ?? ''

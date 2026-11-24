@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.api.deps import get_db
+from app.api.deps import get_db, get_watchlist_warmup
 from app.db.base import Base
 from app.main import create_app
 from app.settings import settings
@@ -299,7 +299,11 @@ async def test_watchlist_concurrent_first_time_upsert() -> None:
             async with testing_session() as session:
                 yield session
 
+        async def _noop_warmup(_code: str) -> None:
+            return None
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_watchlist_warmup] = lambda: _noop_warmup
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             headers = await _auth_headers(client, "concurrent-wl@example.com", "Concurrent")

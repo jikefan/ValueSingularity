@@ -2,10 +2,12 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { GlossaryLabel } from '../../components/ui/InfoHint'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { api } from '../../lib/api'
 import { formatNum, formatPct, formatSignedPct, formatYi, qualityTone } from '../../lib/format'
+import type { GlossaryKey } from '../../lib/glossary'
 import { queryKeys } from '../../lib/queryKeys'
 import {
   normalizeCompareCodes,
@@ -106,31 +108,47 @@ function renderExemptibleMetric(
   return renderValue(value)
 }
 
+type CompareSyncStatus = 'syncing' | 'done' | 'failed'
+
 type CompareMetricRow = {
   key: string
   label: string
-  render: (item: StockCompareItem) => ReactNode
+  glossaryKey: GlossaryKey
+  render: (item: StockCompareItem, syncStatus?: CompareSyncStatus) => ReactNode
 }
 
 const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'snapshot_status',
     label: '快照状态',
-    render: (item) =>
-      item.snapshot_available ? (
-        <Tag color="green">{item.snapshot_as_of ? `已同步 ${item.snapshot_as_of}` : '已同步'}</Tag>
-      ) : (
-        <Tag color="gray">未同步快照</Tag>
-      ),
+    glossaryKey: 'snapshot_status',
+    render: (item, syncStatus) => {
+      if (item.snapshot_available) {
+        return (
+          <Tag color="green">
+            {item.snapshot_as_of ? `已同步 ${item.snapshot_as_of}` : '已同步'}
+          </Tag>
+        )
+      }
+      if (syncStatus === 'syncing') {
+        return <Tag color="blue">自动拉取中…</Tag>
+      }
+      if (syncStatus === 'failed') {
+        return <Tag color="amber">同步失败（暂缺）</Tag>
+      }
+      return <Tag color="gray">未同步快照</Tag>
+    },
   },
   {
     key: 'industry',
     label: '申万一级行业',
+    glossaryKey: 'industry_sw1',
     render: (item) => item.metrics?.industry_sw1 ?? item.meta.industry_sw1 ?? '—',
   },
   {
     key: 'total_score',
     label: '五维综合评分',
+    glossaryKey: 'radar_total_score',
     render: (item) =>
       item.metrics ? (
         <Tag
@@ -151,36 +169,43 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'close',
     label: '最新收盘价（元）',
+    glossaryKey: 'latest_close',
     render: (item) => <span className="mono">{formatNum(item.metrics?.close, 2)}</span>,
   },
   {
     key: 'total_mv_yuan',
     label: '总市值',
+    glossaryKey: 'market_cap',
     render: (item) => <span className="mono">{formatYi(item.metrics?.total_mv_yuan)}</span>,
   },
   {
     key: 'pe_ttm',
     label: 'PE (TTM)',
+    glossaryKey: 'pe_ttm',
     render: (item) => <span className="mono">{formatNum(item.metrics?.pe_ttm, 2)}</span>,
   },
   {
     key: 'pe_percentile_10y',
     label: 'PE 10年历史分位',
+    glossaryKey: 'valuation_pct_10y',
     render: (item) => <span className="mono">{formatPct(item.metrics?.pe_percentile_10y, 1)}</span>,
   },
   {
     key: 'pb',
     label: 'PB (市净率)',
+    glossaryKey: 'pb',
     render: (item) => <span className="mono">{formatNum(item.metrics?.pb, 2)}</span>,
   },
   {
     key: 'roe_5y_avg_pct',
     label: '5年平均 ROE',
+    glossaryKey: 'roe_5y_avg',
     render: (item) => <span className="mono">{formatPct(item.metrics?.roe_5y_avg_pct, 2)}</span>,
   },
   {
     key: 'gross_margin_latest_pct',
     label: '最新毛利率',
+    glossaryKey: 'gross_margin_latest',
     render: (item) =>
       renderExemptibleMetric(item, item.metrics?.gross_margin_latest_pct, (value) => (
         <span className="mono">{formatPct(value, 2)}</span>
@@ -189,6 +214,7 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'net_cash_to_mv_pct',
     label: '净现金 / 总市值',
+    glossaryKey: 'net_cash_to_mv',
     render: (item) =>
       renderExemptibleMetric(
         item,
@@ -200,6 +226,7 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'ocf_to_profit_5y_pct',
     label: '5年 OCF / 净利润',
+    glossaryKey: 'ocf_to_profit_5y',
     render: (item) =>
       renderExemptibleMetric(
         item,
@@ -211,6 +238,7 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'shareholder_yield_pct',
     label: '股东回报率',
+    glossaryKey: 'net_cash_yield',
     render: (item) => (
       <span className={`mono ${qualityTone(item.metrics?.shareholder_yield_pct)}`}>
         {formatPct(item.metrics?.shareholder_yield_pct, 2)}
@@ -220,6 +248,7 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'implied_fcf_cagr_pct',
     label: 'Reverse DCF 隐含 FCF 增速',
+    glossaryKey: 'implied_fcf_cagr',
     render: (item) =>
       renderExemptibleMetric(
         item,
@@ -233,6 +262,7 @@ const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
   {
     key: 'ct_alerts',
     label: 'CT 排雷 (红 / 黄灯)',
+    glossaryKey: 'ct_lights',
     render: (item) => {
       if (!item.metrics) {
         return '—'
@@ -311,6 +341,114 @@ export function ComparePage() {
 
   const compareQuery = useStockCompare(selectedCodes)
   const compareItems = compareQuery.data ?? []
+  const [syncStatusByCode, setSyncStatusByCode] = useState<Record<string, CompareSyncStatus>>({})
+  const attemptedCodesRef = useRef<Set<string>>(new Set())
+  const inFlightControllersRef = useRef<Map<string, AbortController>>(new Map())
+  const isMountedRef = useRef(true)
+
+  useEffect(() => {
+    isMountedRef.current = true
+    const controllers = inFlightControllersRef.current
+    return () => {
+      isMountedRef.current = false
+      for (const controller of controllers.values()) {
+        controller.abort()
+      }
+      controllers.clear()
+    }
+  }, [])
+
+  useEffect(() => {
+    const activeSet = new Set(selectedCodes)
+    for (const [code, controller] of inFlightControllersRef.current.entries()) {
+      if (!activeSet.has(code)) {
+        controller.abort()
+        inFlightControllersRef.current.delete(code)
+      }
+    }
+    for (const code of attemptedCodesRef.current) {
+      if (!activeSet.has(code)) {
+        attemptedCodesRef.current.delete(code)
+      }
+    }
+    setSyncStatusByCode((prev) => {
+      let changed = false
+      const next: Record<string, CompareSyncStatus> = {}
+      for (const [code, status] of Object.entries(prev)) {
+        if (activeSet.has(code)) {
+          next[code] = status
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [selectedCodes])
+
+  useEffect(() => {
+    if (!compareQuery.data) {
+      return
+    }
+    const codesToSync = compareQuery.data
+      .filter(
+        (item) =>
+          latestCodesRef.current.includes(item.code) &&
+          !item.snapshot_available &&
+          !attemptedCodesRef.current.has(item.code) &&
+          !inFlightControllersRef.current.has(item.code),
+      )
+      .map((item) => item.code)
+
+    if (codesToSync.length === 0) {
+      return
+    }
+
+    for (const code of codesToSync) {
+      attemptedCodesRef.current.add(code)
+    }
+    setSyncStatusByCode((prev) => {
+      const next = { ...prev }
+      for (const code of codesToSync) {
+        next[code] = 'syncing'
+      }
+      return next
+    })
+
+    for (const code of codesToSync) {
+      const controller = new AbortController()
+      inFlightControllersRef.current.set(code, controller)
+
+      void api
+        .syncStockSnapshot(code, controller.signal)
+        .then(async () => {
+          inFlightControllersRef.current.delete(code)
+          if (!isMountedRef.current || controller.signal.aborted) {
+            return
+          }
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.stocks.detail(code),
+          })
+          void queryClient.invalidateQueries({
+            queryKey: queryKeys.stocks.screenerPrefix(),
+          })
+          await queryClient.invalidateQueries({
+            queryKey: queryKeys.stocks.comparePrefix(),
+          })
+          if (!isMountedRef.current || controller.signal.aborted) {
+            return
+          }
+          setSyncStatusByCode((prev) => ({ ...prev, [code]: 'done' }))
+        })
+        .catch(() => {
+          inFlightControllersRef.current.delete(code)
+          if (!isMountedRef.current || controller.signal.aborted) {
+            return
+          }
+          setSyncStatusByCode((prev) => ({ ...prev, [code]: 'failed' }))
+        })
+    }
+  }, [compareQuery.data, queryClient])
+
   const screenerQuery = useStockScreener({ limit: 50 }, selectedCodes.length === 0)
   const syncedHotCodes = useMemo(
     () =>
@@ -406,8 +544,19 @@ export function ComparePage() {
   }
 
   const nameByCode = new Map(compareItems.map((item) => [item.code, item.meta.name]))
-  const unsyncedCodes = compareItems
-    .filter((item) => !item.snapshot_available)
+  const getEffectiveSyncStatus = (code: string): CompareSyncStatus | undefined => {
+    const status = syncStatusByCode[code]
+    if (status === 'done' && compareQuery.isFetching) {
+      return 'syncing'
+    }
+    return status
+  }
+  const unsyncedItems = compareItems.filter((item) => !item.snapshot_available)
+  const syncingCodes = unsyncedItems
+    .filter((item) => getEffectiveSyncStatus(item.code) === 'syncing')
+    .map((item) => item.code)
+  const unavailableUnsyncedCodes = unsyncedItems
+    .filter((item) => getEffectiveSyncStatus(item.code) !== 'syncing')
     .map((item) => item.code)
 
   return (
@@ -642,6 +791,7 @@ export function ComparePage() {
       ) : (
         <Card
           title="基本面、估值与排雷横向对比"
+          hint="compare_matrix"
           extra={<span className="small muted">左右对比最多 5 支标的</span>}
         >
           <div className="table-wrap">
@@ -669,10 +819,12 @@ export function ComparePage() {
               <tbody>
                 {COMPARE_METRIC_ROWS.map((row) => (
                   <tr key={row.key}>
-                    <td className="soft compare-metric-col">{row.label}</td>
+                    <td className="soft compare-metric-col">
+                      <GlossaryLabel label={row.label} term={row.glossaryKey} />
+                    </td>
                     {compareItems.map((item) => (
                       <td key={`${row.key}-${item.code}`} style={{ textAlign: 'right' }}>
-                        {row.render(item)}
+                        {row.render(item, getEffectiveSyncStatus(item.code))}
                       </td>
                     ))}
                   </tr>
@@ -681,11 +833,20 @@ export function ComparePage() {
             </table>
           </div>
 
-          {unsyncedCodes.length > 0 ? (
+          {syncingCodes.length > 0 ? (
+            <div className="notice-box mt-16" role="status">
+              <span>
+                正在为 <code className="mono">{syncingCodes.join(', ')}</code>{' '}
+                自动拉取财报与估值快照（首次约需 5–8 秒），完成后将自动刷新对比指标…
+              </span>
+            </div>
+          ) : null}
+
+          {unavailableUnsyncedCodes.length > 0 ? (
             <div className="notice-box notice-warn mt-16" role="note">
               <span>
-                标的 <code className="mono">{unsyncedCodes.join(', ')}</code>{' '}
-                当前仅同步了基础行情元数据，暂未生成全量财报与估值快照。你可以先对比已同步标的，或{' '}
+                标的 <code className="mono">{unavailableUnsyncedCodes.join(', ')}</code>{' '}
+                深度财报快照同步暂不可用（可能因上游数据源异常或缺少连续年报）。你可以先对比其余已同步标的，或{' '}
                 <Link className="link-accent" to="/">
                   前往首页浏览已覆盖全量财报的标的
                 </Link>

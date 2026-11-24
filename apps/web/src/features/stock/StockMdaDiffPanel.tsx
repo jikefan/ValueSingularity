@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { AiCompanionControls } from '../../components/ui/AiCompanionControls'
 import { Card } from '../../components/ui/Card'
 import { GuestPreviewGrid, type GuestPreviewItem } from '../../components/ui/GuestPreviewGrid'
+import { GlossaryLabel, InfoHint } from '../../components/ui/InfoHint'
 import { EmptyBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import {
@@ -157,6 +158,7 @@ function StockMdaDiffPanelContent({
   return (
     <Card
       title={`年报 MD&A 口径变化对比器 · ${stockName}`}
+      hint="mda_diff"
       extra={
         <AiCompanionControls
           mode={effectiveMode}
@@ -193,7 +195,16 @@ function StockMdaDiffPanelContent({
         >
           <div className="form-grid">
             <div className="field">
-              <label htmlFor="mda-prev-label">上期报告标签</label>
+              <div className="field-label-row">
+                <label htmlFor="mda-prev-label">上期报告标签</label>
+                <InfoHint
+                  title="上期报告标签"
+                  entry={{
+                    summary: '用于标识对比基准期的年报或半年报期次（如“2024年报”）。',
+                    reading: '留空文本仅对比结构化财报快照时，系统会自动对齐最近两期完整财报年度。',
+                  }}
+                />
+              </div>
               <input
                 id="mda-prev-label"
                 className="input"
@@ -209,7 +220,16 @@ function StockMdaDiffPanelContent({
             </div>
 
             <div className="field">
-              <label htmlFor="mda-curr-label">本期报告标签</label>
+              <div className="field-label-row">
+                <label htmlFor="mda-curr-label">本期报告标签</label>
+                <InfoHint
+                  title="本期报告标签"
+                  entry={{
+                    summary: '用于标识最新待核查的报告期名称（如“2025年报”），与上期形成前后对照。',
+                    reading: '建议填写真实财报期次，便于留痕追踪措辞与会计口径变化。',
+                  }}
+                />
+              </div>
               <input
                 id="mda-curr-label"
                 className="input"
@@ -225,7 +245,10 @@ function StockMdaDiffPanelContent({
             </div>
 
             <div className="field">
-              <label htmlFor="mda-prev-text">上期管理层讨论与分析原文</label>
+              <div className="field-label-row">
+                <label htmlFor="mda-prev-text">上期管理层讨论与分析原文</label>
+                <InfoHint term="mda_text_diff" title="上期 MD&A 原文" />
+              </div>
               <textarea
                 id="mda-prev-text"
                 className="input textarea"
@@ -246,7 +269,10 @@ function StockMdaDiffPanelContent({
             </div>
 
             <div className="field">
-              <label htmlFor="mda-curr-text">本期管理层讨论与分析原文</label>
+              <div className="field-label-row">
+                <label htmlFor="mda-curr-text">本期管理层讨论与分析原文</label>
+                <InfoHint term="mda_text_diff" title="本期 MD&A 原文" />
+              </div>
               <textarea
                 id="mda-curr-text"
                 className="input textarea"
@@ -369,7 +395,10 @@ function StockMdaDiffPanelContent({
             <div className="notice-box stack" style={{ gap: 8 }}>
               <div className="row" style={{ flexWrap: 'wrap' }}>
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  <strong>对比结论摘要</strong>
+                  <span className="label-with-hint">
+                    <strong>对比结论摘要</strong>
+                    <InfoHint term="mda_diff" />
+                  </span>
                   <Tag color="blue">{`${result.previous_period_label} → ${result.current_period_label}`}</Tag>
                 </div>
                 {modeMeta ? <Tag color={modeMeta.color}>{modeMeta.label}</Tag> : null}
@@ -379,7 +408,9 @@ function StockMdaDiffPanelContent({
 
             {result.metric_shifts.length > 0 ? (
               <div className="stack" style={{ gap: 10 }}>
-                <h3 className="ledger-section-title">核心财务与审计口径变化</h3>
+                <h3 className="ledger-section-title">
+                  <GlossaryLabel label="核心财务与审计口径变化" term="mda_metric_shift" />
+                </h3>
                 <div className="mda-shift-grid">
                   {result.metric_shifts.map((shift, idx) => {
                     const sevMeta = SIGNAL_META[shift.severity]
@@ -402,7 +433,9 @@ function StockMdaDiffPanelContent({
             ) : null}
 
             <div className="stack" style={{ gap: 10 }}>
-              <h3 className="ledger-section-title">管理层措辞增删高亮</h3>
+              <h3 className="ledger-section-title">
+                <GlossaryLabel label="管理层措辞增删高亮" term="mda_text_diff" />
+              </h3>
               {result.text_highlights.length === 0 ? (
                 <p className="small muted">未提供管理层讨论文本，或两期对比文本条款完全一致。</p>
               ) : (
@@ -498,7 +531,7 @@ export function StockMdaDiffPanel({ code, stockName, snapshotAvailable }: StockM
 
   if (isAuthLoading) {
     return (
-      <Card title={`年报 MD&A 口径变化对比器 · ${stockName}`}>
+      <Card title={`年报 MD&A 口径变化对比器 · ${stockName}`} hint="mda_diff">
         <LoadingBlock lines={2} />
       </Card>
     )
@@ -508,6 +541,7 @@ export function StockMdaDiffPanel({ code, stockName, snapshotAvailable }: StockM
     return (
       <Card
         title={`年报 MD&A 口径变化对比器 · ${stockName}`}
+        hint="mda_diff"
         extra={<Tag color="gray">未登录</Tag>}
       >
         <div className="stack" style={{ gap: 16 }}>

@@ -1,0 +1,164 @@
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { GLOSSARY } from '../../lib/glossary'
+import { Card } from './Card'
+import { GlossaryLabel, InfoHint } from './InfoHint'
+import { Metric } from './Metric'
+
+describe('InfoHint', () => {
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    Object.defineProperty(window, 'innerWidth', {
+      value: 1024,
+      configurable: true,
+      writable: true,
+    })
+    Object.defineProperty(window, 'innerHeight', {
+      value: 768,
+      configurable: true,
+      writable: true,
+    })
+  })
+
+  it('opens a portal tooltip on hover, allows moving onto popover, and closes after 120ms grace period', () => {
+    vi.useFakeTimers()
+    const { container } = render(
+      <div className="clip-box">
+        <InfoHint term="equity_bond_spread" />
+      </div>,
+    )
+
+    const trigger = screen.getByRole('button', { name: '解释：股债性价比 (ERP)' })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.mouseEnter(trigger)
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toBeInTheDocument()
+    expect(container.contains(tooltip)).toBe(false)
+    expect(document.body.contains(tooltip)).toBe(true)
+    expect(tooltip).toHaveTextContent(GLOSSARY.equity_bond_spread.summary)
+    expect(tooltip).toHaveTextContent(GLOSSARY.equity_bond_spread.formula)
+    expect(tooltip).toHaveTextContent(GLOSSARY.equity_bond_spread.reading)
+
+    // Leaving trigger keeps popover open during the 120ms grace window so user can hover onto popover.
+    fireEvent.mouseLeave(trigger)
+    act(() => {
+      vi.advanceTimersByTime(80)
+    })
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+    fireEvent.mouseEnter(tooltip)
+    act(() => {
+      vi.advanceTimersByTime(200)
+    })
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+    fireEvent.mouseLeave(tooltip)
+    act(() => {
+      vi.advanceTimersByTime(120)
+    })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('toggles on click without propagating to parent interactive elements and closes on Escape / outside click', () => {
+    const parentClick = vi.fn()
+    render(
+      <div onClick={parentClick}>
+        <InfoHint term="radar_total_score" size="md" />
+      </div>,
+    )
+
+    const trigger = screen.getByRole('button', { name: '解释：综合雷达评分' })
+    expect(trigger).toHaveClass('info-hint-btn', 'info-hint-btn-md')
+
+    fireEvent.click(trigger)
+    expect(parentClick).not.toHaveBeenCalled()
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.click(trigger)
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+    fireEvent.mouseDown(document.body)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.click(trigger)
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('opens on keyboard focus, closes on blur, and cleans up portal on unmount', () => {
+    const { unmount } = render(<InfoHint term="reverse_dcf" />)
+    const trigger = screen.getByRole('button', { name: '解释：Reverse DCF 逆向估值反推器' })
+
+    fireEvent.focus(trigger)
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+
+    fireEvent.blur(trigger)
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.focus(trigger)
+    expect(screen.getByRole('tooltip')).toBeInTheDocument()
+    unmount()
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+  })
+
+  it('supports custom title and entry, flips below when top headroom < 160px, and clamps horizontally', () => {
+    Object.defineProperty(window, 'innerWidth', {
+      value: 400,
+      configurable: true,
+      writable: true,
+    })
+
+    render(
+      <InfoHint
+        title="自定义口径"
+        entry={{
+          summary: '这是自定义解释文案。',
+          reading: '越大越好。',
+        }}
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: '解释：自定义口径' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      left: 10,
+      right: 26,
+      top: 40,
+      bottom: 56,
+      width: 16,
+      height: 16,
+      x: 10,
+      y: 40,
+      toJSON: () => ({}),
+    })
+
+    fireEvent.click(trigger)
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip).toHaveAttribute('data-placement', 'bottom')
+    expect(tooltip).toHaveStyle({ left: '12px' })
+    expect(tooltip).toHaveTextContent('自定义口径')
+    expect(tooltip).toHaveTextContent('这是自定义解释文案。')
+  })
+
+  it('keeps label text nodes crisp in GlossaryLabel, Card, and Metric', () => {
+    render(
+      <Card title="核心指标卡片" hint="compare_matrix">
+        <GlossaryLabel label="净现金 / 总市值" term="net_cash_to_mv" />
+        <Metric label="5年平均 ROE" hint="roe_5y_avg" value="31.80%" />
+      </Card>,
+    )
+
+    expect(screen.getByText('核心指标卡片').tagName).toBe('SPAN')
+    expect(screen.getByText('净现金 / 总市值').tagName).toBe('SPAN')
+    expect(screen.getByText('5年平均 ROE').tagName).toBe('SPAN')
+    expect(screen.getByRole('button', { name: '解释：同业横向对比矩阵' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '解释：净现金 / 总市值' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '解释：5年平均 ROE' })).toBeInTheDocument()
+  })
+})

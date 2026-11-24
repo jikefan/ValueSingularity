@@ -92,16 +92,37 @@ class StockMetaRepository(Protocol):
         """Return active stock codes sorted deterministically."""
         ...
 
+    async def list_codes_missing_snapshot(
+        self,
+        *,
+        min_as_of: date | None = None,
+        limit: int | None = None,
+    ) -> list[str]:
+        """Return active stock codes lacking a snapshot or having as_of < min_as_of."""
+        ...
+
 
 class StockFactStore(Protocol):
     async def write_stock_facts(self, bundle: StockFactBundle) -> None:
         """Atomically persist per-stock bars, annual statements, and corporate action facts."""
         ...
 
+    async def write_stocks_facts_batch(self, bundles: Sequence[StockFactBundle]) -> None:
+        """Atomically persist multiple stock fact bundles grouped by Parquet partition."""
+        ...
+
     async def load_stock_facts(
         self, code: str, *, as_of: date | None = None
     ) -> StockFactBundle | None:
         """Load persisted facts for a stock up to as_of, or None when absent."""
+        ...
+
+
+class StockSnapshotSyncRunnerPort(Protocol):
+    async def load_or_sync_snapshot(
+        self, code: str, *, force: bool = False
+    ) -> StockSnapshotPayload:
+        """Return an existing snapshot or synchronously compute and persist a fresh one."""
         ...
 
 

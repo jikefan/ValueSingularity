@@ -536,6 +536,115 @@
   background: var(--signal-lime);
 }
 
+.label-with-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+}
+
+.field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-hint-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--hair-strong);
+  background: var(--well-bg);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.info-hint-btn-md {
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+}
+
+.info-hint-btn:hover,
+.info-hint-btn:focus-visible,
+.info-hint-btn[aria-expanded='true'] {
+  color: var(--cobalt);
+  border-color: var(--cobalt-line);
+  background: var(--cobalt-soft);
+  outline: none;
+}
+
+.info-hint-btn:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+.info-hint-popover {
+  position: fixed;
+  z-index: 200;
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--card-border);
+  border-top-color: var(--card-border-top);
+  box-shadow: var(--dropdown-shadow);
+  color: var(--ink);
+  text-align: left;
+  font-size: 12.5px;
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+
+.info-hint-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 5px;
+}
+
+.info-hint-summary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-2);
+  line-height: 1.55;
+}
+
+.info-hint-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hair);
+}
+
+.info-hint-kicker {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--cobalt);
+}
+
+.info-hint-detail {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 @media (max-width: 900px) {
   .bento-deck {
     grid-template-columns: minmax(0, 1fr);

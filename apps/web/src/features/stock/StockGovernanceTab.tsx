@@ -1,15 +1,43 @@
 import { useMemo } from 'react'
 import { Card } from '../../components/ui/Card'
+import { type CustomGlossaryEntry, InfoHint } from '../../components/ui/InfoHint'
 import { Metric } from '../../components/ui/Metric'
 import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { createChartTheme } from '../../lib/chartTheme'
 import { Chart, type ChartOption } from '../../lib/charts'
 import { fmtNum, formatNum, formatPct, formatYi, qualityTone, toYi } from '../../lib/format'
+import type { GlossaryKey } from '../../lib/glossary'
 import { useThemeMode } from '../../lib/theme'
 import type { StockSnapshotPayload } from '../../types/api'
 import { SHAREHOLDER_STATUS_META } from './stockHelpers'
 import { useCompactViewport } from './useCompactViewport'
+
+function CustomHintLabel({
+  label,
+  title,
+  entry,
+}: {
+  label: string
+  title?: string
+  entry: CustomGlossaryEntry
+}) {
+  return (
+    <span className="label-with-hint">
+      <span>{label}</span>
+      <InfoHint title={title ?? label} entry={entry} />
+    </span>
+  )
+}
+
+function ColumnHintLabel({ label, term }: { label: string; term: GlossaryKey }) {
+  return (
+    <span className="label-with-hint">
+      <span>{label}</span>
+      <InfoHint term={term} title={label} />
+    </span>
+  )
+}
 
 export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
   const { theme } = useThemeMode()
@@ -112,6 +140,7 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
     <div className="stack" style={{ gap: 16 }}>
       <Card
         title="治理 · 股东净回报体检器"
+        hint="shareholder_return"
         extra={
           <span className="row" style={{ gap: 8 }}>
             <Tag color={statusMeta.color}>{statusMeta.label}</Tag>
@@ -126,22 +155,37 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
           </div>
 
           <div className="grid grid-4">
-            <Metric label="累计现金分红" value={formatYi(sReturn.total_dividend_yuan)} />
-            <Metric label="累计股份回购" value={formatYi(sReturn.total_repurchase_yuan)} />
+            <Metric
+              label="累计现金分红"
+              hint="total_dividend"
+              value={formatYi(sReturn.total_dividend_yuan)}
+            />
+            <Metric
+              label="累计股份回购"
+              hint="total_repurchase"
+              value={formatYi(sReturn.total_repurchase_yuan)}
+            />
             <Metric
               label="累计股权再融资"
+              hint="equity_financing"
               value={formatYi(sReturn.total_equity_financing_yuan)}
               sub="再融资向市场抽血"
             />
             <Metric
               label="股东净回报"
+              hint="net_shareholder_return"
               value={formatYi(sReturn.net_return_yuan)}
               sub="分红 + 回购 − 再融资"
               tone={qualityTone(sReturn.net_return_yuan)}
             />
-            <Metric label="累计自由现金流" value={formatYi(sReturn.total_fcf_yuan)} />
+            <Metric
+              label="累计自由现金流"
+              hint="total_fcf"
+              value={formatYi(sReturn.total_fcf_yuan)}
+            />
             <Metric
               label="FCF 覆盖倍数"
+              hint="fcf_coverage"
               value={
                 sReturn.fcf_coverage_ratio !== null && sReturn.fcf_coverage_ratio !== undefined
                   ? `${fmtNum(sReturn.fcf_coverage_ratio, 2)}x`
@@ -149,7 +193,11 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
               }
               sub="≥ 1.0x 代表有真现金兜底"
             />
-            <Metric label="当前股息率" value={formatPct(sReturn.current_dividend_yield_pct, 2)} />
+            <Metric
+              label="当前股息率"
+              hint="dividend_yield_current"
+              value={formatPct(sReturn.current_dividend_yield_pct, 2)}
+            />
           </div>
 
           {formulaNotes.shareholder_return ? (
@@ -158,7 +206,21 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
         </div>
       </Card>
 
-      <Card title="年度分红 / 回购 / 再融资与净回报趋势（亿元）">
+      <Card
+        title={
+          <CustomHintLabel
+            label="年度分红 / 回购 / 再融资与净回报趋势（亿元）"
+            title="年度股东回报趋势图"
+            entry={{
+              summary:
+                '分年度堆叠对比现金分红、股份回购与股权再融资规模，并以折线标注当年股东净回报（亿元）。',
+              formula: '当年股东净回报 = 现金分红 + 股份回购 − 股权再融资。',
+              reading:
+                '分红与回购柱体稳健且再融资长期为零或极小、净回报折线平稳向上，代表健康的资本配置文化。',
+            }}
+          />
+        }
+      >
         {seriesAsc.length === 0 ? (
           <EmptyBlock title="暂无年度股东回报明细" />
         ) : (
@@ -172,17 +234,40 @@ export function StockGovernanceTab({ snapshot }: { snapshot: StockSnapshotPayloa
       </Card>
 
       {seriesDesc.length > 0 ? (
-        <Card title="历年股东净回报明细（金额单位：亿元）">
+        <Card
+          title={
+            <CustomHintLabel
+              label="历年股东净回报明细（金额单位：亿元）"
+              title="历年股东净回报明细"
+              entry={{
+                summary:
+                  '按年度倒序展示历年现金分红、股份回购、股权再融资、股东净回报与同期自由现金流（亿元）。',
+                reading:
+                  '逐年对比股东净回报与自由现金流，核查现金分配是否具备持续内生现金流支撑；当年未收官年份标注“(年内)”。',
+              }}
+            />
+          }
+        >
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
                   <th>年份</th>
-                  <th style={{ textAlign: 'right' }}>现金分红</th>
-                  <th style={{ textAlign: 'right' }}>股份回购</th>
-                  <th style={{ textAlign: 'right' }}>股权再融资</th>
-                  <th style={{ textAlign: 'right' }}>股东净回报</th>
-                  <th style={{ textAlign: 'right' }}>自由现金流</th>
+                  <th style={{ textAlign: 'right' }}>
+                    <ColumnHintLabel label="现金分红" term="total_dividend" />
+                  </th>
+                  <th style={{ textAlign: 'right' }}>
+                    <ColumnHintLabel label="股份回购" term="total_repurchase" />
+                  </th>
+                  <th style={{ textAlign: 'right' }}>
+                    <ColumnHintLabel label="股权再融资" term="equity_financing" />
+                  </th>
+                  <th style={{ textAlign: 'right' }}>
+                    <ColumnHintLabel label="股东净回报" term="net_shareholder_return" />
+                  </th>
+                  <th style={{ textAlign: 'right' }}>
+                    <ColumnHintLabel label="自由现金流" term="fcf" />
+                  </th>
                 </tr>
               </thead>
               <tbody>

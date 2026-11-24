@@ -525,6 +525,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stocks/{code}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync Stock Snapshot */
+        post: operations["stocks_sync_stock_snapshot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/watchlist": {
         parameters: {
             query?: never;
@@ -2994,6 +3011,39 @@ export interface operations {
     stocks_get_stock_snapshot: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockSnapshotPayload"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stocks_sync_stock_snapshot: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
             header?: never;
             path: {
                 code: string;

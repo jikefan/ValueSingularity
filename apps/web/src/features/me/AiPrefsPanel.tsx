@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card } from '../../components/ui/Card'
+import { GlossaryLabel, InfoHint } from '../../components/ui/InfoHint'
 import { Metric } from '../../components/ui/Metric'
 import { ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
@@ -161,6 +162,7 @@ export function AiPrefsPanel({ enabled }: { enabled: boolean }) {
   return (
     <Card
       title="AI 决策伙伴额度与 BYOK 设置"
+      hint="byok_ai"
       extra={
         prefs ? (
           <div className="sentinel-list">
@@ -190,23 +192,73 @@ export function AiPrefsPanel({ enabled }: { enabled: boolean }) {
         <div className="stack" style={{ gap: 16 }}>
           <div className="ai-quota-grid">
             <Metric
-              label="当前套餐等级"
+              label={
+                <span className="label-with-hint">
+                  <span>当前套餐等级</span>
+                  <InfoHint
+                    title="套餐与平台额度"
+                    entry={{
+                      summary:
+                        '当前账户所属套餐等级（FREE / PRO / AI_PLUS）及对应的平台托管 AI 每日调用配额上限。',
+                      reading:
+                        '配置并启用个人 BYOK 密钥后，大模型推理将直接走自有接口，不再受平台每日额度上限约束。',
+                    }}
+                  />
+                </span>
+              }
               value={`套餐 · ${prefs.quota.plan_tier.toUpperCase()}`}
               sub={prefs.quota.byok_active ? 'BYOK 已接管推理调用' : '使用平台托管额度'}
             />
             <Metric
-              label="今日已用 / 每日上限"
+              label={
+                <span className="label-with-hint">
+                  <span>今日已用 / 每日上限</span>
+                  <InfoHint
+                    title="平台每日调用配额"
+                    entry={{
+                      summary: '当日累计消耗的平台托管大模型推理次数与当前套餐允许的每日调用上限。',
+                      reading:
+                        '覆盖「买入前反方质询」与「MD&A 口径对比」；勾选纯规则引擎或启用 BYOK 时不扣减平台额度。',
+                    }}
+                  />
+                </span>
+              }
               value={`${prefs.quota.used_today} / ${prefs.quota.daily_limit}`}
               sub="仅统计平台托管大模型调用"
             />
             <Metric
-              label="今日剩余额度"
+              label={
+                <span className="label-with-hint">
+                  <span>今日剩余额度</span>
+                  <InfoHint
+                    title="今日剩余额度"
+                    entry={{
+                      summary: '当前自然日内仍可使用的平台托管 AI 推理调用次数余额。',
+                      formula: '今日剩余额度 = 每日上限 − 今日已用次数。',
+                      reading:
+                        '即使平台额度耗尽，仍可随时使用免费的确定性纯规则兜底引擎或切换个人 BYOK。',
+                    }}
+                  />
+                </span>
+              }
               value={prefs.quota.remaining_today}
               tone={prefs.quota.remaining_today > 0 ? 'tone-good' : 'tone-bad'}
               sub="纯规则引擎永不消耗额度"
             />
             <Metric
-              label="每日额度重置"
+              label={
+                <span className="label-with-hint">
+                  <span>每日额度重置</span>
+                  <InfoHint
+                    title="每日额度重置机制"
+                    entry={{
+                      summary:
+                        '平台托管 AI 每日免费调用额度统一按北京时间（Asia/Shanghai, CST）每日 00:00 自动清零重置。',
+                      reading: '未使用的当日余量不累计至次日。',
+                    }}
+                  />
+                </span>
+              }
               value={<span className="small">北京时间每日 00:00 清零</span>}
               sub={
                 <span
@@ -228,7 +280,9 @@ export function AiPrefsPanel({ enabled }: { enabled: boolean }) {
             }}
           >
             <div className="row" style={{ flexWrap: 'wrap' }}>
-              <strong className="small">执行模式与 BYOK 自备密钥</strong>
+              <strong className="small">
+                <GlossaryLabel label="执行模式与 BYOK 自备密钥" term="byok_ai" />
+              </strong>
               <div className="sentinel-list">
                 {prefs.byok_base_url_masked ? (
                   <Tag color="blue">{`Base URL · ${prefs.byok_base_url_masked}`}</Tag>
@@ -245,37 +299,60 @@ export function AiPrefsPanel({ enabled }: { enabled: boolean }) {
 
             <div className="form-grid">
               <div className="field">
-                <label className="checkbox-row" htmlFor="ai-prefer-rule-only">
-                  <input
-                    id="ai-prefer-rule-only"
-                    type="checkbox"
-                    checked={preferRuleOnly}
-                    disabled={updatePreferences.isPending}
-                    onChange={(event) => {
-                      setDraftPreferRuleOnly(event.target.checked)
-                      clearFeedbackOnEdit()
+                <div className="label-with-hint">
+                  <label className="checkbox-row" htmlFor="ai-prefer-rule-only">
+                    <input
+                      id="ai-prefer-rule-only"
+                      type="checkbox"
+                      checked={preferRuleOnly}
+                      disabled={updatePreferences.isPending}
+                      onChange={(event) => {
+                        setDraftPreferRuleOnly(event.target.checked)
+                        clearFeedbackOnEdit()
+                      }}
+                    />
+                    <span>默认仅用纯规则引擎（不消耗额度）</span>
+                  </label>
+                  <InfoHint
+                    title="纯规则兜底引擎"
+                    entry={{
+                      summary:
+                        '勾选后默认优先运行本地确定性规则引擎完成反方质询和 MD&A 对比，不请求外部大模型、不消耗额度。',
+                      reading: '在个股工作台仍可按单次需求随时切换为 AI 增强分析。',
                     }}
                   />
-                  <span>默认仅用纯规则引擎（不消耗额度）</span>
-                </label>
+                </div>
 
-                <label className="checkbox-row" htmlFor="ai-byok-enabled">
-                  <input
-                    id="ai-byok-enabled"
-                    type="checkbox"
-                    checked={byokEnabled}
-                    disabled={updatePreferences.isPending}
-                    onChange={(event) => {
-                      setDraftByokEnabled(event.target.checked)
-                      clearFeedbackOnEdit()
-                    }}
-                  />
-                  <span>启用 BYOK 自备 OpenAI 兼容密钥</span>
-                </label>
+                <div className="label-with-hint">
+                  <label className="checkbox-row" htmlFor="ai-byok-enabled">
+                    <input
+                      id="ai-byok-enabled"
+                      type="checkbox"
+                      checked={byokEnabled}
+                      disabled={updatePreferences.isPending}
+                      onChange={(event) => {
+                        setDraftByokEnabled(event.target.checked)
+                        clearFeedbackOnEdit()
+                      }}
+                    />
+                    <span>启用 BYOK 自备 OpenAI 兼容密钥</span>
+                  </label>
+                  <InfoHint term="byok_ai" />
+                </div>
               </div>
 
               <div className="field">
-                <label htmlFor="ai-byok-model">BYOK 模型名称</label>
+                <div className="field-label-row">
+                  <label htmlFor="ai-byok-model">BYOK 模型名称</label>
+                  <InfoHint
+                    title="BYOK 模型名称"
+                    entry={{
+                      summary:
+                        '通过个人 OpenAI 兼容端点发起推理请求时指定的模型标识（如 gpt-4o-mini、deepseek-chat 等）。',
+                      reading: '请确认填写的模型名与你的 Base URL 提供方支持的模型列表一致。',
+                    }}
+                  />
+                </div>
                 <input
                   id="ai-byok-model"
                   className="input mono"
@@ -293,7 +370,18 @@ export function AiPrefsPanel({ enabled }: { enabled: boolean }) {
 
               <div className="field field-full">
                 <div className="row" style={{ flexWrap: 'wrap' }}>
-                  <label htmlFor="ai-byok-base-url">BYOK Base URL（可选）</label>
+                  <div className="field-label-row">
+                    <label htmlFor="ai-byok-base-url">BYOK Base URL（可选）</label>
+                    <InfoHint
+                      title="BYOK Base URL"
+                      entry={{
+                        summary:
+                          '自备 OpenAI 兼容接口的基础 URL（如 https://api.openai.com/v1），仅限公网地址，拦截内网/回环 IP。',
+                        reading:
+                          '留空提交可保留当前已加密地址；若需清除地址，请先关闭 BYOK 开关再勾选右侧「清空 Base URL」。',
+                      }}
+                    />
+                  </div>
                   <label className="checkbox-row" htmlFor="ai-clear-base-url">
                     <input
                       id="ai-clear-base-url"
@@ -333,7 +421,18 @@ export function AiPrefsPanel({ enabled }: { enabled: boolean }) {
               </div>
 
               <div className="field field-full">
-                <label htmlFor="ai-byok-api-key">BYOK API Key（可选）</label>
+                <div className="field-label-row">
+                  <label htmlFor="ai-byok-api-key">BYOK API Key（可选）</label>
+                  <InfoHint
+                    title="BYOK API Key"
+                    entry={{
+                      summary:
+                        '个人大模型服务 API 密钥（如 sk-...），传输后在服务端加密落盘并在页面脱敏显示。',
+                      reading:
+                        '留空保存将保留现有密钥；点击下方「清除已存 Key」可立即吊销并停用 BYOK。',
+                    }}
+                  />
+                </div>
                 <input
                   id="ai-byok-api-key"
                   className="input mono"

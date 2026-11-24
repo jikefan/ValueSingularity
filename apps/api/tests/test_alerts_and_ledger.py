@@ -21,7 +21,7 @@ from app.adapters.postgres.journal import PostgresJournalRepository
 from app.adapters.postgres.market import PostgresMarketRepository
 from app.adapters.postgres.snapshot import PostgresStockSnapshotRepository
 from app.adapters.postgres.watchlist import PostgresWatchlistRepository
-from app.api.deps import get_db, get_webhook_notifier
+from app.api.deps import get_db, get_watchlist_warmup, get_webhook_notifier
 from app.cli import scan_alerts, sync_stocks
 from app.db.base import Base
 from app.db.models import JournalEntry, StockMeta
@@ -455,7 +455,11 @@ async def test_alert_scan_idempotency_webhook_and_tenant_isolation(
             async with testing_session() as session:
                 yield session
 
+        async def _noop_warmup(_code: str) -> None:
+            return None
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_watchlist_warmup] = lambda: _noop_warmup
         app.dependency_overrides[get_webhook_notifier] = lambda: notifier
 
         snap_wl = _make_snapshot(
@@ -674,7 +678,11 @@ async def test_concurrent_alert_scans_claim_dedup_once(
             async with testing_session() as session:
                 yield session
 
+        async def _noop_warmup(_code: str) -> None:
+            return None
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_watchlist_warmup] = lambda: _noop_warmup
         app.dependency_overrides[get_webhook_notifier] = lambda: notifier
 
         snap = _make_snapshot(code="600519", close=1400.0, as_of=date(2026, 11, 20))
@@ -746,7 +754,11 @@ async def test_scan_alerts_cli_and_sync_stocks_flag(
             async with testing_session() as session:
                 yield session
 
+        async def _noop_warmup(_code: str) -> None:
+            return None
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_watchlist_warmup] = lambda: _noop_warmup
 
         snap = _make_snapshot(code="600519", close=1400.0, as_of=date(2026, 11, 20))
         await _seed_market_and_snapshots(
@@ -989,7 +1001,11 @@ async def test_alert_scan_service_gates_crash_recovery_over_200_holdings_and_ten
             async with testing_session() as session:
                 yield session
 
+        async def _noop_warmup(_code: str) -> None:
+            return None
+
         app.dependency_overrides[get_db] = override_get_db
+        app.dependency_overrides[get_watchlist_warmup] = lambda: _noop_warmup
 
         snap_600519 = _make_snapshot(
             code="600519",

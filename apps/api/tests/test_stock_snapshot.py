@@ -552,6 +552,11 @@ async def test_stock_sync_service_preserves_prior_snapshot_on_feed_failure(tmp_p
         async def list_active_codes(self, *, limit: int | None = None) -> list[str]:
             return [meta.code]
 
+        async def list_codes_missing_snapshot(
+            self, *, min_as_of: date | None = None, limit: int | None = None
+        ) -> list[str]:
+            return [meta.code]
+
     class _MemSnapshotRepo:
         def __init__(self) -> None:
             self.rows: dict[str, StockSnapshotPayload] = {}
@@ -787,6 +792,11 @@ async def test_snapshot_and_compare_return_503_when_db_unavailable() -> None:
             raise DatabaseUnavailableError("OperationalError")
 
         async def list_active_codes(self, *, limit: int | None = None) -> list[str]:
+            raise DatabaseUnavailableError("OperationalError")
+
+        async def list_codes_missing_snapshot(
+            self, *, min_as_of: date | None = None, limit: int | None = None
+        ) -> list[str]:
             raise DatabaseUnavailableError("OperationalError")
 
     class _BrokenSnapshotRepo:
@@ -1530,6 +1540,11 @@ async def test_stock_sync_service_enriches_meta_and_exempts_600036_bank_snapshot
             return []
 
         async def list_active_codes(self, *, limit: int | None = None) -> list[str]:
+            return [c for c, rec in sorted(self.items.items()) if rec.is_active]
+
+        async def list_codes_missing_snapshot(
+            self, *, min_as_of: date | None = None, limit: int | None = None
+        ) -> list[str]:
             return [c for c, rec in sorted(self.items.items()) if rec.is_active]
 
     class _MemSnapshotRepo:

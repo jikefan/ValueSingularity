@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Card } from '../../components/ui/Card'
+import { GlossaryLabel, InfoHint } from '../../components/ui/InfoHint'
 import { Metric } from '../../components/ui/Metric'
 import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
@@ -193,6 +194,7 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
     <div className="stack" style={{ gap: 16 }}>
       <Card
         title="估值坐标与历史分位"
+        hint="valuation_pct_10y"
         extra={
           valuation.latest_trade_date ? (
             <Tag color="gray">截至 {valuation.latest_trade_date}</Tag>
@@ -202,22 +204,40 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
         <div className="grid grid-4">
           <Metric
             label="PE (TTM)"
+            hint="pe_ttm"
             value={formatNum(valuation.pe_ttm, 2)}
             sub={`5Y 分位 ${formatPct(valuation.pe_percentile_5y, 1)} · 10Y 分位 ${formatPct(valuation.pe_percentile_10y, 1)}`}
           />
           <Metric
             label="PB"
+            hint="pb"
             value={formatNum(valuation.pb, 2)}
             sub={`10Y 分位 ${formatPct(valuation.pb_percentile_10y, 1)}`}
           />
           <Metric
             label="格雷厄姆数字"
+            hint="graham_number"
             value={formatNum(valuation.graham_number, 2)}
             sub={`安全边际 ${formatSignedPct(valuation.graham_margin_pct, 2)}`}
             tone={qualityTone(valuation.graham_margin_pct)}
           />
           <Metric
-            label="PEG & 股息率"
+            label={
+              <span className="label-with-hint">
+                <span>PEG &amp; 股息率</span>
+                <InfoHint
+                  title="PEG & 股息率"
+                  entry={{
+                    summary:
+                      '同时展示市盈率相对盈利增长比率（PEG）与最近年度现金分红对应总市值的静态股息率。',
+                    formula:
+                      'PEG = PE(TTM) ÷ 利润复合增速 (%)；股息率 = 年度现金分红 ÷ 当前总市值 × 100%。',
+                    reading:
+                      'PEG 接近或低于 1 常代表成长性对当前市盈率有支撑；稳定股息率则提供下方现金保护垫。',
+                  }}
+                />
+              </span>
+            }
             value={formatNum(valuation.peg, 2)}
             sub={`当前股息率 ${formatPct(valuation.dividend_yield_pct, 2)}`}
           />
@@ -229,7 +249,7 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
         </div>
       </Card>
 
-      <Card title="历史 PE(TTM) 与总市值走势">
+      <Card title="历史 PE(TTM) 与总市值走势" hint="hist_pe_mv">
         {historyPoints.length === 0 ? (
           <EmptyBlock title="暂无历史估值走势数据" />
         ) : (
@@ -239,6 +259,7 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
 
       <Card
         title={isFinancial ? '金融业替代估值与期望参考' : 'Reverse DCF 逆向估值反推器'}
+        hint={isFinancial ? 'pb_roe_implied' : 'reverse_dcf'}
         extra={
           <span className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
             {isFinancial ? (
@@ -259,7 +280,12 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
               aria-label="金融业替代估值：PB-ROE 隐含长期回报参考"
             >
               <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-                <strong>金融业替代估值：PB-ROE 隐含长期回报参考</strong>
+                <strong>
+                  <GlossaryLabel
+                    label="金融业替代估值：PB-ROE 隐含长期回报参考"
+                    term="pb_roe_implied"
+                  />
+                </strong>
                 <Tag color="green">不输出主观目标价</Tag>
               </div>
 
@@ -267,6 +293,7 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
                 <div className="well-cell">
                   <Metric
                     label="当前 PB"
+                    hint="pb"
                     value={formatNum(pbRoeMetrics.pb, 2)}
                     sub={`10Y PB 分位 ${formatPct(pbRoeMetrics.pbPercentile10y, 1)}`}
                   />
@@ -274,6 +301,7 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
                 <div className="well-cell">
                   <Metric
                     label="5年平均 ROE"
+                    hint="roe_5y_avg"
                     value={formatPct(pbRoeMetrics.roe5yAvgPct, 2)}
                     sub={`10Y 最低 ROE ${formatPct(pbRoeMetrics.roe10yMinPct, 2)}`}
                   />
@@ -281,6 +309,7 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
                 <div className="well-cell">
                   <Metric
                     label="隐含当期盈利收益率 (ROE / PB)"
+                    hint="pb_roe_implied"
                     value={formatPct(pbRoeMetrics.impliedEarningsYieldPct, 2)}
                     sub="稳态净资产收益率 ÷ 当前市净率"
                     tone={qualityTone(pbRoeMetrics.impliedEarningsYieldPct)}
@@ -289,6 +318,7 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
                 <div className="well-cell">
                   <Metric
                     label="当前股息率"
+                    hint="dividend_yield_current"
                     value={formatPct(pbRoeMetrics.dividendYieldPct, 2)}
                     sub="年度现金分红静态回报"
                   />
@@ -315,19 +345,26 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
         ) : (
           <div className="stack" style={{ gap: 16 }}>
             <div className="grid grid-4">
-              <Metric label="总市值" value={formatYi(reverseDcf.market_cap_yuan)} />
+              <Metric
+                label="总市值"
+                hint="market_cap"
+                value={formatYi(reverseDcf.market_cap_yuan)}
+              />
               <Metric
                 label="净现金"
+                hint="net_cash"
                 value={formatYi(reverseDcf.net_cash_yuan)}
                 sub="货币资金+交易金资产−有息负债"
               />
               <Metric
                 label="企业价值 EV"
+                hint="enterprise_value"
                 value={formatYi(reverseDcf.enterprise_value_yuan)}
                 sub="EV = 总市值 − 净现金"
               />
               <Metric
                 label={`基准 FCF（${reverseDcf.base_fcf_years} 年均值）`}
+                hint="base_fcf_3y"
                 value={formatYi(reverseDcf.base_fcf_yuan)}
               />
             </div>
@@ -336,7 +373,18 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
               <div className="dcf-slider-panel stack" style={{ gap: 12 }}>
                 <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
                   <div className="stack" style={{ gap: 2 }}>
-                    <strong className="small">交互式参数敏感性推演（本地实时二分求解）</strong>
+                    <span className="label-with-hint">
+                      <strong className="small">交互式参数敏感性推演（本地实时二分求解）</strong>
+                      <InfoHint
+                        title="交互式参数敏感性推演"
+                        entry={{
+                          summary:
+                            '在浏览器本地利用二分法实时反解 Reverse DCF 方程，即时反映不同折现率与终值倍数假设下的隐含 FCF 增速门槛。',
+                          reading:
+                            '尝试把 WACC 调高或终值倍数调低；若苛刻假设下隐含增速仍明显低于历史增速，安全边际更扎实。',
+                        }}
+                      />
+                    </span>
                     <span className="small muted">
                       调整折现率或第 10 年终值倍数，实时观测当前市值隐含的 FCF 增速门槛
                     </span>
@@ -357,9 +405,12 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
                 <div className="dcf-slider-grid">
                   <div className="dcf-slider-field">
                     <div className="row">
-                      <label htmlFor="dcf-wacc-slider" className="small soft">
-                        折现率 WACC (%)
-                      </label>
+                      <div className="field-label-row">
+                        <label htmlFor="dcf-wacc-slider" className="small soft">
+                          折现率 WACC (%)
+                        </label>
+                        <InfoHint term="wacc" />
+                      </div>
                       <span className="mono small">{fmtNum(discountRatePct, 1)}%</span>
                     </div>
                     <input
@@ -375,9 +426,12 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
 
                   <div className="dcf-slider-field">
                     <div className="row">
-                      <label htmlFor="dcf-multiple-slider" className="small soft">
-                        终值倍数 (x)
-                      </label>
+                      <div className="field-label-row">
+                        <label htmlFor="dcf-multiple-slider" className="small soft">
+                          终值倍数 (x)
+                        </label>
+                        <InfoHint term="terminal_multiple" />
+                      </div>
                       <span className="mono small">{fmtNum(terminalMultiple, 1)}x</span>
                     </div>
                     <input
@@ -395,18 +449,27 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
             ) : null}
 
             <div className="grid grid-3">
-              <Metric
-                label="市场隐含 10Y FCF CAGR"
-                value={isCurrentlySolvable ? formatSignedPct(activeImpliedCagr, 2) : '不可求解'}
-                sub={`折现率 ${fmtNum(discountRatePct, 1)}% · 终值 ${fmtNum(terminalMultiple, 1)}x`}
-              />
+              <div>
+                <span className="metric-label">市场隐含 10Y FCF CAGR</span>
+                <span style={{ marginLeft: 5, display: 'inline-flex', verticalAlign: 'middle' }}>
+                  <InfoHint term="implied_fcf_cagr" />
+                </span>
+                <div className="metric-value">
+                  {isCurrentlySolvable ? formatSignedPct(activeImpliedCagr, 2) : '不可求解'}
+                </div>
+                <div className="metric-sub">
+                  {`折现率 ${fmtNum(discountRatePct, 1)}% · 终值 ${fmtNum(terminalMultiple, 1)}x`}
+                </div>
+              </div>
               <Metric
                 label="历史营收 CAGR 参考"
+                hint="hist_rev_cagr"
                 value={formatSignedPct(reverseDcf.historical_revenue_cagr_pct, 2)}
                 sub="近 3–5 年实际营业收入复合增速"
               />
               <Metric
                 label="隐含增速 − 历史增速"
+                hint="implied_minus_hist"
                 value={formatSignedPct(activeSpreadPct, 2)}
                 sub="正值代表市场预期高于历史增速"
                 tone={qualityTone(activeSpreadPct, true)}
@@ -424,13 +487,29 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
             {matrix.discountRates.length > 0 && matrix.multiples.length > 0 ? (
               <div className="stack" style={{ gap: 8 }}>
                 <div className="small soft">
-                  WACC（折现率）× 终值倍数 3×3 敏感性矩阵（单元格为隐含 10Y FCF CAGR）
+                  <GlossaryLabel
+                    label="WACC（折现率）× 终值倍数 3×3 敏感性矩阵（单元格为隐含 10Y FCF CAGR）"
+                    term="sensitivity_matrix"
+                  />
                 </div>
                 <div className="table-wrap">
                   <table className="table sensitivity-table">
                     <thead>
                       <tr>
-                        <th>WACC \ 终值倍数</th>
+                        <th>
+                          <span className="label-with-hint">
+                            <span>WACC \ 终值倍数</span>
+                            <InfoHint
+                              title="WACC \ 终值倍数"
+                              entry={{
+                                summary:
+                                  '行维度为折现率（WACC）假设，列维度为第 10 年末退出终值倍数（EV / FCF₁₀）假设。',
+                                reading:
+                                  '交叉单元格数值展示该组参数对应的市场隐含未来 10 年 FCF 复合增速。',
+                              }}
+                            />
+                          </span>
+                        </th>
                         {matrix.multiples.map((multiple) => (
                           <th key={multiple} style={{ textAlign: 'right' }}>
                             {fmtNum(multiple, 1)}x

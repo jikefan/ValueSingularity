@@ -443,15 +443,18 @@ describe('api auth and single-flight refresh middleware', () => {
     }
   })
 
-  it('requests stock snapshot and compare endpoints with expected path and query params', async () => {
-    const requestedUrls: string[] = []
+  it('requests stock snapshot, sync, and compare endpoints with expected path, method, and query params', async () => {
+    const requests: Array<{ method: string; url: string }> = []
 
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
       const request = asRequest(input)
-      requestedUrls.push(request.url)
+      requests.push({ method: request.method, url: request.url })
       const pathname = new URL(request.url).pathname
 
       if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse({ code: '600519' }, 200))
+      }
+      if (pathname === '/api/stocks/600519/sync' && request.method === 'POST') {
         return Promise.resolve(jsonResponse({ code: '600519' }, 200))
       }
       if (pathname === '/api/stocks/compare') {
@@ -461,10 +464,18 @@ describe('api auth and single-flight refresh middleware', () => {
     })
 
     await api.getStockSnapshot('600519')
+    await api.syncStockSnapshot('600519')
+    await api.syncStockSnapshot('600519', undefined, { force: true })
     await api.compareStocks(['600519', '000858'])
 
-    expect(requestedUrls[0]).toContain('/api/stocks/600519/snapshot')
-    expect(requestedUrls[1]).toContain('/api/stocks/compare?codes=600519%2C000858')
+    expect(requests[0]?.method).toBe('GET')
+    expect(requests[0]?.url).toContain('/api/stocks/600519/snapshot')
+    expect(requests[1]?.method).toBe('POST')
+    expect(requests[1]?.url).toMatch(/\/api\/stocks\/600519\/sync$/)
+    expect(requests[2]?.method).toBe('POST')
+    expect(requests[2]?.url).toContain('/api/stocks/600519/sync?force=true')
+    expect(requests[3]?.method).toBe('GET')
+    expect(requests[3]?.url).toContain('/api/stocks/compare?codes=600519%2C000858')
   })
 
   it('calls journal ledger and sentinel alert endpoints with expected payloads and error propagation', async () => {

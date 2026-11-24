@@ -20,12 +20,14 @@ export const queryKeys = {
     search: (q: string) => ['stocks', 'search', q] as const,
     detail: (code: string) => ['stocks', 'detail', code] as const,
     snapshot: (code: string) => ['stocks', 'snapshot', code] as const,
+    comparePrefix: () => ['stocks', 'compare'] as const,
     compare: (codes: readonly string[]) =>
       [
         'stocks',
         'compare',
         Array.from(new Set(codes.map((code) => code.trim()).filter(Boolean))).join(','),
       ] as const,
+    screenerPrefix: () => ['stocks', 'screener'] as const,
     screener: (filters: StockScreenerFilters = {}) =>
       [
         'stocks',

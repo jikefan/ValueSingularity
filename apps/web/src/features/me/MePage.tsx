@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { GuestPreviewGrid, type GuestPreviewItem } from '../../components/ui/GuestPreviewGrid'
+import { GlossaryLabel, InfoHint } from '../../components/ui/InfoHint'
 import { JournalEntryCard } from '../../components/ui/JournalEntryCard'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
@@ -268,7 +269,20 @@ export function MePage() {
   return (
     <div className="container stack" style={{ gap: 16 }}>
       <Card
-        title="投资账户"
+        title={
+          <span className="label-with-hint">
+            <span>投资账户</span>
+            <InfoHint
+              title="投资账户与套餐额度"
+              entry={{
+                summary:
+                  '展示当前登录账户的邮箱验证状态、会员套餐等级（FREE / PRO / AI_PLUS）与独立租户空间。',
+                reading:
+                  '自选愿望单、击球区哨兵、Webhook 配置与决策日记按账户严格隔离；套餐等级决定平台托管 AI 的每日调用上限。',
+              }}
+            />
+          </span>
+        }
         extra={
           <div className="sentinel-list">
             <Tag color={user.email_verified ? 'green' : 'amber'}>
@@ -295,6 +309,7 @@ export function MePage() {
 
       <Card
         title={editingCode ? `编辑自选 · ${editingCode}` : '添加自选与击球区哨兵'}
+        hint="strike_zone_threshold"
         extra={<Tag color="blue">{editingCode ? '编辑模式' : '新增 / 覆盖'}</Tag>}
       >
         <form
@@ -307,7 +322,17 @@ export function MePage() {
         >
           <div className="form-grid">
             <div className="field">
-              <label htmlFor="wl-code">股票代码</label>
+              <div className="field-label-row">
+                <label htmlFor="wl-code">股票代码</label>
+                <InfoHint
+                  title="股票代码"
+                  entry={{
+                    summary:
+                      '沪深或北交所 6 位数字证券代码（如 600519、000858），用于唯一标识自选标的。',
+                    reading: '编辑已有自选时代码锁定只读；保存后点击自选列表代码可直达个股工作台。',
+                  }}
+                />
+              </div>
               <input
                 id="wl-code"
                 className="input mono"
@@ -334,7 +359,10 @@ export function MePage() {
             </div>
 
             <div className="field">
-              <label htmlFor="wl-industry">行业</label>
+              <div className="field-label-row">
+                <label htmlFor="wl-industry">行业</label>
+                <InfoHint term="industry_sw1" />
+              </div>
               <input
                 id="wl-industry"
                 className="input"
@@ -347,7 +375,19 @@ export function MePage() {
             </div>
 
             <div className="field">
-              <label htmlFor="wl-target-price">目标价（元）</label>
+              <div className="field-label-row">
+                <label htmlFor="wl-target-price">目标价（元）</label>
+                <InfoHint
+                  title="目标价"
+                  entry={{
+                    summary:
+                      '预设的理想买入最高价上限（元）；当标的最新收盘价跌至或低于该价格时即视为进入价格击球区。',
+                    formula: '触发条件：最新收盘价 ≤ 目标价（元）。',
+                    reading:
+                      '可参考格雷厄姆数字或安全边际估值推算理想出价；留空表示暂不设绝对价格阈值。',
+                  }}
+                />
+              </div>
               <input
                 id="wl-target-price"
                 className="input mono"
@@ -362,7 +402,19 @@ export function MePage() {
             </div>
 
             <div className="field">
-              <label htmlFor="wl-target-pe">目标 PE 分位（%）</label>
+              <div className="field-label-row">
+                <label htmlFor="wl-target-pe">目标 PE 分位（%）</label>
+                <InfoHint
+                  title="目标 PE 分位"
+                  entry={{
+                    summary:
+                      '预设的 10 年滚动市盈率（PE-TTM）历史分位上限阈值（0–100%）。当估值回落到历史低位分位内即触发哨兵命中。',
+                    formula: '触发条件：当前 10Y PE 分位 ≤ 目标 PE 分位（%）。',
+                    reading:
+                      '通常设为 20%–30% 以下；适合随着盈利增长自动跟踪相对估值位置，避免固定目标价滞后。',
+                  }}
+                />
+              </div>
               <input
                 id="wl-target-pe"
                 className="input mono"
@@ -377,7 +429,18 @@ export function MePage() {
             </div>
 
             <div className="field">
-              <label htmlFor="wl-target-dividend">目标股息率（%）</label>
+              <div className="field-label-row">
+                <label htmlFor="wl-target-dividend">目标股息率（%）</label>
+                <InfoHint
+                  title="目标股息率"
+                  entry={{
+                    summary:
+                      '预设的静态现金股息率下限阈值（0–100%）。当股价回调或分红提高使股息率达到或高于该值时触发提醒。',
+                    formula: '触发条件：当前股息率 ≥ 目标股息率（%）。',
+                    reading: '红利型龙头可锚定显著高于十年国债收益率（如 ≥ 4%）的现金回报垫。',
+                  }}
+                />
+              </div>
               <input
                 id="wl-target-dividend"
                 className="input mono"
@@ -405,15 +468,18 @@ export function MePage() {
           </div>
 
           <div className="row" style={{ flexWrap: 'wrap' }}>
-            <label className="checkbox-row" htmlFor="wl-alert">
-              <input
-                id="wl-alert"
-                type="checkbox"
-                checked={alertEnabled}
-                onChange={(event) => setAlertEnabled(event.target.checked)}
-              />
-              <span>开启击球区哨兵</span>
-            </label>
+            <div className="label-with-hint">
+              <label className="checkbox-row" htmlFor="wl-alert">
+                <input
+                  id="wl-alert"
+                  type="checkbox"
+                  checked={alertEnabled}
+                  onChange={(event) => setAlertEnabled(event.target.checked)}
+                />
+                <span>开启击球区哨兵</span>
+              </label>
+              <InfoHint term="strike_zone_sentinel" />
+            </div>
 
             <div className="form-actions">
               {editingCode !== null ? (
@@ -437,6 +503,7 @@ export function MePage() {
 
       <Card
         title="我的自选愿望单"
+        hint="strike_zone_threshold"
         extra={
           watchlistQuery.data ? (
             <span className="small muted mono">{watchlistQuery.data.length} 只标的</span>
@@ -472,8 +539,12 @@ export function MePage() {
               <thead>
                 <tr>
                   <th>代码</th>
-                  <th>名称 / 行业</th>
-                  <th>击球区阈值</th>
+                  <th>
+                    <GlossaryLabel label="名称 / 行业" term="industry_sw1" />
+                  </th>
+                  <th>
+                    <GlossaryLabel label="击球区阈值" term="strike_zone_threshold" />
+                  </th>
                   <th>备注</th>
                   <th style={{ textAlign: 'right' }}>操作</th>
                 </tr>
@@ -533,6 +604,7 @@ export function MePage() {
 
       <Card
         title="决策日记与 Pass 观察池"
+        hint="decision_journal"
         extra={
           journalQuery.data ? (
             <span className="small muted mono">
@@ -544,20 +616,31 @@ export function MePage() {
         }
       >
         <div className="stack" style={{ gap: 14 }}>
-          <div className="filter-bar" role="group" aria-label="日记筛选">
-            {JOURNAL_FILTERS.map((filterOption) => (
-              <button
-                key={filterOption.key}
-                type="button"
-                aria-pressed={journalFilter === filterOption.key}
-                className={
-                  journalFilter === filterOption.key ? 'filter-pill active' : 'filter-pill'
-                }
-                onClick={() => setJournalFilter(filterOption.key)}
-              >
-                {filterOption.label}
-              </button>
-            ))}
+          <div className="row" style={{ justifyContent: 'flex-start', flexWrap: 'wrap', gap: 10 }}>
+            <div className="filter-bar" role="group" aria-label="日记筛选">
+              {JOURNAL_FILTERS.map((filterOption) => (
+                <button
+                  key={filterOption.key}
+                  type="button"
+                  aria-pressed={journalFilter === filterOption.key}
+                  className={
+                    journalFilter === filterOption.key ? 'filter-pill active' : 'filter-pill'
+                  }
+                  onClick={() => setJournalFilter(filterOption.key)}
+                >
+                  {filterOption.label}
+                </button>
+              ))}
+            </div>
+            <InfoHint
+              title="动作筛选与 Pass 观察池"
+              entry={{
+                summary:
+                  '按买入/加仓、减仓/卖出或 Pass（主动放弃买入）过滤历史决策日记，并支持对比时间胶囊记录现场。',
+                reading:
+                  '定期回看 Pass 观察池，能验证“因估值偏高或排雷疑虑而放弃”的判断是否成功避开了后续下跌。',
+              }}
+            />
           </div>
 
           {removeJournalErrorMessage ? (

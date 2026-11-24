@@ -576,3 +576,49 @@ class AkshareMarketFeed:
             index_daily=index_daily,
             macro_rates=macro_rates,
         )
+
+
+def _extract_csindex_codes(df: pd.DataFrame) -> list[str]:
+    if df.empty:
+        return []
+    code_col: str | None = None
+    for candidate in ("成分券代码", "代码", "股票代码", "code"):
+        if candidate in df.columns:
+            code_col = candidate
+            break
+    if code_col is None:
+        return []
+    codes: list[str] = []
+    seen: set[str] = set()
+    for raw in df[code_col].tolist():
+        if _is_missing(raw):
+            continue
+        code = str(raw).strip().zfill(6)
+        if _STOCK_CODE_RE.fullmatch(code) and code not in seen:
+            seen.add(code)
+            codes.append(code)
+    return codes
+
+
+async def fetch_priority_index_codes(
+    *, timeout_seconds: float = 15.0
+) -> tuple[list[str], list[str]]:
+    """Fetch HS300 (000300) and CSI500 (000905) constituent codes, returning ([], []) on outage."""
+    effective_timeout = max(1.0, timeout_seconds)
+    ak.set_timeout((min(5.0, effective_timeout), effective_timeout))
+
+    async def _fetch_one(symbol: str) -> list[str]:
+        try:
+            df = await asyncio.wait_for(
+                asyncio.to_thread(ak.index_stock_cons_csindex, symbol),
+                timeout=effective_timeout,
+            )
+            return _extract_csindex_codes(df)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("获取指数成分股失败 (%s): %s", symbol, exc)
+            return []
+
+    hs300, csi500 = await asyncio.gather(_fetch_one("000300"), _fetch_one("000905"))
+    return hs300, csi500

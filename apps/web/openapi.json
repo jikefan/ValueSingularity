@@ -5973,6 +5973,59 @@
         ]
       }
     },
+    "/api/stocks/{code}/sync": {
+      "post": {
+        "operationId": "stocks_sync_stock_snapshot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "pattern": "^[0-9]{6}$",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "force",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Force",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockSnapshotPayload"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sync Stock Snapshot",
+        "tags": [
+          "stocks"
+        ]
+      }
+    },
     "/api/watchlist": {
       "get": {
         "operationId": "watchlist_list_watchlist",

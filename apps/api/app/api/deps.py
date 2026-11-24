@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+from collections.abc import Awaitable, Callable
 from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.adapters.akshare.stock_feed import AkshareStockFactFeed
+from app.adapters.duckdb.stock_store import DuckDBStockFactStore
 from app.adapters.email.smtp import SmtpEmailAdapter, UnconfiguredEmailSender
 from app.adapters.llm.openai_compatible import OpenAiCompatibleLlmAdapter
 from app.adapters.notifications.webhook import HttpxWebhookNotifier
@@ -26,10 +32,22 @@ from app.adapters.postgres.user import (
 from app.adapters.postgres.watchlist import PostgresWatchlistRepository
 from app.adapters.security.password import Argon2PasswordHasher
 from app.adapters.security.token import JwtTokenCodec
-from app.db.session import DatabaseUnavailableError, check_db_health, dispose_db, get_db
-from app.domain.errors import EmailNotConfiguredError
-from app.domain.models import AuthenticatedUser
-from app.domain.ports import EmailSenderPort, LlmCompanionPort, WebhookNotifierPort
+from app.db.session import (
+    AsyncSessionLocal,
+    DatabaseUnavailableError,
+    check_db_health,
+    dispose_db,
+    get_db,
+)
+from app.domain.errors import EmailNotConfiguredError, SnapshotNotReadyError, StockNotFoundError
+from app.domain.models import AuthenticatedUser, StockSnapshotPayload
+from app.domain.ports import (
+    EmailSenderPort,
+    LlmCompanionPort,
+    StockFactFeedPort,
+    StockFactStore,
+    WebhookNotifierPort,
+)
 from app.services.ai import AiPartnerService
 from app.services.alerts import AlertScanService
 from app.services.auth import AuthService, InactiveUserError, InvalidAccessTokenError
@@ -37,8 +55,12 @@ from app.services.event import EventService
 from app.services.journal import JournalService
 from app.services.market import MarketService
 from app.services.stock import StockService
+from app.services.stock_sync import StockSnapshotCoordinator, StockSyncService
 from app.services.watchlist import WatchlistService
 from app.settings import settings
+
+logger = logging.getLogger("vs.api.deps")
+_WARMUP_TASKS: set[asyncio.Task[None]] = set()
 
 bearer_scheme = HTTPBearer(auto_error=False)
 DbSessionDep = Annotated[AsyncSession, Depends(get_db)]
@@ -175,6 +197,105 @@ def get_ai_partner_service(
     )
 
 
+@lru_cache
+def get_stock_fact_feed() -> AkshareStockFactFeed:
+    return AkshareStockFactFeed(
+        timeout_seconds=settings.market_sync_timeout_seconds,
+        max_attempts=settings.market_sync_max_attempts,
+    )
+
+
+@lru_cache
+def get_stock_fact_store() -> DuckDBStockFactStore:
+    return DuckDBStockFactStore(settings.data_dir)
+
+
+class _DbStockSyncRunner:
+    def __init__(
+        self,
+        *,
+        feed: StockFactFeedPort | None = None,
+        fact_store: StockFactStore | None = None,
+    ) -> None:
+        self._feed = feed
+        self._fact_store = fact_store
+
+    async def load_or_sync_snapshot(
+        self, code: str, *, force: bool = False
+    ) -> StockSnapshotPayload:
+        feed = self._feed or get_stock_fact_feed()
+        fact_store = self._fact_store or get_stock_fact_store()
+        try:
+            async with AsyncSessionLocal() as session:
+                meta_repo = PostgresStockMetaRepository(session)
+                snapshot_repo = PostgresStockSnapshotRepository(session)
+                try:
+                    if not force:
+                        existing = await snapshot_repo.get_snapshot(code)
+                        if existing is not None:
+                            return existing
+
+                    metas = await meta_repo.list_by_codes([code])
+                    if not metas:
+                        raise StockNotFoundError(code)
+                    # Release read transaction before long-running external AkShare calls.
+                    await session.rollback()
+
+                    service = StockSyncService(
+                        feed=feed,
+                        fact_store=fact_store,
+                        stock_meta_repo=meta_repo,
+                        snapshot_repo=snapshot_repo,
+                    )
+                    await service.sync_stock(code)
+                    await session.commit()
+
+                    snapshot = await snapshot_repo.get_snapshot(code)
+                    if snapshot is None:
+                        raise SnapshotNotReadyError(code)
+                    return snapshot
+                except SQLAlchemyError as exc:
+                    await session.rollback()
+                    raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+        except SQLAlchemyError as exc:
+            raise DatabaseUnavailableError(exc.__class__.__name__) from exc
+
+
+@lru_cache
+def get_stock_snapshot_coordinator() -> StockSnapshotCoordinator:
+    return StockSnapshotCoordinator(_DbStockSyncRunner())
+
+
+StockSyncCoordinatorDep = Annotated[
+    StockSnapshotCoordinator, Depends(get_stock_snapshot_coordinator)
+]
+
+WatchlistWarmupFn = Callable[[str], Awaitable[None]]
+
+
+def get_watchlist_warmup(
+    coordinator: StockSyncCoordinatorDep,
+) -> WatchlistWarmupFn:
+    async def _trigger(code: str) -> None:
+        async def _warm() -> None:
+            try:
+                await coordinator.ensure_snapshot(code, force=False)
+            except Exception as exc:
+                logger.warning("自选股后台预热快照失败 (%s): %s", code, exc)
+
+        try:
+            task = asyncio.create_task(_warm(), name=f"warmup-stock-{code}")
+            _WARMUP_TASKS.add(task)
+            task.add_done_callback(_WARMUP_TASKS.discard)
+        except Exception as exc:
+            logger.warning("创建自选股预热任务失败 (%s): %s", code, exc)
+
+    return _trigger
+
+
+WatchlistWarmupDep = Annotated[WatchlistWarmupFn, Depends(get_watchlist_warmup)]
+
+
 AiPartnerServiceDep = Annotated[AiPartnerService, Depends(get_ai_partner_service)]
 AlertServiceDep = Annotated[AlertScanService, Depends(get_alert_service)]
 MarketServiceDep = Annotated[MarketService, Depends(get_market_service)]
@@ -234,7 +355,10 @@ __all__ = [
     "LlmCompanionDep",
     "MarketServiceDep",
     "StockServiceDep",
+    "StockSyncCoordinatorDep",
     "WatchlistServiceDep",
+    "WatchlistWarmupDep",
+    "WatchlistWarmupFn",
     "bearer_scheme",
     "close_db_pool",
     "get_ai_partner_service",
@@ -248,9 +372,13 @@ __all__ = [
     "get_llm_companion",
     "get_market_service",
     "get_password_hasher",
+    "get_stock_fact_feed",
+    "get_stock_fact_store",
     "get_stock_service",
+    "get_stock_snapshot_coordinator",
     "get_token_codec",
     "get_watchlist_service",
+    "get_watchlist_warmup",
     "get_webhook_notifier",
     "verify_db",
 ]

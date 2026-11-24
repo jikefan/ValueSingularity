@@ -13,7 +13,7 @@ import duckdb
 import pyarrow as pa
 
 from app.adapters.duckdb.parquet_io import (
-    _upsert_parquet,
+    _upsert_parquet_slice,
     coerce_date,
     coerce_optional_date,
     coerce_optional_float,
@@ -298,48 +298,67 @@ def _financing_to_row(item: StockEquityFinancingRecord) -> dict[str, Any]:
     }
 
 
-def _sync_write_stock_facts(data_dir: Path, bundle: StockFactBundle) -> None:
-    bars_by_year: dict[int, list[StockDailyBar]] = defaultdict(list)
-    for bar in bundle.daily_bars:
-        bars_by_year[bar.trade_date.year].append(bar)
+def _sync_write_stocks_facts_batch(data_dir: Path, bundles: Sequence[StockFactBundle]) -> None:
+    if not bundles:
+        return
 
-    for year, bars in bars_by_year.items():
+    bars_by_year: dict[int, list[StockDailyBar]] = defaultdict(list)
+    bar_codes_by_year: dict[int, set[str]] = defaultdict(set)
+    reports_by_year: dict[int, list[StockAnnualReport]] = defaultdict(list)
+    report_codes_by_year: dict[int, set[str]] = defaultdict(set)
+
+    for bundle in bundles:
+        for bar in bundle.daily_bars:
+            bars_by_year[bar.trade_date.year].append(bar)
+            bar_codes_by_year[bar.trade_date.year].add(bar.code)
+        for report in bundle.annual_reports:
+            reports_by_year[report.report_year].append(report)
+            report_codes_by_year[report.report_year].add(report.code)
+
+    for year in sorted(bars_by_year):
         path = data_dir / "bars" / "daily" / f"year={year}" / "data.parquet"
-        _upsert_parquet(
+        _upsert_parquet_slice(
             path,
             STOCK_DAILY_BAR_SCHEMA,
-            bars,
+            sorted(bar_codes_by_year[year]),
+            bars_by_year[year],
             normalize_existing=_normalize_bar_row,
             key_of=lambda r: (str(r["code"]), coerce_date(r["trade_date"])),
             sort_key=lambda pair: (pair[0], pair[1]),
+            sort_by=[("code", "ascending"), ("trade_date", "ascending")],
             lock_path=path.parent / f".{path.name}.lock",
         )
 
-    reports_by_year: dict[int, list[StockAnnualReport]] = defaultdict(list)
-    for report in bundle.annual_reports:
-        reports_by_year[report.report_year].append(report)
-
-    for year, reports in reports_by_year.items():
+    for year in sorted(reports_by_year):
         path = data_dir / "fundamentals" / "annual" / f"report_year={year}" / "data.parquet"
-        _upsert_parquet(
+        _upsert_parquet_slice(
             path,
             STOCK_ANNUAL_REPORT_SCHEMA,
-            reports,
+            sorted(report_codes_by_year[year]),
+            reports_by_year[year],
             normalize_existing=_normalize_annual_row,
             key_of=lambda r: (str(r["code"]), int(r["report_year"])),
             sort_key=lambda pair: (pair[0], pair[1]),
+            sort_by=[("code", "ascending"), ("report_year", "ascending")],
             lock_path=path.parent / f".{path.name}.lock",
         )
 
-    div_rep_rows = [
-        *(_dividend_to_row(item) for item in bundle.dividends),
-        *(_repurchase_to_row(item) for item in bundle.repurchases),
-    ]
+    # Last bundle per code owns full-replacement slices (dividends, repurchases, equity financings).
+    latest_by_code = {bundle.code: bundle for bundle in bundles}
+    target_codes = sorted(latest_by_code)
+    target_code_set = set(target_codes)
+
+    div_rep_rows: list[dict[str, Any]] = []
+    for bundle in latest_by_code.values():
+        div_rep_rows.extend(_dividend_to_row(item) for item in bundle.dividends)
+        div_rep_rows.extend(_repurchase_to_row(item) for item in bundle.repurchases)
+
     div_rep_path = data_dir / "fundamentals" / "dividends_repurchase" / "all.parquet"
     if div_rep_rows or div_rep_path.exists():
-        _upsert_parquet(
+        _upsert_parquet_slice(
             div_rep_path,
             DIVIDEND_REPURCHASE_SCHEMA,
+            target_codes,
             div_rep_rows,
             normalize_existing=_normalize_div_rep_row,
             key_of=lambda r: (
@@ -351,22 +370,32 @@ def _sync_write_stock_facts(data_dir: Path, bundle: StockFactBundle) -> None:
                 or coerce_date(r["primary_date"]),
             ),
             sort_key=lambda key: (key[0], key[1], key[2], key[3]),
+            sort_by=[
+                ("code", "ascending"),
+                ("record_type", "ascending"),
+                ("primary_date", "ascending"),
+                ("secondary_date", "ascending"),
+            ],
             prune_existing=lambda r: (
-                str(r["code"]) == bundle.code
+                str(r["code"]) in target_code_set
                 and str(r["record_type"]) in {"dividend", "repurchase"}
             ),
             lock_path=div_rep_path.parent / f".{div_rep_path.name}.lock",
         )
 
     pledge_fin_rows: list[dict[str, Any]] = []
-    if bundle.pledge is not None:
-        pledge_fin_rows.append(_pledge_to_row(bundle.pledge))
-    pledge_fin_rows.extend(_financing_to_row(item) for item in bundle.equity_financings)
+    for bundle in bundles:
+        if bundle.pledge is not None:
+            pledge_fin_rows.append(_pledge_to_row(bundle.pledge))
+    for bundle in latest_by_code.values():
+        pledge_fin_rows.extend(_financing_to_row(item) for item in bundle.equity_financings)
+
     pledge_fin_path = data_dir / "fundamentals" / "pledge_financing" / "all.parquet"
     if pledge_fin_rows or pledge_fin_path.exists():
-        _upsert_parquet(
+        _upsert_parquet_slice(
             pledge_fin_path,
             PLEDGE_FINANCING_SCHEMA,
+            target_codes,
             pledge_fin_rows,
             normalize_existing=_normalize_pledge_fin_row,
             key_of=lambda r: (
@@ -377,11 +406,22 @@ def _sync_write_stock_facts(data_dir: Path, bundle: StockFactBundle) -> None:
                 str(r.get("financing_type") or ""),
             ),
             sort_key=lambda key: (key[0], key[1], key[2], key[3], key[4]),
+            sort_by=[
+                ("code", "ascending"),
+                ("record_type", "ascending"),
+                ("event_date", "ascending"),
+                ("source", "ascending"),
+                ("financing_type", "ascending"),
+            ],
             prune_existing=lambda r: (
-                str(r["code"]) == bundle.code and str(r["record_type"]) == "equity_financing"
+                str(r["code"]) in target_code_set and str(r["record_type"]) == "equity_financing"
             ),
             lock_path=pledge_fin_path.parent / f".{pledge_fin_path.name}.lock",
         )
+
+
+def _sync_write_stock_facts(data_dir: Path, bundle: StockFactBundle) -> None:
+    _sync_write_stocks_facts_batch(data_dir, [bundle])
 
 
 def _fetch_dicts(
@@ -605,7 +645,10 @@ class DuckDBStockFactStore:
         self._data_dir = data_dir
 
     async def write_stock_facts(self, bundle: StockFactBundle) -> None:
-        await asyncio.to_thread(_sync_write_stock_facts, self._data_dir, bundle)
+        await asyncio.to_thread(_sync_write_stocks_facts_batch, self._data_dir, [bundle])
+
+    async def write_stocks_facts_batch(self, bundles: Sequence[StockFactBundle]) -> None:
+        await asyncio.to_thread(_sync_write_stocks_facts_batch, self._data_dir, list(bundles))
 
     async def load_stock_facts(
         self, code: str, *, as_of: date | None = None

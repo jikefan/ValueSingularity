@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 import { AiCompanionControls } from '../../components/ui/AiCompanionControls'
 import { Card } from '../../components/ui/Card'
 import { GuestPreviewGrid, type GuestPreviewItem } from '../../components/ui/GuestPreviewGrid'
+import { InfoHint } from '../../components/ui/InfoHint'
 import { JournalEntryCard } from '../../components/ui/JournalEntryCard'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
@@ -103,7 +104,17 @@ function buildValuationAnchorStrip(snapshot: StockSnapshotPayload | null) {
   }
   return (
     <div className="decision-anchor-bar">
-      <span className="small muted">实时估值参考锚点：</span>
+      <span className="label-with-hint">
+        <span className="small muted">实时估值参考锚点：</span>
+        <InfoHint
+          title="实时估值参考锚点"
+          entry={{
+            summary:
+              '集中呈现当前最新股价、PE(TTM) 与 10 年历史分位、逆向 DCF 隐含 FCF 增速及五维雷达总分，帮助下单或写日记前先对齐客观赔率坐标。',
+            reading: '尽量在低估值分位与安全边际充足时出手，避免凭短期涨跌情绪追高。',
+          }}
+        />
+      </span>
       <Tag color="blue">{`最新价 ${formatNum(snapshot.valuation.close, 2)}`}</Tag>
       <Tag color="gray">{`PE(TTM) ${formatNum(snapshot.valuation.pe_ttm, 2)} · 10Y 分位 ${formatPct(snapshot.valuation.pe_percentile_10y, 1)}`}</Tag>
       <Tag color="green">
@@ -479,7 +490,16 @@ function StockDecisionTabContent({
     <div className="stack" style={{ gap: 16 }}>
       {valuationAnchorStrip}
 
-      <Card title={`新建决策记录 · ${stock.name}`} extra={<Tag color="green">强制写否证红线</Tag>}>
+      <Card
+        title={`新建决策记录 · ${stock.name}`}
+        hint="decision_journal"
+        extra={
+          <span className="label-with-hint">
+            <Tag color="green">强制写否证红线</Tag>
+            <InfoHint term="falsify_rule" />
+          </span>
+        }
+      >
         <form
           className="stack"
           noValidate
@@ -490,7 +510,10 @@ function StockDecisionTabContent({
         >
           {snapshot ? (
             <div className="notice-box decision-capsule-hint">
-              <strong>时间胶囊将自动留存：</strong>
+              <span className="label-with-hint">
+                <strong>时间胶囊将自动留存：</strong>
+                <InfoHint term="time_capsule" />
+              </span>
               <span>
                 {`股价 ${formatNum(snapshot.valuation.close, 2)} · PE(TTM) ${formatNum(snapshot.valuation.pe_ttm, 2)} · 股息率 ${formatPct(dividendYieldPct, 2)} · 雷达评分 ${snapshot.radar.total_score}/100（及沪深 300 基准点位）`}
               </span>
@@ -499,7 +522,10 @@ function StockDecisionTabContent({
 
           <div className="form-grid">
             <div className="field">
-              <label htmlFor="journal-action">决策动作</label>
+              <div className="field-label-row">
+                <label htmlFor="journal-action">决策动作</label>
+                <InfoHint term="decision_journal" title="决策动作" />
+              </div>
               <select
                 id="journal-action"
                 className="input"
@@ -523,7 +549,10 @@ function StockDecisionTabContent({
             </div>
 
             <div className="field">
-              <label htmlFor="journal-emotion">当前情绪</label>
+              <div className="field-label-row">
+                <label htmlFor="journal-emotion">当前情绪</label>
+                <InfoHint term="decision_emotion" />
+              </div>
               <input
                 id="journal-emotion"
                 className="input"
@@ -559,7 +588,18 @@ function StockDecisionTabContent({
 
             <div className="field">
               <div className="row">
-                <label htmlFor="journal-price">参考价格（元）</label>
+                <div className="field-label-row">
+                  <label htmlFor="journal-price">参考价格（元）</label>
+                  <InfoHint
+                    title="参考价格（元）"
+                    entry={{
+                      summary:
+                        '记录本次买入、卖出或 Pass 观察决策对应的入场或观望参考价（元），作为后续复盘收益率计算基准。',
+                      reading:
+                        '留空时系统仍会在时间胶囊中自动记录当日最新收盘价；可点击右侧按钮一键填入最新收盘价。',
+                    }}
+                  />
+                </div>
                 {snapshot?.valuation.close !== null && snapshot?.valuation.close !== undefined ? (
                   <button
                     type="button"
@@ -594,7 +634,17 @@ function StockDecisionTabContent({
             </div>
 
             <div className="field">
-              <label htmlFor="journal-drawdown">最大可承受回撤（%）</label>
+              <div className="field-label-row">
+                <label htmlFor="journal-drawdown">最大可承受回撤（%）</label>
+                <InfoHint
+                  title="最大可承受回撤（%）"
+                  entry={{
+                    summary: '预先明确本次交易或持仓周期内可承受的最大账面跌幅上限（0–100%）。',
+                    reading:
+                      '事先量化心理底线有助避免盘中恐慌割肉或无底线死扛，并与否证条件形成双重纪律护栏。',
+                  }}
+                />
+              </div>
               <input
                 id="journal-drawdown"
                 className="input mono"
@@ -612,7 +662,18 @@ function StockDecisionTabContent({
             </div>
 
             <div className="field field-full">
-              <label htmlFor="journal-reason">投资理由</label>
+              <div className="field-label-row">
+                <label htmlFor="journal-reason">投资理由</label>
+                <InfoHint
+                  title="投资理由"
+                  entry={{
+                    summary:
+                      '书面阐明支撑本次买入、调整仓位或 Pass 放弃的核心基本面论据、估值安全边际锚点与关键假设（必填）。',
+                    reading:
+                      '选择买入或加仓时，反方质询引擎会针对这段理由结合财务快照发起三项反面挑刺。',
+                  }}
+                />
+              </div>
               <textarea
                 id="journal-reason"
                 className="input textarea"
@@ -629,7 +690,10 @@ function StockDecisionTabContent({
             </div>
 
             <div className="field field-full">
-              <label htmlFor="journal-falsify">否证条件</label>
+              <div className="field-label-row">
+                <label htmlFor="journal-falsify">否证条件</label>
+                <InfoHint term="falsify_rule" title="书面否证条件" />
+              </div>
               <textarea
                 id="journal-falsify"
                 className="input textarea"
@@ -647,8 +711,11 @@ function StockDecisionTabContent({
             <div className="field field-full">
               <div className="falsify-builder">
                 <div className="falsify-builder-head">
-                  <span className="small soft">
-                    量化否证红线构建器（可选 · {ruleDrafts.length}/{MAX_FALSIFY_RULES}）
+                  <span className="label-with-hint">
+                    <span className="small soft">
+                      量化否证红线构建器（可选 · {ruleDrafts.length}/{MAX_FALSIFY_RULES}）
+                    </span>
+                    <InfoHint term="falsify_rule" />
                   </span>
                   <div className="falsify-preset-row">
                     {FALSIFY_RULE_PRESETS.map((preset) => (
@@ -793,7 +860,10 @@ function StockDecisionTabContent({
             >
               <div className="da-header">
                 <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-                  <strong className="small">买入前反方质询 · 理性安检门</strong>
+                  <span className="label-with-hint">
+                    <strong className="small">买入前反方质询 · 理性安检门</strong>
+                    <InfoHint term="devils_advocate" />
+                  </span>
                   {daModeMeta ? <Tag color={daModeMeta.color}>{daModeMeta.label}</Tag> : null}
                   {daResult?.as_of ? (
                     <span className="small muted mono">{`快照基准 ${daResult.as_of}`}</span>
@@ -1012,6 +1082,7 @@ function StockDecisionTabContent({
 
       <Card
         title={`${stock.code} 历史决策日记`}
+        hint="decision_journal"
         extra={
           journalQuery.data ? (
             <span className="small muted mono">{journalQuery.data.length} 条记录</span>
@@ -1096,7 +1167,7 @@ export function StockDecisionTab({
 
   if (isAuthLoading) {
     return (
-      <Card title="投资决策日记">
+      <Card title="投资决策日记" hint="decision_journal">
         {valuationAnchorStrip}
         <LoadingBlock lines={3} />
       </Card>
@@ -1105,7 +1176,7 @@ export function StockDecisionTab({
 
   if (!user) {
     return (
-      <Card title="投资决策日记" extra={<Tag color="gray">未登录</Tag>}>
+      <Card title="投资决策日记" hint="decision_journal" extra={<Tag color="gray">未登录</Tag>}>
         <div className="stack" style={{ gap: 16 }}>
           {valuationAnchorStrip}
           <EmptyBlock

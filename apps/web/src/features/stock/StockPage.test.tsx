@@ -692,7 +692,7 @@ describe('StockPage', () => {
     expect(screen.getByText('近 3 年平均自由现金流为负，无法反推隐含增速。')).toBeInTheDocument()
   })
 
-  it('falls back cleanly on snapshot_available=false and 404 snapshot with curated discovery links and no CLI leaks', async () => {
+  it('auto-syncs snapshot_available=false without 404 roundtrip, recovers 404 snapshot transparently, and falls back cleanly on 503 with retry and curated links', async () => {
     const unsyncedDetail: StockDetail = {
       ...SAMPLE_STOCK,
       code: '000999',
@@ -701,6 +701,16 @@ describe('StockPage', () => {
       is_st: true,
       is_active: false,
       snapshot_available: false,
+    }
+    const syncedDetail: StockDetail = {
+      ...unsyncedDetail,
+      snapshot_available: true,
+    }
+    const syncedUnsyncedSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      code: '000999',
+      name: '*ST样本',
+      exchange: 'SZ',
     }
     const screenerSample: StockScreenerResponse = {
       total_synced: 2,
@@ -747,22 +757,56 @@ describe('StockPage', () => {
         },
       ],
     }
-    let snapshot404Count = 0
+
+    let resolveAutoSync: ((response: Response) => void) | undefined
+    const deferredAutoSync = new Promise<Response>((resolve) => {
+      resolveAutoSync = resolve
+    })
+    let hasSynced000999 = false
+    let getSnapshot000999Count = 0
+    let sync000999Count = 0
+
+    let snapshot600519GetCount = 0
+    let sync600519Count = 0
+
+    let failSyncMode = false
+    let sync000999FailureAttempts = 0
 
     vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
-      const pathname = new URL(asRequest(input).url).pathname
+      const request = asRequest(input)
+      const pathname = new URL(request.url).pathname
       if (pathname === '/api/auth/refresh') {
         return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
       }
       if (pathname === '/api/stocks/000999') {
-        return Promise.resolve(jsonResponse(unsyncedDetail, 200))
+        return Promise.resolve(jsonResponse(hasSynced000999 ? syncedDetail : unsyncedDetail, 200))
+      }
+      if (pathname === '/api/stocks/000999/snapshot') {
+        getSnapshot000999Count += 1
+        return Promise.resolve(jsonResponse({ detail: 'unexpected' }, 500))
+      }
+      if (pathname === '/api/stocks/000999/sync' && request.method === 'POST') {
+        if (failSyncMode) {
+          sync000999FailureAttempts += 1
+          if (sync000999FailureAttempts === 1) {
+            return Promise.resolve(jsonResponse({ detail: '上游财报源暂不可用' }, 503))
+          }
+          hasSynced000999 = true
+          return Promise.resolve(jsonResponse(syncedUnsyncedSnapshot, 200))
+        }
+        sync000999Count += 1
+        return deferredAutoSync
       }
       if (pathname === '/api/stocks/600519') {
         return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
       }
       if (pathname === '/api/stocks/600519/snapshot') {
-        snapshot404Count += 1
+        snapshot600519GetCount += 1
         return Promise.resolve(jsonResponse({ detail: '尚未生成快照' }, 404))
+      }
+      if (pathname === '/api/stocks/600519/sync' && request.method === 'POST') {
+        sync600519Count += 1
+        return Promise.resolve(jsonResponse(SAMPLE_SNAPSHOT, 200))
       }
       if (pathname === '/api/stocks/screener') {
         return Promise.resolve(jsonResponse(screenerSample, 200))
@@ -770,14 +814,46 @@ describe('StockPage', () => {
       return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
     })
 
-    const unsyncedView = renderStockPage('/stock/000999')
+    // 1. Happy path: snapshot_available=false skips GET /snapshot and auto-syncs seamlessly into all 9 tabs.
+    const autoSyncView = renderStockPage('/stock/000999')
     expect(await screen.findByRole('heading', { name: '*ST样本' })).toBeInTheDocument()
-    expect(screen.getByText('基础元数据')).toBeInTheDocument()
-    expect(screen.getByText('公司画像尚无深度分析快照')).toBeInTheDocument()
+    expect(screen.getByText('自动同步中')).toBeInTheDocument()
     expect(
-      screen.getByText(/该标的暂未生成深度财报与历史估值快照，暂不展示图表与排雷数据/),
+      screen.getByText('正在同步并计算 000999 *ST样本 深度财报与估值快照（首次约需 5–8 秒）...'),
     ).toBeInTheDocument()
-    expect(screen.queryByText('管理员离线同步命令')).not.toBeInTheDocument()
+    expect(getSnapshot000999Count).toBe(0)
+    expect(sync000999Count).toBe(1)
+
+    hasSynced000999 = true
+    if (!resolveAutoSync) {
+      throw new Error('Expected auto-sync resolver')
+    }
+    resolveAutoSync(jsonResponse(syncedUnsyncedSnapshot, 200))
+
+    expect(await screen.findByRole('img', { name: '五维评分雷达图' })).toBeInTheDocument()
+    expect(screen.getByText('已预计算快照')).toBeInTheDocument()
+    expect(sync000999Count).toBe(1)
+
+    // Glossary ? buttons in StockPage KPI header & meta strip open portal tooltip.
+    fireEvent.click(screen.getByRole('button', { name: '解释：综合雷达评分' }))
+    expect(screen.getByRole('tooltip')).toHaveTextContent('0–100')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+    autoSyncView.unmount()
+
+    // 2. Stale hint (snapshot_available=true, GET /snapshot returns 404) transparently recovers via POST /sync.
+    const staleHintView = renderStockPage('/stock/600519')
+    expect(await screen.findByRole('img', { name: '五维评分雷达图' })).toBeInTheDocument()
+    expect(snapshot600519GetCount).toBe(1)
+    expect(sync600519Count).toBe(1)
+    staleHintView.unmount()
+
+    // 3. 503 failure fallback renders ErrorBlock + retry + Decision/Compare/curated links and recovers on retry.
+    failSyncMode = true
+    hasSynced000999 = false
+    renderStockPage('/stock/000999')
+    expect(await screen.findByText('深度分析快照加载失败')).toBeInTheDocument()
+    expect(screen.getByText('上游财报源暂不可用')).toBeInTheDocument()
     expect(screen.queryByText(/python -m app\.cli\.sync/)).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: '返回价值击球区' })).toHaveAttribute('href', '/')
     expect(await screen.findByRole('link', { name: /招商银行/ })).toHaveAttribute(
@@ -785,19 +861,9 @@ describe('StockPage', () => {
       '/stock/600036',
     )
 
-    fireEvent.click(screen.getByRole('button', { name: '前往投资决策' }))
-    expect(await screen.findByText('登录后记录你的投资决策与否证红线')).toBeInTheDocument()
-    expect(screen.getByText('能力示例预览 · 登录后使用实时个人数据')).toBeInTheDocument()
-    unsyncedView.unmount()
-
-    renderStockPage('/stock/600519')
-    expect(await screen.findByText('公司画像尚无深度分析快照')).toBeInTheDocument()
-    expect(screen.queryByText(/python -m app\.cli\.sync/)).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '返回价值击球区' })).toHaveAttribute('href', '/')
-    expect(snapshot404Count).toBe(1)
-
-    fireEvent.click(screen.getByRole('tab', { name: '投资决策' }))
-    expect(await screen.findByText('登录后记录你的投资决策与否证红线')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByRole('img', { name: '五维评分雷达图' })).toBeInTheDocument()
+    expect(sync000999FailureAttempts).toBe(2)
   })
 
   it('shows invalid code state and 404 coverage guidance plus 503 retry recovery without CLI leaks', async () => {
@@ -1807,6 +1873,12 @@ describe('StockPage', () => {
       if (url.pathname === '/api/stocks/000999') {
         return jsonResponse(unsyncedDetail, 200)
       }
+      if (url.pathname === '/api/stocks/000999/sync') {
+        return jsonResponse({ detail: '该标的缺少连续年报数据' }, 503)
+      }
+      if (url.pathname === '/api/stocks/screener') {
+        return jsonResponse({ total_synced: 0, filtered_count: 0, industries: [], items: [] }, 200)
+      }
       if (url.pathname === '/api/watchlist') {
         return jsonResponse([], 200)
       }
@@ -1823,7 +1895,8 @@ describe('StockPage', () => {
     renderStockPage('/stock/000999')
     fireEvent.click(await screen.findByRole('tab', { name: '风险排雷' }))
 
-    expect(await screen.findByText('风险排雷尚无深度分析快照')).toBeInTheDocument()
+    expect(await screen.findByText('深度分析快照加载失败')).toBeInTheDocument()
+    expect(screen.getByText('该标的缺少连续年报数据')).toBeInTheDocument()
     expect(screen.getByText('年报 MD&A 口径变化对比器 · *ST样本')).toBeInTheDocument()
     expect(
       screen.getByText(/尚未同步结构化财报快照，请粘贴两期年报原文进行对比/),

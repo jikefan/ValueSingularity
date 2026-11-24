@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
+import { GlossaryLabel, InfoHint, type CustomGlossaryEntry } from '../../components/ui/InfoHint'
 import { Metric } from '../../components/ui/Metric'
 import { ScoreRing } from '../../components/ui/ScoreRing'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
@@ -110,6 +111,33 @@ function ctTagColor(item: StockScreenerItem): 'green' | 'amber' | 'rose' {
   if (item.ct_red_count > 0) return 'rose'
   if (item.ct_yellow_count > 0) return 'amber'
   return 'green'
+}
+
+const INDEX_HINT_BY_CODE: Record<string, CustomGlossaryEntry> = {
+  '000001': {
+    summary: '上海证券交易所综合指数，覆盖上交所全部上市股票，按总市值加权反映沪市大盘整体表现。',
+    reading: '受银行、能源、央企权重股影响较大；用于对照全市场大盘温度与权重走势。',
+  },
+  '399001': {
+    summary: '深圳证券交易所成份指数，选取深市最具代表性的 500 家上市公司按自由流通市值加权编制。',
+    reading: '先进制造、消费电子与成长蓝筹占比较高，常与上证指数交叉观察市场风格分化。',
+  },
+  '399006': {
+    summary: '创业板核心宽基指数，聚焦深市创业板高成长创新与科技医药类头部企业。',
+    reading: '弹性与波动率通常高于主板指数，可侧面反映市场风险偏好与成长赛道情绪。',
+  },
+  '000300': {
+    summary:
+      '沪深 300 指数，汇集沪深两市市值大、流动性好的 300 只核心蓝筹龙头，是机构与本系统决策账本的默认基准。',
+    reading: '代表 A 股核心资产 Beta 基准，个股决策日记超额 Alpha 均以此指数同期涨跌作对照。',
+  },
+}
+
+function getIndexHintEntry(name: string): CustomGlossaryEntry {
+  return {
+    summary: `${name}的实时点位与当日涨跌幅快照，用于观察 A 股核心宽基市场的整体方向与 Beta 风险偏好。`,
+    reading: '红色上涨、绿色下跌（符合 A 股红涨绿跌习惯）；指数短期涨跌不改变个股安全边际锚点。',
+  }
 }
 
 export function MarketPage() {
@@ -273,7 +301,7 @@ export function MarketPage() {
   if (isPending || (!data && isFetching)) {
     return (
       <div className="container">
-        <Card title="市场温度">
+        <Card title="市场温度" hint="market_temperature">
           <LoadingBlock lines={5} />
         </Card>
       </div>
@@ -283,7 +311,7 @@ export function MarketPage() {
   if (isError) {
     return (
       <div className="container">
-        <Card title="市场温度">
+        <Card title="市场温度" hint="market_temperature">
           <ErrorBlock
             title="行情加载失败"
             message={error instanceof Error ? error.message : '未知错误'}
@@ -299,7 +327,7 @@ export function MarketPage() {
   if (!data) {
     return (
       <div className="container">
-        <Card title="市场温度">
+        <Card title="市场温度" hint="market_temperature">
           <EmptyBlock title="暂无市场概览数据" hint="请稍后刷新重试。" />
         </Card>
       </div>
@@ -322,7 +350,11 @@ export function MarketPage() {
 
   return (
     <div className="container stack" style={{ gap: 16 }}>
-      <Card title="三步价值投资工作流" extra={<Tag color="blue">新手快速上手</Tag>}>
+      <Card
+        title="三步价值投资工作流"
+        hint="workflow_guide"
+        extra={<Tag color="blue">新手快速上手</Tag>}
+      >
         <div className="stack" style={{ gap: 12 }}>
           <p className="workflow-steps">
             ① 搜公司查排雷与估值水位 → ② 加入自选设好价格击球区 → ③
@@ -353,6 +385,7 @@ export function MarketPage() {
 
       <Card
         title="市场温度"
+        hint="market_temperature"
         extra={
           <span className="row" style={{ gap: 8 }}>
             <Tag color={meta.color}>{meta.label}</Tag>
@@ -365,19 +398,26 @@ export function MarketPage() {
           <ScoreRing score={data.temperature.score} label="TEMP" />
           <div className="stack">
             <div className="grid grid-4">
-              <Metric label="全市场 PE 中位数" value={fmtNum(data.temperature.pe_median, 1)} />
+              <Metric
+                label="全市场 PE 中位数"
+                hint="pe_median"
+                value={fmtNum(data.temperature.pe_median, 1)}
+              />
               <Metric
                 label="历史分位"
+                hint="market_pe_percentile"
                 value={`${fmtNum(data.temperature.pe_percentile, 0)}%`}
                 sub="越低越便宜"
               />
               <Metric
                 label="十年国债"
+                hint="bond_yield_10y"
                 value={`${fmtNum(data.temperature.bond_yield, 2)}%`}
                 sub="无风险收益锚"
               />
               <Metric
                 label="股债性价比"
+                hint="equity_bond_spread"
                 value={`${fmtNum(data.temperature.equity_bond_spread, 2)}%`}
                 sub="EP − 国债（越高股票越占优）"
                 tone={data.temperature.equity_bond_spread > 0 ? 'up' : 'down'}
@@ -396,7 +436,13 @@ export function MarketPage() {
         {data.indices.map((index) => (
           <Card key={index.code}>
             <div className="row">
-              <span className="soft">{index.name}</span>
+              <span className="label-with-hint">
+                <span className="soft">{index.name}</span>
+                <InfoHint
+                  title={index.name}
+                  entry={INDEX_HINT_BY_CODE[index.code] ?? getIndexHintEntry(index.name)}
+                />
+              </span>
               <Tag color={index.change_pct > 0 ? 'rose' : index.change_pct < 0 ? 'green' : 'gray'}>
                 {fmtPct(index.change_pct)}
               </Tag>
@@ -413,6 +459,7 @@ export function MarketPage() {
         <Card
           className="flow-card"
           title="行业资金流（亿元）"
+          hint="industry_money_flow"
           extra={<span className="small muted">红流入 / 绿流出 · 点击行业联动筛选</span>}
         >
           <Chart
@@ -424,7 +471,19 @@ export function MarketPage() {
         </Card>
 
         <Card
-          title="净流入排行"
+          title={
+            <span className="label-with-hint">
+              <span>净流入排行</span>
+              <InfoHint
+                title="净流入排行"
+                entry={{
+                  summary:
+                    '按统计周期内申万行业主力资金净流入金额排序的明细榜，直观对比板块涨跌幅、资金净差额与成份股数。',
+                  reading: '点击任意行业行或左侧柱状图可联动筛选下方价值精选雷达中的同行业标的。',
+                }}
+              />
+            </span>
+          }
           extra={
             industry ? (
               <button type="button" className="filter-pill active" onClick={() => setIndustry('')}>
@@ -439,10 +498,18 @@ export function MarketPage() {
             <table className="table" aria-label="行业净流入排行表">
               <thead>
                 <tr>
-                  <th>行业</th>
-                  <th style={{ textAlign: 'right' }}>涨跌幅</th>
-                  <th style={{ textAlign: 'right' }}>净流入</th>
-                  <th style={{ textAlign: 'right' }}>公司数</th>
+                  <th>
+                    <GlossaryLabel label="行业" term="industry_sw1" />
+                  </th>
+                  <th style={{ textAlign: 'right' }}>
+                    <GlossaryLabel label="涨跌幅" term="industry_change_pct" />
+                  </th>
+                  <th style={{ textAlign: 'right' }}>
+                    <GlossaryLabel label="净流入" term="industry_net_inflow" />
+                  </th>
+                  <th style={{ textAlign: 'right' }}>
+                    <GlossaryLabel label="公司数" term="industry_company_count" />
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -505,7 +572,9 @@ export function MarketPage() {
                 <span className="live-beacon" />
                 VALUE SCREENER
               </span>
-              <h2 className="sec-title">价值击球区精选雷达</h2>
+              <h2 className="sec-title">
+                <GlossaryLabel label="价值击球区精选雷达" term="screener_radar" size="md" />
+              </h2>
               {screenerQuery.isFetching && screenerData ? (
                 <Tag color="blue">筛选更新中...</Tag>
               ) : null}
@@ -546,7 +615,9 @@ export function MarketPage() {
         <div className="screener-filters">
           <div className="screener-filter-row">
             <div className="screener-filter-group">
-              <span className="screener-filter-label">排雷过滤</span>
+              <span className="screener-filter-label">
+                <GlossaryLabel label="排雷过滤" term="filter_zero_red" />
+              </span>
               <div className="seg-well" role="group" aria-label="排雷过滤">
                 <button
                   type="button"
@@ -560,7 +631,9 @@ export function MarketPage() {
             </div>
 
             <div className="screener-filter-group">
-              <span className="screener-filter-label">PE 10Y 分位</span>
+              <span className="screener-filter-label">
+                <GlossaryLabel label="PE 10Y 分位" term="filter_pe_percentile_max" />
+              </span>
               <div className="seg-well" role="group" aria-label="PE 10Y 分位">
                 {PE_PERCENTILE_OPTIONS.map((opt) => {
                   const active = maxPePercentile === opt.value
@@ -580,7 +653,9 @@ export function MarketPage() {
             </div>
 
             <div className="screener-filter-group">
-              <span className="screener-filter-label">5Y ROE</span>
+              <span className="screener-filter-label">
+                <GlossaryLabel label="5Y ROE" term="filter_roe_min" />
+              </span>
               <div className="seg-well" role="group" aria-label="5Y ROE">
                 {ROE_OPTIONS.map((opt) => {
                   const active = minRoe === opt.value
@@ -600,7 +675,9 @@ export function MarketPage() {
             </div>
 
             <div className="screener-filter-group">
-              <span className="screener-filter-label">股息率</span>
+              <span className="screener-filter-label">
+                <GlossaryLabel label="股息率" term="filter_dividend_yield_min" />
+              </span>
               <div className="seg-well" role="group" aria-label="股息率">
                 {DIVIDEND_OPTIONS.map((opt) => {
                   const active = minDividendYield === opt.value
@@ -748,26 +825,37 @@ export function MarketPage() {
                         </div>
                         <span className="small muted">{item.industry_sw1 ?? '未分类'}</span>
                       </div>
-                      <Tag color={ctTagColor(item)}>
-                        {`${item.ct_red_count} 红 / ${item.ct_yellow_count} 黄`}
-                      </Tag>
+                      <span className="label-with-hint">
+                        <Tag color={ctTagColor(item)}>
+                          {`${item.ct_red_count} 红 / ${item.ct_yellow_count} 黄`}
+                        </Tag>
+                        <InfoHint term="ct_lights" />
+                      </span>
                     </div>
 
                     <div className="screener-top-metrics">
                       <div className="screener-top-stat">
-                        <span className="small muted">雷达总分</span>
+                        <span className="small muted">
+                          <GlossaryLabel label="雷达总分" term="radar_total_score" />
+                        </span>
                         <span className="tnum screener-top-score">{item.total_score}</span>
                       </div>
                       <div className="screener-top-stat">
-                        <span className="small muted">PE分位</span>
+                        <span className="small muted">
+                          <GlossaryLabel label="PE分位" term="pe_ttm_and_pct" />
+                        </span>
                         <span className="tnum">{formatPct(item.pe_percentile_10y, 1)}</span>
                       </div>
                       <div className="screener-top-stat">
-                        <span className="small muted">5Y ROE</span>
+                        <span className="small muted">
+                          <GlossaryLabel label="5Y ROE" term="roe_5y_avg" />
+                        </span>
                         <span className="tnum">{formatPct(item.roe_5y_avg_pct, 1)}</span>
                       </div>
                       <div className="screener-top-stat">
-                        <span className="small muted">股息率</span>
+                        <span className="small muted">
+                          <GlossaryLabel label="股息率" term="dividend_yield" />
+                        </span>
                         <span className="tnum">{formatPct(item.dividend_yield_pct, 2)}</span>
                       </div>
                     </div>
@@ -794,14 +882,51 @@ export function MarketPage() {
               <table className="pro-table screener-table" aria-label="价值筛选结果明细表">
                 <thead>
                   <tr>
-                    <th>对比</th>
-                    <th>代码 / 名称</th>
-                    <th>行业</th>
-                    <th className="text-right">雷达总分</th>
-                    <th>排雷灯</th>
-                    <th className="text-right">PE(TTM) / 10Y分位</th>
-                    <th className="text-right">5Y ROE</th>
-                    <th className="text-right">股息率</th>
+                    <th>
+                      <span className="label-with-hint">
+                        <span>对比</span>
+                        <InfoHint
+                          title="横向对比勾选"
+                          entry={{
+                            summary:
+                              '勾选最多 5 支股票加入对比篮，点击上方「发起对比」即可进入同业横向对比矩阵。',
+                            reading:
+                              '适合把同行业龙头或高分候选标的并排对照估值安全垫与排雷红黄灯。',
+                          }}
+                        />
+                      </span>
+                    </th>
+                    <th>
+                      <span className="label-with-hint">
+                        <span>代码 / 名称</span>
+                        <InfoHint
+                          title="证券代码与简称"
+                          entry={{
+                            summary:
+                              'A 股 6 位证券代码、股票名称及金融业标识（金融业适用资本与分红耐力及 PB-ROE 口径）。',
+                            reading: '点击股票名称可进入个股深度排雷、逆向 DCF 估值与决策工作台。',
+                          }}
+                        />
+                      </span>
+                    </th>
+                    <th>
+                      <GlossaryLabel label="行业" term="industry_sw1" />
+                    </th>
+                    <th className="text-right">
+                      <GlossaryLabel label="雷达总分" term="radar_total_score" />
+                    </th>
+                    <th>
+                      <GlossaryLabel label="排雷灯" term="ct_lights" />
+                    </th>
+                    <th className="text-right">
+                      <GlossaryLabel label="PE(TTM) / 10Y分位" term="pe_ttm_and_pct" />
+                    </th>
+                    <th className="text-right">
+                      <GlossaryLabel label="5Y ROE" term="roe_5y_avg" />
+                    </th>
+                    <th className="text-right">
+                      <GlossaryLabel label="股息率" term="dividend_yield" />
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

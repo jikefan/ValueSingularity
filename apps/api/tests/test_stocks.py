@@ -248,6 +248,20 @@ async def test_stocks_return_503_when_db_unavailable() -> None:
         async def get_name(self, code: str) -> str | None:
             raise DatabaseUnavailableError("OperationalError")
 
+        async def list_by_codes(self, codes: object) -> list[StockMetaRecord]:
+            raise DatabaseUnavailableError("OperationalError")
+
+        async def list_watched_codes(self, *, limit: int | None = None) -> list[str]:
+            raise DatabaseUnavailableError("OperationalError")
+
+        async def list_active_codes(self, *, limit: int | None = None) -> list[str]:
+            raise DatabaseUnavailableError("OperationalError")
+
+        async def list_codes_missing_snapshot(
+            self, *, min_as_of: date | None = None, limit: int | None = None
+        ) -> list[str]:
+            raise DatabaseUnavailableError("OperationalError")
+
     class _BrokenSnapshotRepo:
         async def get_snapshot(self, code: str) -> StockSnapshotPayload | None:
             raise DatabaseUnavailableError("OperationalError")

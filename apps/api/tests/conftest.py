@@ -7,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.adapters.email.smtp import UnconfiguredEmailSender
-from app.api.deps import get_db, get_email_sender
+from app.api.deps import get_db, get_email_sender, get_watchlist_warmup
 from app.db.base import Base
 from app.main import create_app
 from app.settings import settings
@@ -50,8 +50,12 @@ async def db_client() -> AsyncIterator[AsyncClient]:
         async with testing_session() as session:
             yield session
 
+    async def _noop_warmup(_code: str) -> None:
+        return None
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_email_sender] = UnconfiguredEmailSender
+    app.dependency_overrides[get_watchlist_warmup] = lambda: _noop_warmup
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, status
 
-from app.api.deps import DatabaseUnavailableError, StockServiceDep
+from app.api.deps import DatabaseUnavailableError, StockServiceDep, StockSyncCoordinatorDep
 from app.domain.models import (
     ScreenerSortDir,
     ScreenerSortField,
@@ -16,6 +16,7 @@ from app.domain.models import (
     StockSnapshotPayload,
 )
 from app.services.stock import SnapshotNotReadyError, StockNotFoundError
+from app.services.stock_sync import StockFactUnavailableError
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
 
@@ -166,6 +167,31 @@ async def get_stock_snapshot(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
+        ) from exc
+    except DatabaseUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"数据库不可用: {exc}",
+        ) from exc
+
+
+@router.post("/{code}/sync", response_model=StockSnapshotPayload)
+async def sync_stock_snapshot(
+    code: Annotated[str, Path(pattern=r"^[0-9]{6}$")],
+    coordinator: StockSyncCoordinatorDep,
+    force: bool = False,
+) -> StockSnapshotPayload:
+    try:
+        return await coordinator.ensure_snapshot(code, force=force)
+    except StockNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except StockFactUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"个股数据同步暂不可用，请稍后重试: {exc}",
         ) from exc
     except DatabaseUnavailableError as exc:
         raise HTTPException(

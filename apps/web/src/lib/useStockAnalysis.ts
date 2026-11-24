@@ -1,9 +1,15 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { StockScreenerFilters } from '../types/api'
 import { ApiError, api } from './api'
 import { queryKeys } from './queryKeys'
 
 export type { StockScreenerFilters }
+
+export type UseStockSnapshotOptions = {
+  enabled?: boolean
+  ensureOnDemand?: boolean
+  snapshotAvailableHint?: boolean
+}
 
 const STOCK_CODE_RE = /^[0-9]{6}$/
 
@@ -23,20 +29,45 @@ export function normalizeCompareCodes(codes: readonly string[]): string[] {
   return normalized
 }
 
-export function useStockSnapshot(code: string, enabled = true) {
+export function useStockSnapshot(
+  code: string,
+  optionsOrEnabled: UseStockSnapshotOptions | boolean = {},
+) {
+  const queryClient = useQueryClient()
+  const {
+    enabled = true,
+    ensureOnDemand = true,
+    snapshotAvailableHint,
+  } = typeof optionsOrEnabled === 'boolean' ? { enabled: optionsOrEnabled } : optionsOrEnabled
+
+  const invalidateAfterSync = () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.stocks.detail(code) })
+    void queryClient.invalidateQueries({ queryKey: queryKeys.stocks.screenerPrefix() })
+  }
+
   return useQuery({
     queryKey: queryKeys.stocks.snapshot(code),
-    queryFn: ({ signal }) => api.getStockSnapshot(code, signal),
-    enabled: enabled && STOCK_CODE_RE.test(code),
-    retry: (failureCount, error) => {
-      if (error instanceof ApiError && error.status === 404) {
-        return false
+    queryFn: async ({ signal }) => {
+      if (!ensureOnDemand) {
+        return api.getStockSnapshot(code, signal)
       }
-      if (error instanceof ApiError && error.status >= 400 && error.status < 500) {
-        return false
+      if (snapshotAvailableHint === false) {
+        const synced = await api.syncStockSnapshot(code, signal)
+        invalidateAfterSync()
+        return synced
       }
-      return failureCount < 1
+      try {
+        return await api.getStockSnapshot(code, signal)
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          const synced = await api.syncStockSnapshot(code, signal)
+          invalidateAfterSync()
+          return synced
+        }
+        throw err
+      }
     },
+    enabled: enabled && STOCK_CODE_RE.test(code),
   })
 }
 
