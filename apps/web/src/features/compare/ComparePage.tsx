@@ -1,291 +1,28 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Card } from '../../components/ui/Card'
 import { GlossaryLabel } from '../../components/ui/InfoHint'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { api } from '../../lib/api'
-import { getEarningsQualityBadgeMeta } from '../../lib/earningsQuality'
-import { formatNum, formatPct, formatSignedPct, formatYi, qualityTone } from '../../lib/format'
-import type { GlossaryKey } from '../../lib/glossary'
+import { formatStockName } from '../../lib/format'
 import { queryKeys } from '../../lib/queryKeys'
 import {
   normalizeCompareCodes,
   useStockCompare,
   useStockScreener,
 } from '../../lib/useStockAnalysis'
-import type { StockCompareItem } from '../../types/api'
+import {
+  COMPARE_METRIC_ROWS,
+  COMPARE_PRESETS,
+  type CompareSyncStatus,
+  buildCompareTakeaway,
+  computeRowBestCodes,
+} from './compareHelpers'
 
-type ComparePreset = {
-  label: string
-  title: string
-  subtitle: string
-  codes: readonly [string, ...string[]]
-}
-
-const COMPARE_PRESETS: readonly ComparePreset[] = [
-  {
-    label: '白酒龙头对比 (600519/000858/000568)',
-    title: '白酒龙头对比',
-    subtitle: '高端消费与现金流标杆',
-    codes: ['600519', '000858', '000568'],
-  },
-  {
-    label: '高股息银行 (600036/601398/000001)',
-    title: '高股息银行',
-    subtitle: '低估值高分红红利代表',
-    codes: ['600036', '601398', '000001'],
-  },
-  {
-    label: '制造消费蓝筹 (000333/002594/600887)',
-    title: '制造消费蓝筹',
-    subtitle: '跨行业龙头护城河对照',
-    codes: ['000333', '002594', '600887'],
-  },
-]
 const MAX_COMPARE_CODES = 5
 const CODE_PATTERN = /^[0-9]{6}$/
-
-const FINANCIAL_SW1_INDUSTRIES = new Set(['银行', '非银金融', '保险', '证券', '多元金融'])
-
-function isFinancialCompareItem(item: StockCompareItem): boolean {
-  if (item.metrics) {
-    return item.metrics.is_financial
-  }
-  const sw1 = item.meta.industry_sw1?.trim() ?? ''
-  return FINANCIAL_SW1_INDUSTRIES.has(sw1)
-}
-
-function renderExemptibleMetric(
-  item: StockCompareItem,
-  value: number | null | undefined,
-  renderValue: (val: number | null | undefined) => ReactNode,
-  { forceExemptOnFinancial = false }: { forceExemptOnFinancial?: boolean } = {},
-): ReactNode {
-  if (
-    item.metrics &&
-    isFinancialCompareItem(item) &&
-    (forceExemptOnFinancial || value === null || value === undefined)
-  ) {
-    return <span className="small muted">行业不适用</span>
-  }
-  return renderValue(value)
-}
-
-type CompareSyncStatus = 'syncing' | 'done' | 'failed'
-
-type CompareMetricRow = {
-  key: string
-  label: string
-  glossaryKey: GlossaryKey
-  render: (item: StockCompareItem, syncStatus?: CompareSyncStatus) => ReactNode
-}
-
-const COMPARE_METRIC_ROWS: readonly CompareMetricRow[] = [
-  {
-    key: 'snapshot_status',
-    label: '快照状态',
-    glossaryKey: 'snapshot_status',
-    render: (item, syncStatus) => {
-      if (item.snapshot_available) {
-        return (
-          <Tag color="green">
-            {item.snapshot_as_of ? `已同步 ${item.snapshot_as_of}` : '已同步'}
-          </Tag>
-        )
-      }
-      if (syncStatus === 'syncing') {
-        return <Tag color="blue">自动拉取中…</Tag>
-      }
-      if (syncStatus === 'failed') {
-        return <Tag color="amber">同步失败（暂缺）</Tag>
-      }
-      return <Tag color="gray">未同步快照</Tag>
-    },
-  },
-  {
-    key: 'industry',
-    label: '申万一级行业',
-    glossaryKey: 'industry_sw1',
-    render: (item) => item.metrics?.industry_sw1 ?? item.meta.industry_sw1 ?? '—',
-  },
-  {
-    key: 'total_score',
-    label: '五维综合评分',
-    glossaryKey: 'radar_total_score',
-    render: (item) =>
-      item.metrics ? (
-        <Tag
-          color={
-            item.metrics.total_score >= 70
-              ? 'green'
-              : item.metrics.total_score >= 45
-                ? 'blue'
-                : 'amber'
-          }
-        >
-          {item.metrics.total_score} / 100
-        </Tag>
-      ) : (
-        '—'
-      ),
-  },
-  {
-    key: 'close',
-    label: '最新收盘价（元）',
-    glossaryKey: 'latest_close',
-    render: (item) => <span className="mono">{formatNum(item.metrics?.close, 2)}</span>,
-  },
-  {
-    key: 'total_mv_yuan',
-    label: '总市值',
-    glossaryKey: 'market_cap',
-    render: (item) => <span className="mono">{formatYi(item.metrics?.total_mv_yuan)}</span>,
-  },
-  {
-    key: 'pe_ttm',
-    label: 'PE (TTM)',
-    glossaryKey: 'pe_ttm',
-    render: (item) => <span className="mono">{formatNum(item.metrics?.pe_ttm, 2)}</span>,
-  },
-  {
-    key: 'pe_percentile_10y',
-    label: 'PE 10年历史分位',
-    glossaryKey: 'valuation_pct_10y',
-    render: (item) => <span className="mono">{formatPct(item.metrics?.pe_percentile_10y, 1)}</span>,
-  },
-  {
-    key: 'pb',
-    label: 'PB (市净率)',
-    glossaryKey: 'pb',
-    render: (item) => <span className="mono">{formatNum(item.metrics?.pb, 2)}</span>,
-  },
-  {
-    key: 'roe_5y_avg_pct',
-    label: '5年平均 ROE',
-    glossaryKey: 'roe_5y_avg',
-    render: (item) => <span className="mono">{formatPct(item.metrics?.roe_5y_avg_pct, 2)}</span>,
-  },
-  {
-    key: 'gross_margin_latest_pct',
-    label: '最新毛利率',
-    glossaryKey: 'gross_margin_latest',
-    render: (item) =>
-      renderExemptibleMetric(item, item.metrics?.gross_margin_latest_pct, (value) => (
-        <span className="mono">{formatPct(value, 2)}</span>
-      )),
-  },
-  {
-    key: 'net_cash_to_mv_pct',
-    label: '净现金 / 总市值',
-    glossaryKey: 'net_cash_to_mv',
-    render: (item) =>
-      renderExemptibleMetric(
-        item,
-        item.metrics?.net_cash_to_mv_pct,
-        (value) => <span className={`mono ${qualityTone(value)}`}>{formatPct(value, 2)}</span>,
-        { forceExemptOnFinancial: true },
-      ),
-  },
-  {
-    key: 'ocf_to_profit_5y_pct',
-    label: '5年 OCF / 净利润',
-    glossaryKey: 'ocf_to_profit_5y',
-    render: (item) =>
-      renderExemptibleMetric(
-        item,
-        item.metrics?.ocf_to_profit_5y_pct,
-        (value) => <span className="mono">{formatPct(value, 1)}</span>,
-        { forceExemptOnFinancial: true },
-      ),
-  },
-  {
-    key: 'shareholder_yield_pct',
-    label: '股东回报率',
-    glossaryKey: 'net_cash_yield',
-    render: (item) => (
-      <span className={`mono ${qualityTone(item.metrics?.shareholder_yield_pct)}`}>
-        {formatPct(item.metrics?.shareholder_yield_pct, 2)}
-      </span>
-    ),
-  },
-  {
-    key: 'implied_fcf_cagr_pct',
-    label: 'Reverse DCF 隐含 FCF 增速',
-    glossaryKey: 'implied_fcf_cagr',
-    render: (item) =>
-      renderExemptibleMetric(
-        item,
-        item.metrics?.implied_fcf_cagr_pct,
-        (value) => (
-          <span className={`mono ${qualityTone(value, true)}`}>{formatSignedPct(value, 2)}</span>
-        ),
-        { forceExemptOnFinancial: true },
-      ),
-  },
-  {
-    key: 'earnings_quality',
-    label: '盈利成色标签',
-    glossaryKey: 'forensic_profit_truth',
-    render: (item) =>
-      item.metrics?.earnings_quality_label ? (
-        <span
-          className={
-            getEarningsQualityBadgeMeta(
-              item.metrics.earnings_quality_tag,
-              item.metrics.earnings_quality_label,
-            ).badgeClass
-          }
-        >
-          {item.metrics.earnings_quality_label}
-        </span>
-      ) : (
-        '—'
-      ),
-  },
-  {
-    key: 'invest_profit_share_3y_pct',
-    label: '近3年投资收益占比',
-    glossaryKey: 'invest_profit_share',
-    render: (item) =>
-      renderExemptibleMetric(
-        item,
-        item.metrics?.invest_profit_share_3y_pct,
-        (value) => {
-          const isHigh =
-            value !== null && value !== undefined && Number.isFinite(value) && value >= 30
-          return <span className={isHigh ? 'mono tone-bad' : 'mono'}>{formatPct(value, 1)}</span>
-        },
-        { forceExemptOnFinancial: true },
-      ),
-  },
-  {
-    key: 'investment_assets_ratio_pct',
-    label: '表内投资类资产占比',
-    glossaryKey: 'investment_assets_ratio',
-    render: (item) =>
-      renderExemptibleMetric(
-        item,
-        item.metrics?.investment_assets_ratio_pct,
-        (value) => <span className="mono">{formatPct(value, 1)}</span>,
-        { forceExemptOnFinancial: true },
-      ),
-  },
-  {
-    key: 'ct_alerts',
-    label: 'CT 排雷 (红 / 黄灯)',
-    glossaryKey: 'ct_lights',
-    render: (item) => {
-      if (!item.metrics) {
-        return '—'
-      }
-      const { ct_red_count: redCount, ct_yellow_count: yellowCount } = item.metrics
-      const color = redCount > 0 ? 'rose' : yellowCount > 0 ? 'amber' : 'green'
-      return <Tag color={color}>{`${redCount} 红 / ${yellowCount} 黄`}</Tag>
-    },
-  },
-]
 
 export function ComparePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -353,7 +90,7 @@ export function ComparePage() {
   const showDropdown = isDropdownOpen && trimmedInput.length > 0 && !CODE_PATTERN.test(trimmedInput)
 
   const compareQuery = useStockCompare(selectedCodes)
-  const compareItems = compareQuery.data ?? []
+  const compareItems = useMemo(() => compareQuery.data ?? [], [compareQuery.data])
   const [syncStatusByCode, setSyncStatusByCode] = useState<Record<string, CompareSyncStatus>>({})
   const attemptedCodesRef = useRef<Set<string>>(new Set())
   const inFlightControllersRef = useRef<Map<string, AbortController>>(new Map())
@@ -472,6 +209,13 @@ export function ComparePage() {
     [screenerQuery.data],
   )
 
+  const compareTakeaway = useMemo(() => buildCompareTakeaway(compareItems), [compareItems])
+  const bestCodesByRow = useMemo(
+    () =>
+      new Map(COMPARE_METRIC_ROWS.map((row) => [row.key, computeRowBestCodes(row, compareItems)])),
+    [compareItems],
+  )
+
   function updateSelectedCodes(nextCodes: readonly string[]) {
     const normalized = normalizeCompareCodes(nextCodes)
     latestCodesRef.current = normalized
@@ -556,7 +300,9 @@ export function ComparePage() {
     }
   }
 
-  const nameByCode = new Map(compareItems.map((item) => [item.code, item.meta.name]))
+  const nameByCode = new Map(
+    compareItems.map((item) => [item.code, formatStockName(item.meta.name)]),
+  )
   const getEffectiveSyncStatus = (code: string): CompareSyncStatus | undefined => {
     const status = syncStatusByCode[code]
     if (status === 'done' && compareQuery.isFetching) {
@@ -666,7 +412,7 @@ export function ComparePage() {
                       >
                         <span className="nav-search-item-main">
                           <span className="mono">{stock.code}</span>
-                          <span>{stock.name}</span>
+                          <span>{formatStockName(stock.name)}</span>
                         </span>
                         <span className="nav-search-item-tags">
                           <Tag color="blue">{stock.exchange}</Tag>
@@ -710,7 +456,7 @@ export function ComparePage() {
                     <Link className="mono link-accent" to={`/stock/${code}`}>
                       {code}
                     </Link>
-                    {name ? <span>{name}</span> : null}
+                    {name && name !== '—' ? <span>{name}</span> : null}
                     <button
                       type="button"
                       className="compare-chip-remove"
@@ -771,6 +517,7 @@ export function ComparePage() {
                           <span className="compare-preset-title">{preset.title}</span>
                           <span className="small link-accent compare-preset-cta">一键对比 →</span>
                         </span>
+                        <span className="small soft">{preset.namesSummary}</span>
                         <span className="small muted">{preset.subtitle}</span>
                         <span className="compare-preset-codes">
                           {preset.codes.map((code) => (
@@ -807,43 +554,60 @@ export function ComparePage() {
           hint="compare_matrix"
           extra={<span className="small muted">左右对比最多 5 支标的</span>}
         >
-          <div className="table-wrap">
-            <table className="table compare-matrix-table">
-              <thead>
-                <tr>
-                  <th className="compare-metric-col">指标维度</th>
-                  {compareItems.map((item) => (
-                    <th key={item.code} style={{ textAlign: 'right' }}>
-                      <div className="compare-col-head">
-                        <Link className="link-accent" to={`/stock/${item.code}`}>
-                          {item.meta.name}
-                        </Link>
-                        <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
-                          <span className="mono small muted">{item.code}</span>
-                          <Tag color="blue">{item.meta.exchange}</Tag>
-                          {item.meta.is_st ? <Tag color="amber">ST</Tag> : null}
-                          {!item.meta.is_active ? <Tag color="rose">已退市</Tag> : null}
-                        </div>
-                      </div>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {COMPARE_METRIC_ROWS.map((row) => (
-                  <tr key={row.key}>
-                    <td className="soft compare-metric-col">
-                      <GlossaryLabel label={row.label} term={row.glossaryKey} />
-                    </td>
+          <div className="stack" style={{ gap: 14 }}>
+            {compareTakeaway ? (
+              <div className="compare-takeaway-bar" role="status" aria-label="横向对比结论">
+                <span>{compareTakeaway}</span>
+              </div>
+            ) : null}
+
+            <div className="table-wrap">
+              <table className="table compare-matrix-table">
+                <thead>
+                  <tr>
+                    <th className="compare-metric-col">指标维度</th>
                     {compareItems.map((item) => (
-                      <td key={`${row.key}-${item.code}`} style={{ textAlign: 'right' }}>
-                        {row.render(item, getEffectiveSyncStatus(item.code))}
-                      </td>
+                      <th key={item.code} style={{ textAlign: 'right' }}>
+                        <div className="compare-col-head">
+                          <Link className="link-accent" to={`/stock/${item.code}`}>
+                            {formatStockName(item.meta.name)}
+                          </Link>
+                          <div className="row" style={{ justifyContent: 'flex-end', gap: 6 }}>
+                            <span className="mono small muted">{item.code}</span>
+                            <Tag color="blue">{item.meta.exchange}</Tag>
+                            {item.meta.is_st ? <Tag color="amber">ST</Tag> : null}
+                            {!item.meta.is_active ? <Tag color="rose">已退市</Tag> : null}
+                          </div>
+                        </div>
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {COMPARE_METRIC_ROWS.map((row) => {
+                    const rowBestCodes = bestCodesByRow.get(row.key)
+                    return (
+                      <tr key={row.key}>
+                        <td className="soft compare-metric-col">
+                          <GlossaryLabel label={row.label} term={row.glossaryKey} />
+                        </td>
+                        {compareItems.map((item) => (
+                          <td
+                            key={`${row.key}-${item.code}`}
+                            className={
+                              rowBestCodes?.has(item.code) ? 'compare-cell-best' : undefined
+                            }
+                            style={{ textAlign: 'right' }}
+                          >
+                            {row.render(item, getEffectiveSyncStatus(item.code))}
+                          </td>
+                        ))}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
 
           {syncingCodes.length > 0 ? (

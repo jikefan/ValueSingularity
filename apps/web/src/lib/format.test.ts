@@ -5,9 +5,11 @@ import {
   fmtMoney,
   fmtNum,
   fmtPct,
+  formatForensicRatioPct,
   formatNum,
   formatPct,
   formatSignedPct,
+  formatStockName,
   formatYi,
   qualityTone,
   toYi,
@@ -68,5 +70,35 @@ describe('format', () => {
     expect(qualityTone(0)).toBe('flat')
     expect(qualityTone(null)).toBe('')
     expect(qualityTone(Number.NaN)).toBe('')
+  })
+
+  it('normalizes stock names by removing internal whitespace and guarding blanks', () => {
+    expect(formatStockName('五 粮 液')).toBe('五粮液')
+    expect(formatStockName('  贵州 茅台 \t')).toBe('贵州茅台')
+    expect(formatStockName('招商银行')).toBe('招商银行')
+    expect(formatStockName('')).toBe('—')
+    expect(formatStockName('   ')).toBe('—')
+    expect(formatStockName(null)).toBe('—')
+    expect(formatStockName(undefined)).toBe('—')
+  })
+
+  it('formats forensic ratios safely and guards extreme sentinel percentages', () => {
+    expect(formatForensicRatioPct(42.36)).toBe('42.4%')
+    expect(formatForensicRatioPct(-18.24)).toBe('-18.2%')
+    expect(formatForensicRatioPct(0)).toBe('0.0%')
+    expect(formatForensicRatioPct(899.94)).toBe('899.9%')
+
+    expect(formatForensicRatioPct(null)).toBe('—')
+    expect(formatForensicRatioPct(undefined)).toBe('—')
+    expect(formatForensicRatioPct(Number.NaN)).toBe('—')
+    expect(formatForensicRatioPct(Number.POSITIVE_INFINITY)).toBe('—')
+    expect(formatForensicRatioPct(null, { fallbackText: '暂无数据' })).toBe('暂无数据')
+
+    expect(formatForensicRatioPct(999.0)).toBe('主业微利(不适用)')
+    expect(formatForensicRatioPct(900)).toBe('主业微利(不适用)')
+    expect(formatForensicRatioPct(-950)).toBe('主业微利(不适用)')
+    expect(formatForensicRatioPct(999.0, { fallbackText: '无法计算' })).toBe('无法计算')
+    expect(formatForensicRatioPct(500, { maxDisplay: 500 })).toBe('主业微利(不适用)')
+    expect(formatForensicRatioPct(499.9, { maxDisplay: 500 })).toBe('499.9%')
   })
 })

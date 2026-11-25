@@ -386,19 +386,26 @@ describe('ComparePage', () => {
     expect(screen.getByText('或选择精选行业对比方案')).toBeInTheDocument()
 
     const bankPresetBtn = screen.getByRole('button', {
-      name: '高股息银行 (600036/601398/000001)',
+      name: '高股息银行（招商银行 · 工商银行 · 平安银行）',
     })
     expect(bankPresetBtn).toHaveClass('tk-card', 'compare-preset-card')
     expect(within(bankPresetBtn).getByText('高股息银行')).toBeInTheDocument()
+    expect(within(bankPresetBtn).getByText('招商银行 · 工商银行 · 平安银行')).toBeInTheDocument()
     expect(within(bankPresetBtn).getByText('低估值高分红红利代表')).toBeInTheDocument()
     expect(within(bankPresetBtn).getByText('一键对比 →')).toBeInTheDocument()
     expect(within(bankPresetBtn).getByText('600036')).toBeInTheDocument()
     expect(within(bankPresetBtn).getByText('601398')).toBeInTheDocument()
     expect(within(bankPresetBtn).getByText('000001')).toBeInTheDocument()
 
-    expect(
-      screen.getByRole('button', { name: '制造消费蓝筹 (000333/002594/600887)' }),
-    ).toBeInTheDocument()
+    const consumerPresetBtn = screen.getByRole('button', {
+      name: '制造消费蓝筹（美的集团 · 比亚迪 · 伊利股份）',
+    })
+    expect(within(consumerPresetBtn).getByText('美的集团 · 比亚迪 · 伊利股份')).toBeInTheDocument()
+
+    const contrastPresetBtn = screen.getByRole('button', {
+      name: '主业现金牛 vs 投资依赖（贵州茅台 · 长江电力 · 雅戈尔）',
+    })
+    expect(within(contrastPresetBtn).getByText('贵州茅台 · 长江电力 · 雅戈尔')).toBeInTheDocument()
 
     const hotSyncedBtn = await screen.findByRole('button', { name: '对比已同步热门标的' })
     expect(hotSyncedBtn).toHaveClass('btn-primary', 'compare-hot-btn')
@@ -410,9 +417,10 @@ describe('ComparePage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '清空列表' }))
     const presetBtn = await screen.findByRole('button', {
-      name: '白酒龙头对比 (600519/000858/000568)',
+      name: '白酒龙头对比（贵州茅台 · 五粮液 · 泸州老窖）',
     })
     expect(within(presetBtn).getByText('白酒龙头对比')).toBeInTheDocument()
+    expect(within(presetBtn).getByText('贵州茅台 · 五粮液 · 泸州老窖')).toBeInTheDocument()
     expect(within(presetBtn).getByText('高端消费与现金流标杆')).toBeInTheDocument()
     expect(within(presetBtn).getByText('600519')).toBeInTheDocument()
     expect(within(presetBtn).getByText('000858')).toBeInTheDocument()
@@ -954,5 +962,144 @@ describe('ComparePage', () => {
       'quality-badge',
       'quality-badge-red',
     )
+  })
+
+  it('normalizes spaced stock names, highlights best-in-row cells, renders takeaway banner, and guards 999.0% forensic sentinels', async () => {
+    const moutaiFixture = COMPARE_FIXTURES['600519']
+    const laojiaoFixture = COMPARE_FIXTURES['000568']
+    const bankFixture = COMPARE_FIXTURES['600036']
+    if (!moutaiFixture?.metrics || !laojiaoFixture?.metrics || !bankFixture?.metrics) {
+      throw new Error('Expected compare fixtures')
+    }
+
+    const spacedLaojiao: StockCompareItem = {
+      ...laojiaoFixture,
+      meta: { ...laojiaoFixture.meta, name: '五 粮 液' },
+      metrics: { ...laojiaoFixture.metrics, name: '五 粮 液' },
+    }
+    const sentinelCaution: StockCompareItem = {
+      code: '600177',
+      meta: {
+        code: '600177',
+        name: '雅戈尔',
+        exchange: 'SH',
+        industry_sw1: '纺织服饰',
+        industry_sw2: '服装家纺',
+        list_date: '1998-11-19',
+        is_st: false,
+        is_active: true,
+        snapshot_available: true,
+      },
+      snapshot_available: true,
+      snapshot_as_of: '2026-11-20',
+      metrics: {
+        code: '600177',
+        name: '雅戈尔',
+        exchange: 'SH',
+        industry_sw1: '纺织服饰',
+        as_of: '2026-11-20',
+        close: 8.12,
+        total_mv_yuan: 3.75e10,
+        pe_ttm: 9.8,
+        pe_percentile_10y: 24.0,
+        pb: 0.94,
+        roe_5y_avg_pct: 9.6,
+        gross_margin_latest_pct: 48.2,
+        net_cash_to_mv_pct: -18.5,
+        ocf_to_profit_5y_pct: 61.0,
+        shareholder_yield_pct: 5.4,
+        implied_fcf_cagr_pct: 3.1,
+        ct_red_count: 1,
+        ct_yellow_count: 1,
+        total_score: 54,
+        is_financial: false,
+        earnings_quality_tag: 'investment_driven',
+        earnings_quality_label: '盈利高度依赖对外投资',
+        invest_profit_share_3y_pct: 999.0,
+        investment_assets_ratio_pct: 52.1,
+      },
+    }
+
+    const byCode: Record<string, StockCompareItem> = {
+      '600519': moutaiFixture,
+      '000568': spacedLaojiao,
+      '600177': sentinelCaution,
+      '600036': bankFixture,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(asRequest(input).url)
+      if (url.pathname === '/api/stocks/search') {
+        return Promise.resolve(jsonResponse([spacedLaojiao.meta], 200))
+      }
+      if (url.pathname === '/api/stocks/compare') {
+        const codesParam = url.searchParams.get('codes') ?? ''
+        const items = codesParam
+          .split(',')
+          .map((code) => byCode[code])
+          .filter((item): item is StockCompareItem => Boolean(item))
+        return Promise.resolve(jsonResponse(items, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    renderComparePage('/compare?codes=600519,000568,600177,600036')
+
+    // Column header and picker chip normalize '五 粮 液' -> '五粮液'.
+    const headerLink = await screen.findByRole('link', { name: '五粮液' })
+    expect(headerLink).toBeInTheDocument()
+    const chipRow = screen.getByLabelText('已选对比标的')
+    expect(within(chipRow).getByText('五粮液')).toBeInTheDocument()
+    expect(screen.queryByText('五 粮 液')).not.toBeInTheDocument()
+
+    // Takeaway banner summarizes overall score leader, valuation safety leader, and investment caution without 999.0%.
+    const takeaway = screen.getByRole('status', { name: '横向对比结论' })
+    expect(takeaway).toHaveClass('compare-takeaway-bar')
+    expect(takeaway).toHaveTextContent('贵州茅台 综合评分最高（89 分）')
+    expect(takeaway).toHaveTextContent('五粮液 估值安全垫最厚（PE 处于近10年 12.1% 分位）')
+    expect(takeaway).toHaveTextContent('雅戈尔（主业微利、盈利高度依赖对外投资）')
+    expect(takeaway).not.toHaveTextContent('999.0%')
+
+    // Best-in-row highlights apply to winning cells and omit financial-exempt/sentinel cells.
+    const scoreRow = screen.getByText('五维综合评分').closest('tr')
+    const pePctRow = screen.getByText('PE 10年历史分位').closest('tr')
+    const yieldRow = screen.getByText('股东回报率').closest('tr')
+    const ctRow = screen.getByText('CT 排雷 (红 / 黄灯)').closest('tr')
+    const investShareRow = screen.getByText('近3年投资收益占比').closest('tr')
+    if (!scoreRow || !pePctRow || !yieldRow || !ctRow || !investShareRow) {
+      throw new Error('Expected metric rows')
+    }
+
+    expect(within(scoreRow).getByText('89 / 100').closest('td')).toHaveClass('compare-cell-best')
+    expect(within(scoreRow).getByText('54 / 100').closest('td')).not.toHaveClass(
+      'compare-cell-best',
+    )
+
+    expect(within(pePctRow).getByText('12.1%').closest('td')).toHaveClass('compare-cell-best')
+    expect(within(pePctRow).getByText('26.5%').closest('td')).not.toHaveClass('compare-cell-best')
+
+    expect(within(yieldRow).getByText('5.40%').closest('td')).toHaveClass('compare-cell-best')
+
+    // Both 0-red stocks (600519 and 600036) share best highlight over 1-red stocks.
+    expect(within(ctRow).getAllByText('0 红 / 1 黄')[0]?.closest('td')).toHaveClass(
+      'compare-cell-best',
+    )
+    expect(within(ctRow).getByText('0 红 / 0 黄').closest('td')).toHaveClass('compare-cell-best')
+    expect(within(ctRow).getByText('1 红 / 1 黄').closest('td')).not.toHaveClass(
+      'compare-cell-best',
+    )
+
+    // Sentinel 999.0% renders as 主业微利(不适用) and is excluded from best-in-row ranking (only 1 non-exempt finite value 1.4% remains).
+    expect(within(investShareRow).queryByText(/999\.0%/)).not.toBeInTheDocument()
+    expect(within(investShareRow).getByText('主业微利(不适用)')).toBeInTheDocument()
+    expect(within(investShareRow).getByText('1.4%').closest('td')).not.toHaveClass(
+      'compare-cell-best',
+    )
+
+    // Search dropdown also normalizes '五 粮 液' -> '五粮液'.
+    const addInput = screen.getByLabelText('添加对比股票')
+    fireEvent.change(addInput, { target: { value: '五粮' } })
+    const searchOption = await screen.findByRole('option', { name: /000568.*五粮液/ })
+    expect(within(searchOption).queryByText('五 粮 液')).not.toBeInTheDocument()
   })
 })

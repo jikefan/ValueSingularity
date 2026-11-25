@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -14,6 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 
+from app.adapters.postgres.snapshot import (
+    cancel_summary_refresh_tasks,
+    warmup_snapshot_summary_cache,
+)
 from app.api.deps import close_db_pool
 from app.api.router import api_router
 from app.settings import settings
@@ -80,9 +85,22 @@ def _operation_id(route: APIRoute) -> str:
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     logger.info("ValueSingularity API starting")
-    yield
-    await close_db_pool()
-    logger.info("ValueSingularity API stopped")
+    warmup_task: asyncio.Task[None] | None = None
+    if settings.snapshot_summary_cache_ttl_seconds > 0:
+        warmup_task = asyncio.create_task(
+            warmup_snapshot_summary_cache(),
+            name="warmup-snapshot-summary-cache",
+        )
+    try:
+        yield
+    finally:
+        if warmup_task is not None and not warmup_task.done():
+            warmup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await warmup_task
+        await cancel_summary_refresh_tasks()
+        await close_db_pool()
+        logger.info("ValueSingularity API stopped")
 
 
 def create_app() -> FastAPI:

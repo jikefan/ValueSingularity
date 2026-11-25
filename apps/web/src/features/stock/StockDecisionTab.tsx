@@ -1142,7 +1142,7 @@ const DECISION_GUEST_PREVIEWS: readonly GuestPreviewItem[] = [
     badge: '理性安检门',
     badgeColor: 'amber',
     title: '买入前反方质询挑刺',
-    metrics: ['3 条事实挑刺', '纯规则零额度可用'],
+    metrics: ['3 条事实挑刺', '免费规则校验可用'],
     description: '在扣动扳机前基于财务 CT、逆向 DCF 与现金含金量生成反方质疑，防止情绪化追高。',
   },
   {

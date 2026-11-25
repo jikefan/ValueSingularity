@@ -975,3 +975,126 @@ def test_forensics_tax_calibrated_cash_cow_and_utility_interest_thresholds() -> 
         f for f in severe_cf.findings if f.finding_id == "cashflow_core_conversion"
     )
     assert severe_cf_finding.status == "red"
+
+
+def test_forensics_eliminates_999_distortions_and_handles_weak_core_and_loss_deduct() -> None:
+    weak_core_reports = [
+        _forensic_report(
+            y,
+            operate_profit=0.02e8,
+            invest_income=0.0,
+            other_income=0.0,
+            asset_disposal=0.0,
+            nonbusiness_net=0.0,
+            net_profit=0.015e8,
+            deduct_net_profit=0.015e8,
+            interest_expense=0.0,
+            ocf=2.0e8,
+        )
+        for y in range(2023, 2026)
+    ]
+    weak_core = analyze_stock_forensics(weak_core_reports, is_financial=False)
+    assert weak_core.ocf_to_core_profit_3y_pct is None
+    weak_cf = next(f for f in weak_core.findings if f.finding_id == "cashflow_core_conversion")
+    assert weak_cf.status == "yellow"
+    assert "主业核心利润微薄或亏损，现金转化比率不适用" in weak_cf.headline
+
+    tiny_core_share_reports = [
+        _forensic_report(
+            y,
+            operate_profit=100e8,
+            invest_income=92e8,
+            other_income=0.0,
+            net_profit=80e8,
+            deduct_net_profit=80e8,
+            interest_expense=0.0,
+            ocf=80e8,
+        )
+        for y in range(2023, 2026)
+    ]
+    tiny_core = analyze_stock_forensics(tiny_core_share_reports, is_financial=False)
+    assert tiny_core.ocf_to_core_profit_3y_pct is None
+    tiny_cf = next(f for f in tiny_core.findings if f.finding_id == "cashflow_core_conversion")
+    assert tiny_cf.status == "yellow"
+    assert "主业核心利润微薄或亏损，现金转化比率不适用" in tiny_cf.headline
+
+    high_ocf = analyze_stock_forensics(
+        [
+            _forensic_report(
+                y,
+                operate_profit=10e8,
+                invest_income=0.0,
+                other_income=0.0,
+                net_profit=8e8,
+                deduct_net_profit=8e8,
+                interest_expense=0.0,
+                ocf=80e8,
+            )
+            for y in range(2023, 2026)
+        ],
+        is_financial=False,
+    )
+    assert high_ocf.ocf_to_core_profit_3y_pct == pytest.approx(500.0)
+
+    deep_neg_ocf = analyze_stock_forensics(
+        [
+            _forensic_report(
+                y,
+                operate_profit=10e8,
+                invest_income=0.0,
+                other_income=0.0,
+                net_profit=8e8,
+                deduct_net_profit=8e8,
+                interest_expense=0.0,
+                ocf=-80e8,
+            )
+            for y in range(2023, 2026)
+        ],
+        is_financial=False,
+    )
+    assert deep_neg_ocf.ocf_to_core_profit_3y_pct == pytest.approx(-500.0)
+
+    loss_deduct_reports = [
+        _forensic_report(
+            y,
+            operate_profit=0.5e8,
+            invest_income=0.0,
+            other_income=2.5e8,
+            asset_disposal=0.0,
+            nonbusiness_net=0.0,
+            net_profit=0.1e8,
+            deduct_net_profit=-2.0e8,
+            ocf=0.5e8,
+        )
+        for y in range(2023, 2026)
+    ]
+    loss_deduct = analyze_stock_forensics(loss_deduct_reports, is_financial=False)
+    assert loss_deduct.non_recurring_share_3y_pct == pytest.approx(100.0)
+    assert loss_deduct.earnings_quality_tag == "subsidy_inflated"
+    sub_finding = next(f for f in loss_deduct.findings if f.finding_id == "non_recurring_subsidy")
+    assert sub_finding.status == "red"
+    assert "999.0%" not in sub_finding.detail
+    assert (
+        "近3年扣非净利润合计亏损，全部账面归母利润均由非经常性损益/政府补助撑起"
+        in sub_finding.detail
+    )
+
+    pos_deduct_big_sub = analyze_stock_forensics(
+        [
+            _forensic_report(
+                y,
+                operate_profit=3e8,
+                invest_income=0.0,
+                other_income=4e8,
+                asset_disposal=0.0,
+                nonbusiness_net=0.0,
+                net_profit=0.5e8,
+                deduct_net_profit=0.25e8,
+                ocf=1e8,
+            )
+            for y in range(2023, 2026)
+        ],
+        is_financial=False,
+    )
+    assert pos_deduct_big_sub.non_recurring_share_3y_pct is not None
+    assert pos_deduct_big_sub.non_recurring_share_3y_pct <= 100.0

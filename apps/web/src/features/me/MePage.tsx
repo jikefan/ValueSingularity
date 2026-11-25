@@ -7,7 +7,7 @@ import { JournalEntryCard } from '../../components/ui/JournalEntryCard'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { useAuth } from '../../lib/authContext'
-import { fmtNum } from '../../lib/format'
+import { fmtNum, formatStockName } from '../../lib/format'
 import { useJournal, useRemoveJournal } from '../../lib/useJournal'
 import { parseOptionalNumber } from '../../lib/validation'
 import type { JournalAction, PlanTier, WatchlistItem, WatchlistUpsert } from '../../types/api'
@@ -15,6 +15,7 @@ import { useRemoveWatchlist, useUpsertWatchlist, useWatchlist } from '../../lib/
 import { AccountSecurityPanel } from './AccountSecurityPanel'
 import { AiPrefsPanel } from './AiPrefsPanel'
 import { DecisionLedgerPanel } from './DecisionLedgerPanel'
+import { GuestDemoPreviewCard } from './GuestDemoPreviewCard'
 import { SentinelAlertsPanel } from './SentinelAlertsPanel'
 
 const PLAN_COLOR: Record<PlanTier, 'gray' | 'blue' | 'green'> = {
@@ -69,27 +70,30 @@ function renderThresholdBadges(item: WatchlistItem) {
 const ME_GUEST_PREVIEWS: readonly GuestPreviewItem[] = [
   {
     id: 'sentinel',
-    badge: '到价哨兵示例',
+    badge: '到价邮件提醒',
     badgeColor: 'green',
-    title: '击球区价格与分位自动哨兵',
-    metrics: ['目标价 ≤ 1,400', '10Y PE 分位 ≤ 20%'],
-    description: '为自选愿望单设定目标价、PE 分位或股息率阈值，触达击球区自动站内与 Webhook 提醒。',
+    title: '好公司跌到心里价位，自动给你发邮件',
+    metrics: ['目标价 ≤ 1,400', '历史估值分位 ≤ 20%'],
+    description:
+      '把看中的公司和你能接受的最高买入价、最低股息率放进愿望单，不用天天盯盘，达标时自动收到站内与邮件提醒。',
   },
   {
     id: 'ledger',
-    badge: 'Alpha 归因示例',
+    badge: '买卖超额对比账本',
     badgeColor: 'blue',
-    title: '决策质量账本与基准超额归因',
-    metrics: ['相对沪深300 +14.2%', 'Pass 观察池避险'],
-    description: '回溯每笔决策记录创建以来的个股收益、沪深 300 超额表现与否证红线触发情况。',
+    title: '每笔买入与放弃，事后对照沪深 300 算总账',
+    metrics: ['跑赢大盘 +14.2%', '忍住没买成功避险'],
+    description:
+      '买前先写好自检清单与重看条件，几周或几个月后再回头对比沪深 300 涨跌，一眼看出哪些判断真有效。',
   },
   {
     id: 'emotion',
-    badge: '情绪复盘示例',
+    badge: '情绪胜率统计',
     badgeColor: 'amber',
-    title: '情绪胜率分布与行为纠偏',
-    metrics: ['冷静胜率 100%', '贪婪胜率对照'],
-    description: '量化统计不同情绪标签下的长期决策胜率与平均超额收益，持续校准交易纪律。',
+    title: '分清“冷静”和“冲动”时买股票，哪种更容易赚',
+    metrics: ['冷静心态胜率更高', '买前自检清单留痕'],
+    description:
+      '每次做决定时顺手记下当时心态是冷静还是着急，系统自动统计不同情绪下的胜率，帮你改掉追涨杀跌。',
   },
 ]
 
@@ -239,6 +243,7 @@ export function MePage() {
               }
             />
             <GuestPreviewGrid items={ME_GUEST_PREVIEWS} />
+            <GuestDemoPreviewCard />
           </div>
         </Card>
       </div>
@@ -558,7 +563,7 @@ export function MePage() {
                       </Link>
                     </td>
                     <td className="watchlist-cell-name">
-                      <div>{item.name}</div>
+                      <div>{formatStockName(item.name)}</div>
                       {item.industry ? <div className="small muted">{item.industry}</div> : null}
                     </td>
                     <td className="watchlist-cell-thresholds">{renderThresholdBadges(item)}</td>

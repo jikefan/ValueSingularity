@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Card } from '../../components/ui/Card'
 import { GlossaryLabel, InfoHint } from '../../components/ui/InfoHint'
 import { Metric } from '../../components/ui/Metric'
@@ -6,11 +6,24 @@ import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { createChartTheme } from '../../lib/chartTheme'
 import { Chart, type ChartOption } from '../../lib/charts'
-import { fmtNum, formatNum, formatPct, formatYi, qualityTone, toYi } from '../../lib/format'
+import {
+  fmtNum,
+  formatForensicRatioPct,
+  formatNum,
+  formatPct,
+  formatYi,
+  qualityTone,
+  toYi,
+} from '../../lib/format'
 import type { GlossaryKey } from '../../lib/glossary'
 import { useThemeMode } from '../../lib/theme'
 import { useForceSyncStockSnapshot } from '../../lib/useStockAnalysis'
-import type { CapitalAllocationSummary, StockSnapshotPayload } from '../../types/api'
+import { useViewMode, type ViewMode } from '../../lib/viewMode'
+import type {
+  CapitalAllocationSummary,
+  StockForensicsSection,
+  StockSnapshotPayload,
+} from '../../types/api'
 import {
   getEarningsQualityBadgeMeta,
   getEarningsQualityVerdictTone,
@@ -77,6 +90,30 @@ function getCapitalAllocationTagColor(
   return 'amber'
 }
 
+function buildDupontSummaryLine(
+  forensics: StockForensicsSection,
+  isFinancialProfile: boolean,
+): string {
+  const roeText = formatPct(forensics.dupont_roe_5y_avg_pct, 2)
+  const marginText = formatPct(forensics.dupont_net_margin_5y_avg_pct, 1)
+  const turnoverText = formatRatioValue(forensics.dupont_asset_turnover_5y_avg, ' 次')
+  const multiplierText = formatRatioValue(forensics.dupont_equity_multiplier_5y_avg, 'x')
+
+  if (isFinancialProfile) {
+    return `5Y 平均 ROE ${roeText} · 金融业高权益乘数 (${multiplierText}) 属于经营特性，重点看盈利稳健与分红能力`
+  }
+  if ((forensics.dupont_equity_multiplier_5y_avg ?? 0) >= 2.2) {
+    return `5Y 平均 ROE ${roeText} · 由净利率 (${marginText}) 与较高财务杠杆 (${multiplierText}) 共同驱动`
+  }
+  if ((forensics.dupont_net_margin_5y_avg_pct ?? 0) >= 20) {
+    return `5Y 平均 ROE ${roeText} · 核心靠高净利率 (${marginText}) 赚钱，杠杆克制 (${multiplierText})`
+  }
+  if ((forensics.dupont_asset_turnover_5y_avg ?? 0) >= 0.8) {
+    return `5Y 平均 ROE ${roeText} · 靠较高资产周转效率 (${turnoverText}) 驱动回报`
+  }
+  return `5Y 平均 ROE ${roeText} = 净利率 ${marginText} × 周转率 ${turnoverText} × 权益乘数 ${multiplierText}`
+}
+
 export type StockForensicsTabProps = {
   snapshot: StockSnapshotPayload
   stockCode?: string
@@ -86,6 +123,12 @@ export type StockForensicsTabProps = {
 export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockForensicsTabProps) {
   const { theme } = useThemeMode()
   const isCompact = useCompactViewport()
+  const { viewMode, isSimple } = useViewMode()
+  const [dupontOverride, setDupontOverride] = useState<{ mode: ViewMode; open: boolean } | null>(
+    null,
+  )
+  const isDupontOpen =
+    dupontOverride && dupontOverride.mode === viewMode ? dupontOverride.open : !isSimple
   const resolvedCode = stockCode?.trim() || snapshot.code
   const forceSyncMutation = useForceSyncStockSnapshot(resolvedCode)
   const activeSnapshot =
@@ -370,6 +413,55 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
   const findings = forensics.findings ?? []
   const capAlloc = forensics.capital_allocation ?? null
   const isFinancialProfile = forensics.earnings_quality_tag === 'financial_special'
+  const ocfToCore = forensics.ocf_to_core_profit_3y_pct
+  const isOcfCoreInapplicable =
+    ocfToCore === null ||
+    ocfToCore === undefined ||
+    !Number.isFinite(ocfToCore) ||
+    Math.abs(ocfToCore) >= 900
+  const ocfToCoreDisplay =
+    isFinancialProfile && (ocfToCore === null || ocfToCore === undefined)
+      ? '金融业不适用'
+      : formatForensicRatioPct(ocfToCore, { fallbackText: '主业微利(不适用)' })
+  const ocfToCoreSub =
+    isFinancialProfile && (ocfToCore === null || ocfToCore === undefined)
+      ? '金融业存贷款现金流结构特殊，豁免常规现金转化比率考核'
+      : isOcfCoreInapplicable
+        ? '主业核心利润微薄或亏损，现金转化比率不适用'
+        : '税后OCF / 税前核心利润 · ≥ 60% 扎实 / < 35% 红灯'
+
+  const coreShareDisplay =
+    forensics.core_profit_share_3y_pct === null || forensics.core_profit_share_3y_pct === undefined
+      ? '—'
+      : formatForensicRatioPct(forensics.core_profit_share_3y_pct)
+  const investShareDisplay =
+    forensics.invest_profit_share_3y_pct === null ||
+    forensics.invest_profit_share_3y_pct === undefined
+      ? '—'
+      : formatForensicRatioPct(forensics.invest_profit_share_3y_pct, {
+          fallbackText: '主业微利(不适用)',
+        })
+  const nonRecurringDisplay =
+    forensics.non_recurring_share_3y_pct === null ||
+    forensics.non_recurring_share_3y_pct === undefined
+      ? forensics.earnings_quality_tag === 'subsidy_inflated'
+        ? '全靠非经扭亏'
+        : '—'
+      : formatForensicRatioPct(forensics.non_recurring_share_3y_pct, {
+          fallbackText: '全靠非经扭亏',
+        })
+  const investAssetsRatioDisplay =
+    forensics.investment_assets_ratio_pct === null ||
+    forensics.investment_assets_ratio_pct === undefined
+      ? '—'
+      : formatForensicRatioPct(forensics.investment_assets_ratio_pct)
+  const interestBurdenDisplay =
+    forensics.interest_burden_pct === null || forensics.interest_burden_pct === undefined
+      ? '—'
+      : formatForensicRatioPct(forensics.interest_burden_pct, {
+          fallbackText: '息税前微利(不适用)',
+        })
+  const dupontSummaryLine = buildDupontSummaryLine(forensics, isFinancialProfile)
 
   return (
     <div className="stack" style={{ gap: 16 }}>
@@ -395,9 +487,7 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
               <div className="forensic-bridge-label">
                 <GlossaryLabel label="主业核心利润占比 (3Y)" term="core_operating_profit" />
               </div>
-              <div className="forensic-bridge-value">
-                {formatPct(forensics.core_profit_share_3y_pct, 1)}
-              </div>
+              <div className="forensic-bridge-value">{coreShareDisplay}</div>
               <div className="forensic-bridge-sub">
                 {isFinancialProfile ? '金融业豁免主业剥离' : '≥ 75% 代表主业造血主导'}
               </div>
@@ -413,9 +503,7 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
               <div className="forensic-bridge-label">
                 <GlossaryLabel label="投资与公允价值占比 (3Y)" term="invest_profit_share" />
               </div>
-              <div className="forensic-bridge-value">
-                {formatPct(forensics.invest_profit_share_3y_pct, 1)}
-              </div>
+              <div className="forensic-bridge-value">{investShareDisplay}</div>
               <div className="forensic-bridge-sub">
                 {isFinancialProfile
                   ? '含债券配置与自营正常投资收益'
@@ -433,9 +521,7 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
               <div className="forensic-bridge-label">
                 <GlossaryLabel label="补贴及一次性损益占比 (3Y)" term="subsidy_and_oneoff" />
               </div>
-              <div className="forensic-bridge-value">
-                {formatPct(forensics.non_recurring_share_3y_pct, 1)}
-              </div>
+              <div className="forensic-bridge-value">{nonRecurringDisplay}</div>
               <div className="forensic-bridge-sub">政府补助、资产处置与营业外收支</div>
             </div>
 
@@ -449,9 +535,7 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
               <div className="forensic-bridge-label">
                 <GlossaryLabel label="表内投资类资产占比" term="investment_assets_ratio" />
               </div>
-              <div className="forensic-bridge-value">
-                {formatPct(forensics.investment_assets_ratio_pct, 1)}
-              </div>
+              <div className="forensic-bridge-value">{investAssetsRatioDisplay}</div>
               <div className="forensic-bridge-sub">
                 {formatYi(forensics.investment_assets_yuan)}
               </div>
@@ -463,15 +547,15 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
               <Metric
                 label="OCF / 主业核心利润 (3Y)"
                 hint="ocf_to_core_profit"
-                value={formatPct(forensics.ocf_to_core_profit_3y_pct, 1)}
-                sub="税后OCF / 税前核心利润 · ≥ 60% 扎实 / < 35% 红灯"
+                value={ocfToCoreDisplay}
+                sub={ocfToCoreSub}
               />
             </div>
             <div className="subpanel">
               <Metric
                 label="利息负担率 (3Y)"
                 hint="interest_burden"
-                value={formatPct(forensics.interest_burden_pct, 1)}
+                value={interestBurdenDisplay}
                 sub="利息/息税前核心利润 · ≥ 50% 红灯 / ≥ 25% 黄灯"
               />
             </div>
@@ -568,13 +652,22 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
                         {formatNum(toYi(point.core_operating_profit_yuan), 2)}
                       </td>
                       <td className="text-right tnum">
-                        {formatPct(point.core_operating_margin_pct, 2)}
+                        {point.core_operating_margin_pct !== null &&
+                        point.core_operating_margin_pct !== undefined &&
+                        Math.abs(point.core_operating_margin_pct) >= 900
+                          ? '主业微利(不适用)'
+                          : formatPct(point.core_operating_margin_pct, 2)}
                       </td>
                       <td className="text-right tnum">
                         {formatNum(toYi(point.investment_and_fair_value_yuan), 2)}
                       </td>
                       <td className="text-right tnum">
-                        {formatPct(point.invest_share_of_op_profit_pct, 1)}
+                        {point.invest_share_of_op_profit_pct === null ||
+                        point.invest_share_of_op_profit_pct === undefined
+                          ? '—'
+                          : formatForensicRatioPct(point.invest_share_of_op_profit_pct, {
+                              fallbackText: '营业微利(不适用)',
+                            })}
                       </td>
                       <td className="text-right tnum">
                         {formatNum(toYi(point.subsidy_and_oneoff_yuan), 2)}
@@ -650,45 +743,69 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
           </div>
 
           {dupontAsc.length > 0 ? (
-            <>
-              <Chart option={dupontOption} height={260} ariaLabel="杜邦三因子趋势图" />
-              <div className="table-wrap">
-                <table className="pro-table" aria-label="杜邦三因子历年明细表">
-                  <thead>
-                    <tr>
-                      <th>年份</th>
-                      <th className="text-right">
-                        <GlossaryLabel label="ROE" term="roe" />
-                      </th>
-                      <th className="text-right">
-                        <GlossaryLabel label="销售净利率" term="net_margin" />
-                      </th>
-                      <th className="text-right">
-                        <GlossaryLabel label="总资产周转率" term="asset_turnover" />
-                      </th>
-                      <th className="text-right">
-                        <GlossaryLabel label="权益乘数" term="equity_multiplier" />
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dupontDesc.map((point) => (
-                      <tr key={point.year}>
-                        <td className="mono">{point.year}</td>
-                        <td className="text-right tnum">{formatPct(point.roe_pct, 2)}</td>
-                        <td className="text-right tnum">{formatPct(point.net_margin_pct, 2)}</td>
-                        <td className="text-right tnum">
-                          {formatRatioValue(point.asset_turnover, ' 次')}
-                        </td>
-                        <td className="text-right tnum">
-                          {formatRatioValue(point.equity_multiplier, 'x')}
-                        </td>
+            <details
+              className="advanced-disclosure"
+              open={isDupontOpen}
+              onToggle={(event) => {
+                const nextOpen = event.currentTarget.open
+                setDupontOverride(
+                  nextOpen === !isSimple ? null : { mode: viewMode, open: nextOpen },
+                )
+              }}
+            >
+              <summary>{`${dupontSummaryLine} · 点击展开杜邦年度拆解`}</summary>
+              <div className="advanced-disclosure-body stack" style={{ gap: 16 }}>
+                <Chart option={dupontOption} height={260} ariaLabel="杜邦三因子趋势图" />
+                <div className="table-wrap">
+                  <table className="pro-table" aria-label="杜邦三因子历年明细表">
+                    <thead>
+                      <tr>
+                        <th>年份</th>
+                        <th className="text-right">
+                          <GlossaryLabel label="ROE" term="roe" />
+                        </th>
+                        <th className="text-right">
+                          <GlossaryLabel label="销售净利率" term="net_margin" />
+                        </th>
+                        <th className="text-right">
+                          <GlossaryLabel label="总资产周转率" term="asset_turnover" />
+                        </th>
+                        <th className="text-right">
+                          <GlossaryLabel label="权益乘数" term="equity_multiplier" />
+                        </th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {dupontDesc.map((point) => (
+                        <tr key={point.year}>
+                          <td className="mono">{point.year}</td>
+                          <td className="text-right tnum">
+                            {point.roe_pct !== null &&
+                            point.roe_pct !== undefined &&
+                            Math.abs(point.roe_pct) >= 900
+                              ? '不适用'
+                              : formatPct(point.roe_pct, 2)}
+                          </td>
+                          <td className="text-right tnum">
+                            {point.net_margin_pct !== null &&
+                            point.net_margin_pct !== undefined &&
+                            Math.abs(point.net_margin_pct) >= 900
+                              ? '不适用'
+                              : formatPct(point.net_margin_pct, 2)}
+                          </td>
+                          <td className="text-right tnum">
+                            {formatRatioValue(point.asset_turnover, ' 次')}
+                          </td>
+                          <td className="text-right tnum">
+                            {formatRatioValue(point.equity_multiplier, 'x')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </>
+            </details>
           ) : (
             <EmptyBlock title="暂无逐年杜邦三因子明细序列" />
           )}
@@ -728,7 +845,13 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
                   <GlossaryLabel label="累计资本开支" term="capex_burden" />
                 </div>
                 <div className="forensic-bridge-value">{formatYi(capAlloc.total_capex_yuan)}</div>
-                <div className="forensic-bridge-sub">{`CapEx/OCF ${formatPct(capAlloc.capex_to_ocf_pct, 1)}`}</div>
+                <div className="forensic-bridge-sub">{`CapEx/OCF ${
+                  capAlloc.capex_to_ocf_pct === null || capAlloc.capex_to_ocf_pct === undefined
+                    ? '—'
+                    : formatForensicRatioPct(capAlloc.capex_to_ocf_pct, {
+                        fallbackText: 'OCF 微薄(不适用)',
+                      })
+                }`}</div>
               </div>
 
               <div className="forensic-dupont-cell">
@@ -739,7 +862,13 @@ export function StockForensicsTab({ snapshot, stockCode, onSwitchTab }: StockFor
                   {formatYi(capAlloc.total_dividends_yuan + capAlloc.total_repurchases_yuan)}
                 </div>
                 <div className="forensic-bridge-sub">
-                  {`回馈/OCF ${formatPct(capAlloc.payout_to_ocf_pct, 1)} · 股权再融资 ${formatYi(capAlloc.total_equity_financing_yuan)}`}
+                  {`回馈/OCF ${
+                    capAlloc.payout_to_ocf_pct === null || capAlloc.payout_to_ocf_pct === undefined
+                      ? '—'
+                      : formatForensicRatioPct(capAlloc.payout_to_ocf_pct, {
+                          fallbackText: 'OCF 微薄(不适用)',
+                        })
+                  } · 股权再融资 ${formatYi(capAlloc.total_equity_financing_yuan)}`}
                 </div>
               </div>
 

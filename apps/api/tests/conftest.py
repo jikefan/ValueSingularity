@@ -14,6 +14,17 @@ from app.main import create_app
 from app.settings import settings
 
 
+def _clear_snapshot_cache_state() -> None:
+    snapshot_adapter._SUMMARY_CACHE.clear()
+    snapshot_adapter._SUMMARY_EPOCHS.clear()
+    for loop_tasks in list(snapshot_adapter._SUMMARY_REFRESH_TASKS.values()):
+        for task in list(loop_tasks.values()):
+            if not task.done():
+                task.cancel()
+        loop_tasks.clear()
+    snapshot_adapter._SUMMARY_REFRESH_TASKS.clear()
+
+
 @pytest.fixture(autouse=True)
 def _isolate_email_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep tests isolated from host SMTP config and cross-test snapshot cache state."""
@@ -23,9 +34,9 @@ def _isolate_email_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setattr(settings, "smtp_from_email", None)
     monkeypatch.setattr(settings, "auth_require_email_verification", None)
     monkeypatch.setattr(settings, "snapshot_summary_cache_ttl_seconds", 0.0)
-    snapshot_adapter._SUMMARY_CACHE.clear()
+    _clear_snapshot_cache_state()
     yield
-    snapshot_adapter._SUMMARY_CACHE.clear()
+    _clear_snapshot_cache_state()
 
 
 @pytest.fixture

@@ -43,10 +43,11 @@ const DEFAULT_POPOVER_WIDTH_PX = 320
 const DEFAULT_POPOVER_HEIGHT_PX = 150
 
 function resolveEntry(props: InfoHintProps): GlossaryEntry {
-  const base = props.term ? GLOSSARY[props.term] : undefined
+  const base: GlossaryEntry | undefined = props.term ? GLOSSARY[props.term] : undefined
   if (props.entry) {
     return {
       label: props.title ?? props.entry.label ?? base?.label ?? '指标说明',
+      plain: props.entry.plain ?? base?.plain,
       summary: props.entry.summary,
       formula: props.entry.formula,
       reading: props.entry.reading,
@@ -278,6 +279,12 @@ export function InfoHint(props: InfoHintProps) {
               }}
             >
               <div className="info-hint-title">{resolved.label}</div>
+              {resolved.plain?.trim() ? (
+                <p className="info-hint-plain">
+                  <strong>大白话：</strong>
+                  {resolved.plain}
+                </p>
+              ) : null}
               <p className="info-hint-summary">{resolved.summary}</p>
               {resolved.formula ? (
                 <div className="info-hint-section">

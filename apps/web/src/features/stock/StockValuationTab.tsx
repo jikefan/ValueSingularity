@@ -17,6 +17,7 @@ import {
 } from '../../lib/format'
 import { formatSpreadPct, solveImpliedFcfCagrPct } from '../../lib/reverseDcfSolver'
 import { useThemeMode } from '../../lib/theme'
+import { useViewMode, type ViewMode } from '../../lib/viewMode'
 import type { StockSnapshotPayload } from '../../types/api'
 import {
   buildSensitivityMatrix,
@@ -39,6 +40,7 @@ function buildGrahamTip(snapshot: StockSnapshotPayload, isFinancial: boolean): s
 export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload }) {
   const { theme } = useThemeMode()
   const isCompact = useCompactViewport()
+  const { viewMode, isSimple } = useViewMode()
   const { valuation, reverse_dcf: reverseDcf, formula_notes: formulaNotes } = snapshot
 
   const isFinancial = useMemo(() => isFinancialSnapshot(snapshot), [snapshot])
@@ -47,6 +49,8 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
 
   const [discountRatePct, setDiscountRatePct] = useState(reverseDcf.discount_rate_pct)
   const [terminalMultiple, setTerminalMultiple] = useState(reverseDcf.terminal_multiple)
+  const [dcfOverride, setDcfOverride] = useState<{ mode: ViewMode; open: boolean } | null>(null)
+  const isDcfOpen = dcfOverride && dcfOverride.mode === viewMode ? dcfOverride.open : !isSimple
 
   useEffect(() => {
     setDiscountRatePct(reverseDcf.discount_rate_pct)
@@ -190,6 +194,12 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
     formulaNotes.reverse_dcf ??
     '逆向 DCF 仅基于当前企业价值与历史基准 FCF 反推市场隐含增速，严禁视为主观目标价或买卖建议。'
 
+  const dcfSummaryText = isFinancial
+    ? `进阶估值模型 · 金融业采用 PB-ROE 隐含盈利收益率 ${formatPct(pbRoeMetrics.impliedEarningsYieldPct, 2)}（已豁免传统 Reverse DCF，点击展开详情）`
+    : isCurrentlySolvable
+      ? `进阶估值模型 · 市场隐含 10Y FCF 增速 ${formatSignedPct(activeImpliedCagr, 2)}（点击展开调节折现率与倍数）`
+      : '进阶估值模型 · Reverse DCF 当前不可求解（点击展开查看回退说明与估值底数）'
+
   return (
     <div className="stack" style={{ gap: 16 }}>
       <Card
@@ -273,281 +283,297 @@ export function StockValuationTab({ snapshot }: { snapshot: StockSnapshotPayload
           </span>
         }
       >
-        {isFinancial ? (
-          <div className="stack" style={{ gap: 16 }}>
-            <section
-              className="pb-roe-card stack"
-              aria-label="金融业替代估值：PB-ROE 隐含长期回报参考"
-            >
-              <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-                <strong>
-                  <GlossaryLabel
-                    label="金融业替代估值：PB-ROE 隐含长期回报参考"
-                    term="pb_roe_implied"
-                  />
-                </strong>
-                <Tag color="green">不输出主观目标价</Tag>
-              </div>
-
-              <div className="well-grid-4">
-                <div className="well-cell">
-                  <Metric
-                    label="当前 PB"
-                    hint="pb"
-                    value={formatNum(pbRoeMetrics.pb, 2)}
-                    sub={`10Y PB 分位 ${formatPct(pbRoeMetrics.pbPercentile10y, 1)}`}
-                  />
-                </div>
-                <div className="well-cell">
-                  <Metric
-                    label="5年平均 ROE"
-                    hint="roe_5y_avg"
-                    value={formatPct(pbRoeMetrics.roe5yAvgPct, 2)}
-                    sub={`10Y 最低 ROE ${formatPct(pbRoeMetrics.roe10yMinPct, 2)}`}
-                  />
-                </div>
-                <div className="well-cell">
-                  <Metric
-                    label="隐含当期盈利收益率 (ROE / PB)"
-                    hint="pb_roe_implied"
-                    value={formatPct(pbRoeMetrics.impliedEarningsYieldPct, 2)}
-                    sub="稳态净资产收益率 ÷ 当前市净率"
-                    tone={qualityTone(pbRoeMetrics.impliedEarningsYieldPct)}
-                  />
-                </div>
-                <div className="well-cell">
-                  <Metric
-                    label="当前股息率"
-                    hint="dividend_yield_current"
-                    value={formatPct(pbRoeMetrics.dividendYieldPct, 2)}
-                    sub="年度现金分红静态回报"
-                  />
-                </div>
-              </div>
-
-              <p className="small soft">
-                会计公式说明：在金融企业净资产相对稳定假设下，隐含当期盈利收益率 ≈ 5 年平均 ROE ÷
-                当前
-                PB，反映以当前市净率买入单位净资产对应的历史盈利回报率；实际实现仍受信用拨备周期、息差变化与资本补充影响，不构成主观目标价。
-              </p>
-            </section>
-
-            <div className="notice-box notice-warn" role="note">
-              <strong>传统 DCF 豁免说明：</strong>
-              <span>{reverseDcf.note}</span>
-            </div>
-
-            <div className="disclaimer-box small muted">
-              <strong>模型边界声明：</strong>
-              {reverseDcfNote}
-            </div>
-          </div>
-        ) : (
-          <div className="stack" style={{ gap: 16 }}>
-            <div className="grid grid-4">
-              <Metric
-                label="总市值"
-                hint="market_cap"
-                value={formatYi(reverseDcf.market_cap_yuan)}
-              />
-              <Metric
-                label="净现金"
-                hint="net_cash"
-                value={formatYi(reverseDcf.net_cash_yuan)}
-                sub="货币资金+交易金资产−有息负债"
-              />
-              <Metric
-                label="企业价值 EV"
-                hint="enterprise_value"
-                value={formatYi(reverseDcf.enterprise_value_yuan)}
-                sub="EV = 总市值 − 净现金"
-              />
-              <Metric
-                label={`基准 FCF（${reverseDcf.base_fcf_years} 年均值）`}
-                hint="base_fcf_3y"
-                value={formatYi(reverseDcf.base_fcf_yuan)}
-              />
-            </div>
-
-            {canInteractDcf ? (
-              <div className="dcf-slider-panel stack" style={{ gap: 12 }}>
-                <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-                  <div className="stack" style={{ gap: 2 }}>
-                    <span className="label-with-hint">
-                      <strong className="small">交互式参数敏感性推演（本地实时二分求解）</strong>
-                      <InfoHint
-                        title="交互式参数敏感性推演"
-                        entry={{
-                          summary:
-                            '在浏览器本地利用二分法实时反解 Reverse DCF 方程，即时反映不同折现率与终值倍数假设下的隐含 FCF 增速门槛。',
-                          reading:
-                            '尝试把 WACC 调高或终值倍数调低；若苛刻假设下隐含增速仍明显低于历史增速，安全边际更扎实。',
-                        }}
+        <details
+          className="advanced-disclosure"
+          open={isDcfOpen}
+          onToggle={(event) => {
+            const nextOpen = event.currentTarget.open
+            setDcfOverride(nextOpen === !isSimple ? null : { mode: viewMode, open: nextOpen })
+          }}
+        >
+          <summary>{dcfSummaryText}</summary>
+          <div className="advanced-disclosure-body">
+            {isFinancial ? (
+              <div className="stack" style={{ gap: 16 }}>
+                <section
+                  className="pb-roe-card stack"
+                  aria-label="金融业替代估值：PB-ROE 隐含长期回报参考"
+                >
+                  <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                    <strong>
+                      <GlossaryLabel
+                        label="金融业替代估值：PB-ROE 隐含长期回报参考"
+                        term="pb_roe_implied"
                       />
-                    </span>
-                    <span className="small muted">
-                      调整折现率或第 10 年终值倍数，实时观测当前市值隐含的 FCF 增速门槛
-                    </span>
+                    </strong>
+                    <Tag color="green">不输出主观目标价</Tag>
                   </div>
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    disabled={isBaseParams}
-                    onClick={() => {
-                      setDiscountRatePct(reverseDcf.discount_rate_pct)
-                      setTerminalMultiple(reverseDcf.terminal_multiple)
-                    }}
-                  >
-                    恢复默认参数
-                  </button>
+
+                  <div className="well-grid-4">
+                    <div className="well-cell">
+                      <Metric
+                        label="当前 PB"
+                        hint="pb"
+                        value={formatNum(pbRoeMetrics.pb, 2)}
+                        sub={`10Y PB 分位 ${formatPct(pbRoeMetrics.pbPercentile10y, 1)}`}
+                      />
+                    </div>
+                    <div className="well-cell">
+                      <Metric
+                        label="5年平均 ROE"
+                        hint="roe_5y_avg"
+                        value={formatPct(pbRoeMetrics.roe5yAvgPct, 2)}
+                        sub={`10Y 最低 ROE ${formatPct(pbRoeMetrics.roe10yMinPct, 2)}`}
+                      />
+                    </div>
+                    <div className="well-cell">
+                      <Metric
+                        label="隐含当期盈利收益率 (ROE / PB)"
+                        hint="pb_roe_implied"
+                        value={formatPct(pbRoeMetrics.impliedEarningsYieldPct, 2)}
+                        sub="稳态净资产收益率 ÷ 当前市净率"
+                        tone={qualityTone(pbRoeMetrics.impliedEarningsYieldPct)}
+                      />
+                    </div>
+                    <div className="well-cell">
+                      <Metric
+                        label="当前股息率"
+                        hint="dividend_yield_current"
+                        value={formatPct(pbRoeMetrics.dividendYieldPct, 2)}
+                        sub="年度现金分红静态回报"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="small soft">
+                    会计公式说明：在金融企业净资产相对稳定假设下，隐含当期盈利收益率 ≈ 5 年平均 ROE
+                    ÷ 当前
+                    PB，反映以当前市净率买入单位净资产对应的历史盈利回报率；实际实现仍受信用拨备周期、息差变化与资本补充影响，不构成主观目标价。
+                  </p>
+                </section>
+
+                <div className="notice-box notice-warn" role="note">
+                  <strong>传统 DCF 豁免说明：</strong>
+                  <span>{reverseDcf.note}</span>
                 </div>
 
-                <div className="dcf-slider-grid">
-                  <div className="dcf-slider-field">
-                    <div className="row">
-                      <div className="field-label-row">
-                        <label htmlFor="dcf-wacc-slider" className="small soft">
-                          折现率 WACC (%)
-                        </label>
-                        <InfoHint term="wacc" />
-                      </div>
-                      <span className="mono small">{fmtNum(discountRatePct, 1)}%</span>
-                    </div>
-                    <input
-                      id="dcf-wacc-slider"
-                      type="range"
-                      min={6}
-                      max={14}
-                      step={0.5}
-                      value={discountRatePct}
-                      onChange={(event) => setDiscountRatePct(Number(event.target.value))}
-                    />
-                  </div>
-
-                  <div className="dcf-slider-field">
-                    <div className="row">
-                      <div className="field-label-row">
-                        <label htmlFor="dcf-multiple-slider" className="small soft">
-                          终值倍数 (x)
-                        </label>
-                        <InfoHint term="terminal_multiple" />
-                      </div>
-                      <span className="mono small">{fmtNum(terminalMultiple, 1)}x</span>
-                    </div>
-                    <input
-                      id="dcf-multiple-slider"
-                      type="range"
-                      min={6}
-                      max={25}
-                      step={1}
-                      value={terminalMultiple}
-                      onChange={(event) => setTerminalMultiple(Number(event.target.value))}
-                    />
-                  </div>
+                <div className="disclaimer-box small muted">
+                  <strong>模型边界声明：</strong>
+                  {reverseDcfNote}
                 </div>
               </div>
-            ) : null}
-
-            <div className="grid grid-3">
-              <div>
-                <span className="metric-label">市场隐含 10Y FCF CAGR</span>
-                <span style={{ marginLeft: 5, display: 'inline-flex', verticalAlign: 'middle' }}>
-                  <InfoHint term="implied_fcf_cagr" />
-                </span>
-                <div className="metric-value">
-                  {isCurrentlySolvable ? formatSignedPct(activeImpliedCagr, 2) : '不可求解'}
-                </div>
-                <div className="metric-sub">
-                  {`折现率 ${fmtNum(discountRatePct, 1)}% · 终值 ${fmtNum(terminalMultiple, 1)}x`}
-                </div>
-              </div>
-              <Metric
-                label="历史营收 CAGR 参考"
-                hint="hist_rev_cagr"
-                value={formatSignedPct(reverseDcf.historical_revenue_cagr_pct, 2)}
-                sub="近 3–5 年实际营业收入复合增速"
-              />
-              <Metric
-                label="隐含增速 − 历史增速"
-                hint="implied_minus_hist"
-                value={formatSignedPct(activeSpreadPct, 2)}
-                sub="正值代表市场预期高于历史增速"
-                tone={qualityTone(activeSpreadPct, true)}
-              />
-            </div>
-
-            <div
-              className={reverseDcf.solvable ? 'notice-box' : 'notice-box notice-warn'}
-              role="note"
-            >
-              <strong>{reverseDcf.solvable ? '反推结果说明：' : '不可求解回退说明：'}</strong>
-              <span>{reverseDcf.note}</span>
-            </div>
-
-            {matrix.discountRates.length > 0 && matrix.multiples.length > 0 ? (
-              <div className="stack" style={{ gap: 8 }}>
-                <div className="small soft">
-                  <GlossaryLabel
-                    label="WACC（折现率）× 终值倍数 3×3 敏感性矩阵（单元格为隐含 10Y FCF CAGR）"
-                    term="sensitivity_matrix"
+            ) : (
+              <div className="stack" style={{ gap: 16 }}>
+                <div className="grid grid-4">
+                  <Metric
+                    label="总市值"
+                    hint="market_cap"
+                    value={formatYi(reverseDcf.market_cap_yuan)}
+                  />
+                  <Metric
+                    label="净现金"
+                    hint="net_cash"
+                    value={formatYi(reverseDcf.net_cash_yuan)}
+                    sub="货币资金+交易金资产−有息负债"
+                  />
+                  <Metric
+                    label="企业价值 EV"
+                    hint="enterprise_value"
+                    value={formatYi(reverseDcf.enterprise_value_yuan)}
+                    sub="EV = 总市值 − 净现金"
+                  />
+                  <Metric
+                    label={`基准 FCF（${reverseDcf.base_fcf_years} 年均值）`}
+                    hint="base_fcf_3y"
+                    value={formatYi(reverseDcf.base_fcf_yuan)}
                   />
                 </div>
-                <div className="table-wrap">
-                  <table className="table sensitivity-table">
-                    <thead>
-                      <tr>
-                        <th>
-                          <span className="label-with-hint">
-                            <span>WACC \ 终值倍数</span>
-                            <InfoHint
-                              title="WACC \ 终值倍数"
-                              entry={{
-                                summary:
-                                  '行维度为折现率（WACC）假设，列维度为第 10 年末退出终值倍数（EV / FCF₁₀）假设。',
-                                reading:
-                                  '交叉单元格数值展示该组参数对应的市场隐含未来 10 年 FCF 复合增速。',
-                              }}
-                            />
-                          </span>
-                        </th>
-                        {matrix.multiples.map((multiple) => (
-                          <th key={multiple} style={{ textAlign: 'right' }}>
-                            {fmtNum(multiple, 1)}x
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {matrix.discountRates.map((rate) => (
-                        <tr key={rate}>
-                          <td className="mono">{fmtNum(rate, 1)}%</td>
-                          {matrix.multiples.map((multiple) => {
-                            const cellVal = matrix.values.get(`${rate}:${multiple}`) ?? null
-                            const isActiveCell =
-                              rate === discountRatePct && multiple === terminalMultiple
-                            return (
-                              <td
-                                key={`${rate}-${multiple}`}
-                                className={isActiveCell ? 'num sensitivity-base' : 'num'}
-                              >
-                                {cellVal !== null ? formatSignedPct(cellVal, 2) : '无解'}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+
+                {canInteractDcf ? (
+                  <div className="dcf-slider-panel stack" style={{ gap: 12 }}>
+                    <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+                      <div className="stack" style={{ gap: 2 }}>
+                        <span className="label-with-hint">
+                          <strong className="small">
+                            交互式参数敏感性推演（本地实时二分求解）
+                          </strong>
+                          <InfoHint
+                            title="交互式参数敏感性推演"
+                            entry={{
+                              summary:
+                                '在浏览器本地利用二分法实时反解 Reverse DCF 方程，即时反映不同折现率与终值倍数假设下的隐含 FCF 增速门槛。',
+                              reading:
+                                '尝试把 WACC 调高或终值倍数调低；若苛刻假设下隐含增速仍明显低于历史增速，安全边际更扎实。',
+                            }}
+                          />
+                        </span>
+                        <span className="small muted">
+                          调整折现率或第 10 年终值倍数，实时观测当前市值隐含的 FCF 增速门槛
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        disabled={isBaseParams}
+                        onClick={() => {
+                          setDiscountRatePct(reverseDcf.discount_rate_pct)
+                          setTerminalMultiple(reverseDcf.terminal_multiple)
+                        }}
+                      >
+                        恢复默认参数
+                      </button>
+                    </div>
+
+                    <div className="dcf-slider-grid">
+                      <div className="dcf-slider-field">
+                        <div className="row">
+                          <div className="field-label-row">
+                            <label htmlFor="dcf-wacc-slider" className="small soft">
+                              折现率 WACC (%)
+                            </label>
+                            <InfoHint term="wacc" />
+                          </div>
+                          <span className="mono small">{fmtNum(discountRatePct, 1)}%</span>
+                        </div>
+                        <input
+                          id="dcf-wacc-slider"
+                          type="range"
+                          min={6}
+                          max={14}
+                          step={0.5}
+                          value={discountRatePct}
+                          onChange={(event) => setDiscountRatePct(Number(event.target.value))}
+                        />
+                      </div>
+
+                      <div className="dcf-slider-field">
+                        <div className="row">
+                          <div className="field-label-row">
+                            <label htmlFor="dcf-multiple-slider" className="small soft">
+                              终值倍数 (x)
+                            </label>
+                            <InfoHint term="terminal_multiple" />
+                          </div>
+                          <span className="mono small">{fmtNum(terminalMultiple, 1)}x</span>
+                        </div>
+                        <input
+                          id="dcf-multiple-slider"
+                          type="range"
+                          min={6}
+                          max={25}
+                          step={1}
+                          value={terminalMultiple}
+                          onChange={(event) => setTerminalMultiple(Number(event.target.value))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="grid grid-3">
+                  <div>
+                    <span className="metric-label">市场隐含 10Y FCF CAGR</span>
+                    <span
+                      style={{ marginLeft: 5, display: 'inline-flex', verticalAlign: 'middle' }}
+                    >
+                      <InfoHint term="implied_fcf_cagr" />
+                    </span>
+                    <div className="metric-value">
+                      {isCurrentlySolvable ? formatSignedPct(activeImpliedCagr, 2) : '不可求解'}
+                    </div>
+                    <div className="metric-sub">
+                      {`折现率 ${fmtNum(discountRatePct, 1)}% · 终值 ${fmtNum(terminalMultiple, 1)}x`}
+                    </div>
+                  </div>
+                  <Metric
+                    label="历史营收 CAGR 参考"
+                    hint="hist_rev_cagr"
+                    value={formatSignedPct(reverseDcf.historical_revenue_cagr_pct, 2)}
+                    sub="近 3–5 年实际营业收入复合增速"
+                  />
+                  <Metric
+                    label="隐含增速 − 历史增速"
+                    hint="implied_minus_hist"
+                    value={formatSignedPct(activeSpreadPct, 2)}
+                    sub="正值代表市场预期高于历史增速"
+                    tone={qualityTone(activeSpreadPct, true)}
+                  />
+                </div>
+
+                <div
+                  className={reverseDcf.solvable ? 'notice-box' : 'notice-box notice-warn'}
+                  role="note"
+                >
+                  <strong>{reverseDcf.solvable ? '反推结果说明：' : '不可求解回退说明：'}</strong>
+                  <span>{reverseDcf.note}</span>
+                </div>
+
+                {matrix.discountRates.length > 0 && matrix.multiples.length > 0 ? (
+                  <div className="stack" style={{ gap: 8 }}>
+                    <div className="small soft">
+                      <GlossaryLabel
+                        label="WACC（折现率）× 终值倍数 3×3 敏感性矩阵（单元格为隐含 10Y FCF CAGR）"
+                        term="sensitivity_matrix"
+                      />
+                    </div>
+                    <div className="table-wrap">
+                      <table className="table sensitivity-table">
+                        <thead>
+                          <tr>
+                            <th>
+                              <span className="label-with-hint">
+                                <span>WACC \ 终值倍数</span>
+                                <InfoHint
+                                  title="WACC \ 终值倍数"
+                                  entry={{
+                                    summary:
+                                      '行维度为折现率（WACC）假设，列维度为第 10 年末退出终值倍数（EV / FCF₁₀）假设。',
+                                    reading:
+                                      '交叉单元格数值展示该组参数对应的市场隐含未来 10 年 FCF 复合增速。',
+                                  }}
+                                />
+                              </span>
+                            </th>
+                            {matrix.multiples.map((multiple) => (
+                              <th key={multiple} style={{ textAlign: 'right' }}>
+                                {fmtNum(multiple, 1)}x
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {matrix.discountRates.map((rate) => (
+                            <tr key={rate}>
+                              <td className="mono">{fmtNum(rate, 1)}%</td>
+                              {matrix.multiples.map((multiple) => {
+                                const cellVal = matrix.values.get(`${rate}:${multiple}`) ?? null
+                                const isActiveCell =
+                                  rate === discountRatePct && multiple === terminalMultiple
+                                return (
+                                  <td
+                                    key={`${rate}-${multiple}`}
+                                    className={isActiveCell ? 'num sensitivity-base' : 'num'}
+                                  >
+                                    {cellVal !== null ? formatSignedPct(cellVal, 2) : '无解'}
+                                  </td>
+                                )
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="disclaimer-box small muted">
+                  <strong>模型边界声明：</strong>
+                  {reverseDcfNote}
                 </div>
               </div>
-            ) : null}
-
-            <div className="disclaimer-box small muted">
-              <strong>模型边界声明：</strong>
-              {reverseDcfNote}
-            </div>
+            )}
           </div>
-        )}
+        </details>
       </Card>
     </div>
   )

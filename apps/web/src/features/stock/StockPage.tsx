@@ -7,10 +7,11 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateB
 import { Tag } from '../../components/ui/Tag'
 import { ApiError, api } from '../../lib/api'
 import { useAuth } from '../../lib/authContext'
-import { formatNum, formatPct, formatSignedPct } from '../../lib/format'
+import { formatNum, formatPct, formatSignedPct, formatStockName } from '../../lib/format'
 import { queryKeys } from '../../lib/queryKeys'
 import { useStockScreener, useStockSnapshot } from '../../lib/useStockAnalysis'
 import { useAddWatchlist, useRemoveWatchlist, useWatchlist } from '../../lib/useWatchlist'
+import { useViewMode } from '../../lib/viewMode'
 import type { StockDetail, StockScreenerItem, StockSnapshotPayload } from '../../types/api'
 import { StockCtTab } from './StockCtTab'
 import { StockDecisionTab } from './StockDecisionTab'
@@ -24,6 +25,7 @@ import {
   StockMoatTab,
   StockOverviewTab,
 } from './StockOverviewTabs'
+import { StockQuickSummaryCard } from './StockQuickSummaryCard'
 import { StockValuationTab } from './StockValuationTab'
 import {
   computeFinancialPbRoeMetrics,
@@ -34,18 +36,23 @@ import {
   isFinancialSnapshot,
 } from './stockHelpers'
 
-const TABS = [
+const CORE_TABS = [
   { key: 'overview', label: '公司画像' },
   { key: 'forensics', label: '利润真相' },
-  { key: 'financials', label: '财务分析' },
-  { key: 'moat', label: '护城河' },
   { key: 'valuation', label: '估值' },
-  { key: 'growth', label: '增长引擎' },
-  { key: 'institutions', label: '机构视角' },
-  { key: 'governance', label: '治理' },
   { key: 'risks', label: '风险排雷' },
   { key: 'decision', label: '投资决策' },
 ] as const
+
+const DEEP_TABS = [
+  { key: 'financials', label: '财务分析' },
+  { key: 'moat', label: '护城河' },
+  { key: 'growth', label: '增长引擎' },
+  { key: 'institutions', label: '机构视角' },
+  { key: 'governance', label: '治理' },
+] as const
+
+const TABS = [...CORE_TABS, ...DEEP_TABS] as const
 
 type TabKey = (typeof TABS)[number]['key']
 type SnapshotTabKey = Exclude<TabKey, 'decision'>
@@ -103,7 +110,7 @@ function triggerMarkdownDownload(stock: StockDetail, snapshot: StockSnapshotPayl
   if (typeof document !== 'undefined') {
     const anchor = document.createElement('a')
     anchor.href = objectUrl
-    anchor.download = `${stock.code}-${stock.name}-定量研报简报.md`
+    anchor.download = `${stock.code}-${formatStockName(stock.name)}-定量研报简报.md`
     anchor.style.display = 'none'
     document.body.appendChild(anchor)
     anchor.click()
@@ -130,7 +137,7 @@ function CoverageDiscoveryLinks({
           <div className="sample-stock-row" style={{ justifyContent: 'center' }}>
             {curatedTargets.map((item) => (
               <Link key={item.code} className="sample-stock-chip" to={`/stock/${item.code}`}>
-                <span>{item.name}</span>
+                <span>{formatStockName(item.name)}</span>
                 <span className="mono muted">{item.code}</span>
               </Link>
             ))}
@@ -143,6 +150,7 @@ function CoverageDiscoveryLinks({
 
 function StockPageContent({ code }: { code: string }) {
   const { user, isAuthLoading } = useAuth()
+  const { setViewMode, isSimple } = useViewMode()
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [exportedNotice, setExportedNotice] = useState(false)
   const exportTimerRef = useRef<number | undefined>(undefined)
@@ -309,7 +317,7 @@ function StockPageContent({ code }: { code: string }) {
           <div className="stack" style={{ gap: 12 }}>
             {!currentStock.snapshot_available ? (
               <div className="notice-box" role="status">
-                {`正在同步并计算 ${currentStock.code} ${currentStock.name} 深度财报与估值快照（首次约需 5–8 秒）...`}
+                {`正在同步并计算 ${currentStock.code} ${formatStockName(currentStock.name)} 深度财报与估值快照（首次约需 5–8 秒）...`}
               </div>
             ) : null}
             <LoadingBlock lines={5} />
@@ -357,7 +365,7 @@ function StockPageContent({ code }: { code: string }) {
             {fallbackCard}
             <StockMdaDiffPanel
               code={currentStock.code}
-              stockName={currentStock.name}
+              stockName={formatStockName(currentStock.name)}
               snapshotAvailable={false}
             />
           </div>
@@ -381,7 +389,7 @@ function StockPageContent({ code }: { code: string }) {
         <div className="stock-header-top">
           <div className="stack" style={{ gap: 8 }}>
             <div className="stock-title-row">
-              <h1 className="stock-name">{stock.name}</h1>
+              <h1 className="stock-name">{formatStockName(stock.name)}</h1>
               <span className="code-pill">{stock.code}</span>
               <Tag color="blue">{stock.exchange}</Tag>
               {stock.is_st ? <Tag color="amber">ST</Tag> : null}
@@ -410,7 +418,7 @@ function StockPageContent({ code }: { code: string }) {
               {snapshot
                 ? `快照日期 ${snapshot.as_of} · 数据源 ${snapshot.data_source}`
                 : isSnapshotLoading && !stock.snapshot_available
-                  ? `正在首次同步 ${stock.code} ${stock.name} 财报与历史估值数据…`
+                  ? `正在首次同步 ${stock.code} ${formatStockName(stock.name)} 财报与历史估值数据…`
                   : isSnapshotLoading
                     ? `${stock.exchange} 交易所档案 · 正在读取深度分析快照`
                     : `${stock.exchange} 交易所档案 · 深度分析快照暂不可用`}
@@ -576,7 +584,7 @@ function StockPageContent({ code }: { code: string }) {
 
               <div className="well-cell">
                 <div className="metric-label">
-                  <GlossaryLabel label="CT 排雷与隐含预期" term="ct_and_implied" />
+                  <GlossaryLabel label="财报排雷与市场预期" term="ct_and_implied" />
                 </div>
                 <div className="metric-value tnum" style={{ fontSize: 18 }}>
                   {`${snapshot.financial_ct.red_count} 红 / ${snapshot.financial_ct.yellow_count} 黄`}
@@ -621,19 +629,64 @@ function StockPageContent({ code }: { code: string }) {
         </div>
       </section>
 
-      <div className="tab-bar" role="tablist" aria-label="个股分析维度">
-        {TABS.map((tab) => (
+      {snapshot && isSimple ? (
+        <StockQuickSummaryCard snapshot={snapshot} onSwitchTab={setActiveTab} />
+      ) : null}
+
+      <div className="row" style={{ gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div
+          className="tab-bar tab-bar-grouped"
+          role="tablist"
+          aria-label="个股分析维度"
+          style={{ flex: '1 1 560px' }}
+        >
+          <span className="tab-group-tag">核心必看</span>
+          {CORE_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              className={activeTab === tab.key ? 'tab-btn active' : 'tab-btn'}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+          <span className="tab-group-divider" aria-hidden="true" />
+          <span className="tab-group-tag">深度研究</span>
+          {DEEP_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              className={activeTab === tab.key ? 'tab-btn active' : 'tab-btn'}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="view-mode-switch" role="group" aria-label="研究视角切换">
           <button
-            key={tab.key}
             type="button"
-            role="tab"
-            aria-selected={activeTab === tab.key}
-            className={activeTab === tab.key ? 'tab-btn active' : 'tab-btn'}
-            onClick={() => setActiveTab(tab.key)}
+            className={isSimple ? 'view-mode-opt active' : 'view-mode-opt'}
+            aria-pressed={isSimple}
+            onClick={() => setViewMode('simple')}
           >
-            {tab.label}
+            简洁视角
           </button>
-        ))}
+          <button
+            type="button"
+            className={!isSimple ? 'view-mode-opt active' : 'view-mode-opt'}
+            aria-pressed={!isSimple}
+            onClick={() => setViewMode('pro')}
+          >
+            专业视角
+          </button>
+        </div>
       </div>
 
       {renderActiveTabBody()}

@@ -33,8 +33,12 @@ from app.adapters.akshare.stock_feed import (
 )
 from app.adapters.duckdb.stock_store import DuckDBStockFactStore
 from app.adapters.memory.market import default_market_overview
+from app.adapters.postgres import snapshot as snapshot_adapter
 from app.adapters.postgres.market import PostgresStockMetaRepository
-from app.adapters.postgres.snapshot import PostgresStockSnapshotRepository
+from app.adapters.postgres.snapshot import (
+    PostgresStockSnapshotRepository,
+    warmup_snapshot_summary_cache,
+)
 from app.api.deps import get_db, get_stock_service
 from app.cli import sync_stocks
 from app.db.base import Base
@@ -47,6 +51,7 @@ from app.domain.engines import (
 )
 from app.domain.errors import StockFactUnavailableError
 from app.domain.models import (
+    AnnualFinancialTrendPoint,
     StockAnnualReport,
     StockDailyBar,
     StockDetail,
@@ -1786,7 +1791,8 @@ async def test_pg_snapshot_list_all_uses_slim_projection_and_powers_engines() ->
                 == full_snap.forensics.invest_profit_share_3y_pct
             )
 
-            assert slim.annual_trends == []
+            assert len(slim.annual_trends) == len(full_snap.annual_trends)
+            assert all(isinstance(pt, AnnualFinancialTrendPoint) for pt in slim.annual_trends)
             assert slim.formula_notes == {}
             assert slim.valuation.history == []
             assert slim.financial_ct.checks == []
@@ -1865,3 +1871,206 @@ async def test_snapshot_repo_singleflight_ttl_cache_and_invalidation(
     res4 = await repo2.list_all_snapshots()
     assert scalars_calls == 2
     assert [s.code for s in res4] == ["600519"]
+
+
+async def test_fast_slim_snapshot_hydration_and_corrupt_filtering() -> None:
+    from types import SimpleNamespace
+
+    as_of = date(2026, 11, 20)
+    full_snap = build_stock_snapshot(
+        StockMetaRecord(code="600519", name="贵州茅台", exchange="SH", industry_sw1="食品饮料"),
+        _sample_bundle("600519", as_of),
+        generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC),
+    )
+    slim_raw = full_snap.model_dump(mode="json")
+    slim_raw["annual_trends"] = []
+    slim_raw["formula_notes"] = {}
+    slim_raw["valuation"]["history"] = []
+    slim_raw["financial_ct"]["checks"] = []
+    slim_raw["shareholder_return"]["series"] = []
+    slim_raw["reverse_dcf"]["sensitivity"] = []
+    slim_raw["moat"]["dimensions"] = []
+    assert slim_raw["forensics"] is not None
+    slim_raw["forensics"].pop("annual_decomposition", None)
+    slim_raw["forensics"].pop("dupont_series", None)
+    slim_raw["forensics"].pop("findings", None)
+
+    fast = snapshot_adapter._parse_slim_snapshot_fast(slim_raw, len(full_snap.annual_trends))
+    assert fast.radar == full_snap.radar
+    assert fast.peer_metrics == full_snap.peer_metrics
+    assert fast.valuation.pe_ttm == full_snap.valuation.pe_ttm
+    assert fast.forensics is not None
+    assert full_snap.forensics is not None
+    assert fast.forensics.capital_allocation == full_snap.forensics.capital_allocation
+    assert fast.forensics.findings == []
+    assert len(fast.annual_trends) == len(full_snap.annual_trends)
+
+    bad_score = {**slim_raw, "radar": {**slim_raw["radar"], "total_score": 101}}
+    bad_red = {**slim_raw, "financial_ct": {**slim_raw["financial_ct"], "red_count": -1}}
+    bad_profile = {**slim_raw, "radar": {**slim_raw["radar"], "scoring_profile": "bogus"}}
+    bad_exchange = {**slim_raw, "exchange": "HK"}
+    bad_code = {**slim_raw, "code": "12345"}
+    bad_nan = {**slim_raw, "valuation": {**slim_raw["valuation"], "pe_ttm": float("nan")}}
+
+    class _FakeScalars:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        def all(self) -> list[Any]:
+            return self._rows
+
+    class _FakeSession:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        async def scalars(self, _stmt: Any) -> _FakeScalars:
+            return _FakeScalars(self._rows)
+
+    full_raw = full_snap.model_dump(mode="json")
+    rows = [
+        SimpleNamespace(payload=raw)
+        for raw in (
+            full_raw,
+            {"code": "999999"},
+            {"bad": 1},
+            bad_score,
+            bad_red,
+            bad_profile,
+            bad_exchange,
+            bad_code,
+            bad_nan,
+        )
+    ]
+    loaded = await PostgresStockSnapshotRepository(_FakeSession(rows)).list_all_snapshots()  # type: ignore[arg-type]
+    assert len(loaded) == 1
+    assert [pt.year for pt in loaded[0].annual_trends] == [
+        pt.year for pt in full_snap.annual_trends
+    ]
+
+
+async def test_snapshot_repo_swr_and_startup_warmup(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from types import SimpleNamespace
+
+    app_bind = object()
+    monkeypatch.setattr(snapshot_adapter, "db_engine", app_bind)
+    monkeypatch.setattr(settings, "snapshot_summary_cache_ttl_seconds", 60.0)
+
+    initial_payload = persisted_stub_payload()
+    refreshed_payload = {
+        **initial_payload,
+        "code": "600900",
+        "name": "长江电力",
+        "peer_metrics": {
+            **initial_payload["peer_metrics"],
+            "code": "600900",
+            "name": "长江电力",
+        },
+    }
+
+    caller_calls = 0
+    bg_calls = 0
+    bg_started = asyncio.Event()
+    allow_bg_finish = asyncio.Event()
+
+    class _FakeScalars:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        def all(self) -> list[Any]:
+            return self._rows
+
+    class _CallerSession:
+        bind = app_bind
+
+        async def scalars(self, _stmt: Any) -> _FakeScalars:
+            nonlocal caller_calls
+            caller_calls += 1
+            return _FakeScalars([SimpleNamespace(payload=initial_payload)])
+
+    class _BgSession:
+        bind = app_bind
+
+        async def __aenter__(self) -> _BgSession:
+            return self
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+        async def scalars(self, _stmt: Any) -> _FakeScalars:
+            nonlocal bg_calls
+            bg_calls += 1
+            bg_started.set()
+            await allow_bg_finish.wait()
+            return _FakeScalars(
+                [
+                    SimpleNamespace(payload=initial_payload),
+                    SimpleNamespace(payload=refreshed_payload),
+                ]
+            )
+
+    monkeypatch.setattr(snapshot_adapter, "AsyncSessionLocal", lambda: _BgSession())
+
+    repo = PostgresStockSnapshotRepository(_CallerSession())  # type: ignore[arg-type]
+    cold = await repo.list_all_snapshots()
+    assert [s.code for s in cold] == ["600519"]
+    assert caller_calls == 1
+
+    # Expire cache entry to trigger non-blocking Stale-While-Revalidate on app engine bind.
+    bind_key = id(app_bind)
+    snapshot_adapter._SUMMARY_CACHE[bind_key] = (
+        time.monotonic() - 1.0,
+        snapshot_adapter._SUMMARY_CACHE[bind_key][1],
+    )
+    stale1, stale2 = await asyncio.gather(repo.list_all_snapshots(), repo.list_all_snapshots())
+    assert [s.code for s in stale1] == ["600519"]
+    assert [s.code for s in stale2] == ["600519"]
+    assert caller_calls == 1
+
+    await bg_started.wait()
+    loop_tasks = snapshot_adapter._SUMMARY_REFRESH_TASKS[asyncio.get_running_loop()]
+    assert len(loop_tasks) == 1
+    refresh_task = loop_tasks[bind_key]
+
+    allow_bg_finish.set()
+    await refresh_task
+    assert bg_calls == 1
+
+    fresh = await repo.list_all_snapshots()
+    assert [s.code for s in fresh] == ["600519", "600900"]
+    assert caller_calls == 1
+
+    # Startup warmup gracefully logs warning if DB is unreachable, and works via lifespan.
+    class _FailingSessionCtx:
+        async def __aenter__(self) -> _FailingSessionCtx:
+            raise RuntimeError("db offline")
+
+        async def __aexit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(snapshot_adapter, "AsyncSessionLocal", lambda: _FailingSessionCtx())
+    caplog.set_level("WARNING")
+    await warmup_snapshot_summary_cache()
+    assert any("启动预热全市场快照摘要缓存失败" in rec.message for rec in caplog.records)
+
+    snapshot_adapter._SUMMARY_CACHE.clear()
+    bg_calls = 0
+    bg_started.clear()
+    allow_bg_finish.set()
+    monkeypatch.setattr(snapshot_adapter, "AsyncSessionLocal", lambda: _BgSession())
+    app = create_app()
+    async with app.router.lifespan_context(app):
+        await bg_started.wait()
+        await asyncio.wait_for(
+            _wait_for_cache_entry(bind_key),
+            timeout=2.0,
+        )
+    assert bg_calls == 1
+    assert [s.code for s in snapshot_adapter._SUMMARY_CACHE[bind_key][1]] == ["600519", "600900"]
+
+
+async def _wait_for_cache_entry(bind_key: int) -> None:
+    while bind_key not in snapshot_adapter._SUMMARY_CACHE:
+        await asyncio.sleep(0.005)

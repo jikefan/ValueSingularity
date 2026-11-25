@@ -7,6 +7,7 @@ import { CHART_COLORS, LIGHT_CHART_COLORS } from '../../lib/chartTheme'
 import { GLOSSARY } from '../../lib/glossary'
 import { createQueryClient } from '../../lib/queryClient'
 import { applyTheme } from '../../lib/theme'
+import { applyViewMode } from '../../lib/viewMode'
 import type { StockForensicsSection, StockSnapshotPayload } from '../../types/api'
 import { StockForensicsTab } from './StockForensicsTab'
 import {
@@ -777,5 +778,76 @@ describe('StockForensicsTab', () => {
       grid: { top: 72 },
       legend: { itemGap: 10, itemWidth: 14 },
     })
+  })
+
+  it('guards 999.0% extreme ratios with plain fallback text and toggles DuPont disclosure via viewMode', () => {
+    const extremeSnapshot: StockSnapshotPayload = {
+      ...BASE_SNAPSHOT,
+      forensics: {
+        ...INVESTMENT_DRIVEN_FORENSICS,
+        earnings_quality_tag: 'subsidy_inflated',
+        earnings_quality_label: '非经常性损益或补贴占比偏高',
+        core_profit_share_3y_pct: 4.2,
+        invest_profit_share_3y_pct: 12.0,
+        non_recurring_share_3y_pct: 999.0,
+        ocf_to_core_profit_3y_pct: 999.0,
+        interest_burden_pct: 15.2,
+        annual_decomposition: [
+          {
+            year: 2025,
+            revenue_yuan: 1.5e9,
+            operate_profit_yuan: 5e7,
+            core_operating_profit_yuan: 1e6,
+            core_operating_margin_pct: 999.0,
+            investment_and_fair_value_yuan: 1.2e7,
+            invest_share_of_op_profit_pct: 999.0,
+            subsidy_and_oneoff_yuan: 4.5e7,
+            impairment_net_yuan: 0,
+            net_profit_yuan: 3.8e7,
+            deduct_net_profit_yuan: -1.5e7,
+            ocf_yuan: 2.2e7,
+          },
+        ],
+      },
+    }
+
+    const { container } = renderForensicsTab(<StockForensicsTab snapshot={extremeSnapshot} />)
+
+    expect(screen.queryByText(/999\.0%/)).not.toBeInTheDocument()
+    expect(screen.getByText('全靠非经扭亏')).toBeInTheDocument()
+    expect(screen.getAllByText('主业微利(不适用)').length).toBeGreaterThanOrEqual(2)
+    expect(screen.getByText('营业微利(不适用)')).toBeInTheDocument()
+    expect(screen.getByText('主业核心利润微薄或亏损，现金转化比率不适用')).toBeInTheDocument()
+
+    const disclosure = container.querySelector('details.advanced-disclosure')
+    expect(disclosure).not.toBeNull()
+    expect(disclosure).not.toHaveAttribute('open')
+    expect(screen.getByText(/点击展开杜邦年度拆解/)).toBeInTheDocument()
+
+    act(() => {
+      applyViewMode('pro')
+    })
+    expect(disclosure).toHaveAttribute('open')
+
+    act(() => {
+      applyViewMode('simple')
+    })
+    expect(disclosure).not.toHaveAttribute('open')
+  })
+
+  it('replaces null OCF/core profit ratio on non-financial snapshots with inapplicable fallback sublabel', () => {
+    const nullRatioSnapshot: StockSnapshotPayload = {
+      ...BASE_SNAPSHOT,
+      forensics: {
+        ...CORE_CASH_COW_FORENSICS,
+        earnings_quality_tag: 'balanced_steady',
+        ocf_to_core_profit_3y_pct: null,
+      },
+    }
+
+    renderForensicsTab(<StockForensicsTab snapshot={nullRatioSnapshot} />)
+
+    expect(screen.getByText('主业微利(不适用)')).toBeInTheDocument()
+    expect(screen.getByText('主业核心利润微薄或亏损，现金转化比率不适用')).toBeInTheDocument()
   })
 })

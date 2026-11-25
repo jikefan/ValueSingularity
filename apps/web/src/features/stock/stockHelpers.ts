@@ -2,7 +2,15 @@ import {
   type EarningsQualityBadgeMeta as SharedEarningsQualityBadgeMeta,
   getEarningsQualityBadgeMeta as getSharedEarningsQualityBadgeMeta,
 } from '../../lib/earningsQuality'
-import { fmtNum, formatNum, formatPct, formatSignedPct, formatYi } from '../../lib/format'
+import {
+  fmtNum,
+  formatForensicRatioPct,
+  formatNum,
+  formatPct,
+  formatSignedPct,
+  formatStockName,
+  formatYi,
+} from '../../lib/format'
 import type {
   CtCheckItem,
   EarningsQualityTag,
@@ -328,7 +336,7 @@ export function formatStockDossierMarkdown(
   const divYield = valuation.dividend_yield_pct ?? sReturn.current_dividend_yield_pct ?? null
 
   const lines: string[] = [
-    `# ${stock.name} (${stock.code}) 定量研究简报`,
+    `# ${formatStockName(stock.name)} (${stock.code}) 定量研究简报`,
     '',
     `- 交易所：${stock.exchange} | 申万行业：${industry}`,
     `- 快照日期：${snapshot.as_of} | 数据源：${snapshot.data_source} | 评估口径：${isFinancial ? '金融业专项口径' : '通用企业口径'}`,
@@ -394,13 +402,22 @@ export function formatStockDossierMarkdown(
               `- [${SIGNAL_META[finding.status].label}] ${finding.title}（${finding.metric_text}）：${finding.headline}。${finding.detail}`,
           )
         : []
+    const nonRecurringDisplay =
+      forensics.non_recurring_share_3y_pct === null ||
+      forensics.non_recurring_share_3y_pct === undefined
+        ? forensics.earnings_quality_tag === 'subsidy_inflated'
+          ? '全靠非经扭亏'
+          : '—'
+        : formatForensicRatioPct(forensics.non_recurring_share_3y_pct, {
+            fallbackText: '全靠非经扭亏',
+          })
     lines.push(
       '',
       '## 利润真相与盈利成色深度鉴真',
       `- 盈利成色标签：${qualityMeta.label}`,
       `- 鉴真结论：${forensics.verdict}`,
-      `- 近 3 年主业核心利润占比：${formatPct(forensics.core_profit_share_3y_pct, 1)} | 投资与公允价值占比：${formatPct(forensics.invest_profit_share_3y_pct, 1)} | 补贴及一次性占比：${formatPct(forensics.non_recurring_share_3y_pct, 1)}`,
-      `- 表内投资类资产占比：${formatPct(forensics.investment_assets_ratio_pct, 1)}（规模 ${formatYi(forensics.investment_assets_yuan)}） | OCF / 主业核心利润：${formatPct(forensics.ocf_to_core_profit_3y_pct, 1)}`,
+      `- 近 3 年主业核心利润占比：${formatForensicRatioPct(forensics.core_profit_share_3y_pct)} | 投资与公允价值占比：${formatForensicRatioPct(forensics.invest_profit_share_3y_pct)} | 补贴及一次性占比：${nonRecurringDisplay}`,
+      `- 表内投资类资产占比：${formatForensicRatioPct(forensics.investment_assets_ratio_pct)}（规模 ${formatYi(forensics.investment_assets_yuan)}） | OCF / 主业核心利润：${formatForensicRatioPct(forensics.ocf_to_core_profit_3y_pct, { fallbackText: '主业微利(不适用)' })}`,
       ...findingsLines,
     )
   }
@@ -519,4 +536,258 @@ export function buildSensitivityMatrix(
     multiples: Array.from(multipleSet).sort((a, b) => a - b),
     values,
   }
+}
+
+export type QuickCheckupTone = 'signal' | 'amber' | 'danger' | 'cobalt'
+
+export type QuickCheckupTargetTab = 'forensics' | 'risks' | 'valuation'
+
+export type QuickCheckupCardItem = {
+  id: 'profit_truth' | 'financial_safety' | 'valuation_level'
+  question: string
+  statusLabel: string
+  tone: QuickCheckupTone
+  verdict: string
+  ctaLabel: string
+  targetTab: QuickCheckupTargetTab
+}
+
+function buildProfitTruthCard(
+  snapshot: StockSnapshotPayload,
+  isFinancial: boolean,
+): QuickCheckupCardItem {
+  const forensics = snapshot.forensics ?? null
+
+  if (isFinancial || forensics?.earnings_quality_tag === 'financial_special') {
+    const roeText = formatPct(snapshot.moat.roe_5y_avg_pct, 1)
+    return {
+      id: 'profit_truth',
+      question: '赚的是真钱吗？',
+      statusLabel: '金融业专项口径',
+      tone: 'cobalt',
+      verdict: `金融业专项口径（银行/保险重点看 ROE ${roeText}、分红与资产质量，豁免工业主业剥离）。`,
+      ctaLabel: '查看利润真相 →',
+      targetTab: 'forensics',
+    }
+  }
+
+  if (!forensics) {
+    const isSolid = snapshot.radar.cashflow_quality >= 70
+    return {
+      id: 'profit_truth',
+      question: '赚的是真钱吗？',
+      statusLabel: isSolid ? '收现基础较稳' : '待补深拆字段',
+      tone: isSolid ? 'signal' : 'amber',
+      verdict: isSolid
+        ? '近5年经营收现表现较稳，可点击查看「利润真相」进一步核查主业盈利成色。'
+        : '当前快照暂缺利润深拆明细，建议点击进入「利润真相」一键重算并核查主业含金量。',
+      ctaLabel: '查看利润真相 →',
+      targetTab: 'forensics',
+    }
+  }
+
+  if (
+    forensics.earnings_quality_tag === 'investment_driven' ||
+    (forensics.invest_profit_share_3y_pct ?? 0) >= 50
+  ) {
+    const shareText = formatForensicRatioPct(forensics.invest_profit_share_3y_pct, {
+      fallbackText: '占比偏高',
+    })
+    return {
+      id: 'profit_truth',
+      question: '赚的是真钱吗？',
+      statusLabel: '投资依赖警示',
+      tone: 'danger',
+      verdict: `高度警惕 · 近3年投资/公允价值收益占营业利润 ${shareText}，需核查主业是否真赚钱。`,
+      ctaLabel: '查看利润真相 →',
+      targetTab: 'forensics',
+    }
+  }
+
+  if (
+    forensics.earnings_quality_tag === 'subsidy_inflated' ||
+    (forensics.non_recurring_share_3y_pct ?? 0) >= 35
+  ) {
+    const nonRecText = formatForensicRatioPct(forensics.non_recurring_share_3y_pct, {
+      fallbackText: '全靠非经扭亏',
+    })
+    return {
+      id: 'profit_truth',
+      question: '赚的是真钱吗？',
+      statusLabel: '补贴 / 非经偏高',
+      tone: 'amber',
+      verdict: `盈利较大依赖政府补助或一次性收益（近3年非经占比 ${nonRecText}），需留意补贴退坡后盈利失真。`,
+      ctaLabel: '查看利润真相 →',
+      targetTab: 'forensics',
+    }
+  }
+
+  switch (forensics.earnings_quality_tag) {
+    case 'core_cash_cow': {
+      const coreText = formatForensicRatioPct(forensics.core_profit_share_3y_pct)
+      return {
+        id: 'profit_truth',
+        question: '赚的是真钱吗？',
+        statusLabel: '主业造血扎实',
+        tone: 'signal',
+        verdict: `主业造血扎实 · 主业核心利润占 ${coreText}，经营现金流转化稳健。`,
+        ctaLabel: '查看利润真相 →',
+        targetTab: 'forensics',
+      }
+    }
+    case 'cashflow_divergent': {
+      const ocfCoreText = formatForensicRatioPct(forensics.ocf_to_core_profit_3y_pct, {
+        fallbackText: '主业微利(不适用)',
+      })
+      return {
+        id: 'profit_truth',
+        question: '赚的是真钱吗？',
+        statusLabel: '账面现金背离',
+        tone: 'amber',
+        verdict: `账面利润与回款节奏存在背离（OCF/核心利润 ${ocfCoreText}），需重点核查回款与应收款。`,
+        ctaLabel: '查看利润真相 →',
+        targetTab: 'forensics',
+      }
+    }
+    case 'leveraged_roe':
+      return {
+        id: 'profit_truth',
+        question: '赚的是真钱吗？',
+        statusLabel: '高杠杆放大',
+        tone: 'amber',
+        verdict: `高 ROE 较多依赖财务杠杆放大（5Y 权益乘数 ${formatNum(forensics.dupont_equity_multiplier_5y_avg, 2)}x），需关注利息负担与偿债弹性。`,
+        ctaLabel: '查看利润真相 →',
+        targetTab: 'forensics',
+      }
+    case 'balanced_steady': {
+      const hasMinorNonCore =
+        (forensics.invest_profit_share_3y_pct ?? 0) >= 20 ||
+        (forensics.non_recurring_share_3y_pct ?? 0) >= 20
+      const coreText = formatForensicRatioPct(forensics.core_profit_share_3y_pct)
+      return {
+        id: 'profit_truth',
+        question: '赚的是真钱吗？',
+        statusLabel: hasMinorNonCore ? '结构均衡 · 留神副业' : '主业结构均衡',
+        tone: hasMinorNonCore ? 'amber' : 'signal',
+        verdict: hasMinorNonCore
+          ? `主业核心利润占 ${coreText}，伴随部分投资或非经常损益波动，建议核对可持续性。`
+          : `盈利结构稳健均衡 · 近3年主业核心利润占 ${coreText}，无明显虚胖迹象。`,
+        ctaLabel: '查看利润真相 →',
+        targetTab: 'forensics',
+      }
+    }
+    default: {
+      const exhaustive: never = forensics.earnings_quality_tag
+      return exhaustive
+    }
+  }
+}
+
+function buildFinancialSafetyCard(snapshot: StockSnapshotPayload): QuickCheckupCardItem {
+  const { red_count: redCount, yellow_count: yellowCount } = snapshot.financial_ct
+  if (redCount > 0) {
+    return {
+      id: 'financial_safety',
+      question: '财务安不安全？',
+      statusLabel: `${redCount} 项红灯`,
+      tone: 'danger',
+      verdict: `发现 ${redCount} 项财报红灯（${yellowCount} 项黄灯），先看具体风险点。`,
+      ctaLabel: '看排雷清单 →',
+      targetTab: 'risks',
+    }
+  }
+  if (yellowCount > 0) {
+    return {
+      id: 'financial_safety',
+      question: '财务安不安全？',
+      statusLabel: `0 红灯 · ${yellowCount} 黄灯`,
+      tone: 'amber',
+      verdict: `零红灯、${yellowCount} 项温和提示，整体财务底座较稳。`,
+      ctaLabel: '看排雷清单 →',
+      targetTab: 'risks',
+    }
+  }
+  return {
+    id: 'financial_safety',
+    question: '财务安不安全？',
+    statusLabel: '零红灯零黄灯',
+    tone: 'signal',
+    verdict: '零红灯零黄灯，现金流、偿债与应收表现稳健。',
+    ctaLabel: '看排雷清单 →',
+    targetTab: 'risks',
+  }
+}
+
+function buildValuationLevelCard(
+  snapshot: StockSnapshotPayload,
+  isFinancial: boolean,
+): QuickCheckupCardItem {
+  const pePct = snapshot.valuation.pe_percentile_10y ?? null
+  const pbPct = snapshot.valuation.pb_percentile_10y ?? null
+  const primaryPct = isFinancial ? (pbPct ?? pePct) : (pePct ?? pbPct)
+  const anchorLabel = isFinancial && pbPct !== null ? '10年 PB 分位' : '10年 PE 分位'
+  const divYield =
+    snapshot.valuation.dividend_yield_pct ??
+    snapshot.shareholder_return.current_dividend_yield_pct ??
+    null
+  const divClause =
+    divYield !== null && Number.isFinite(divYield) ? `，当前股息率 ${formatPct(divYield, 2)}` : ''
+
+  if (primaryPct === null || !Number.isFinite(primaryPct)) {
+    return {
+      id: 'valuation_level',
+      question: '现在贵不贵？',
+      statusLabel: '分位待补充',
+      tone: 'cobalt',
+      verdict: `暂缺足够长周期估值分位，建议结合 PE/PB 与股息率对比同业${divClause}。`,
+      ctaLabel: '看估值分位 →',
+      targetTab: 'valuation',
+    }
+  }
+
+  if (primaryPct <= 30) {
+    return {
+      id: 'valuation_level',
+      question: '现在贵不贵？',
+      statusLabel: '偏便宜区间',
+      tone: 'signal',
+      verdict: `${anchorLabel} ${formatPct(primaryPct, 1)}（低于近10年多数时间 · 偏便宜）${divClause}。`,
+      ctaLabel: '看估值分位 →',
+      targetTab: 'valuation',
+    }
+  }
+
+  if (primaryPct <= 70) {
+    return {
+      id: 'valuation_level',
+      question: '现在贵不贵？',
+      statusLabel: '中游合理区间',
+      tone: 'cobalt',
+      verdict: `${anchorLabel} ${formatPct(primaryPct, 1)}（处于近10年中游合理区间）${divClause}。`,
+      ctaLabel: '看估值分位 →',
+      targetTab: 'valuation',
+    }
+  }
+
+  return {
+    id: 'valuation_level',
+    question: '现在贵不贵？',
+    statusLabel: '高位谨慎区间',
+    tone: 'amber',
+    verdict: `${anchorLabel} ${formatPct(primaryPct, 1)}（处于近10年高位区间 · 安全边际收窄）${divClause}。`,
+    ctaLabel: '看估值分位 →',
+    targetTab: 'valuation',
+  }
+}
+
+/** Derives the 3 plain-Chinese beginner quick-checkup cards from a stock snapshot. */
+export function deriveQuickCheckupCards(
+  snapshot: StockSnapshotPayload,
+): [QuickCheckupCardItem, QuickCheckupCardItem, QuickCheckupCardItem] {
+  const isFinancial = isFinancialSnapshot(snapshot)
+  return [
+    buildProfitTruthCard(snapshot, isFinancial),
+    buildFinancialSafetyCard(snapshot),
+    buildValuationLevelCard(snapshot, isFinancial),
+  ]
 }

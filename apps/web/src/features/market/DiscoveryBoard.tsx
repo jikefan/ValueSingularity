@@ -1,9 +1,16 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { GlossaryLabel, InfoHint } from '../../components/ui/InfoHint'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { getEarningsQualityBadgeMeta } from '../../lib/earningsQuality'
-import { formatNum, formatPct, formatSignedPct } from '../../lib/format'
+import {
+  formatForensicRatioPct,
+  formatNum,
+  formatPct,
+  formatSignedPct,
+  formatStockName,
+} from '../../lib/format'
 import type { GlossaryKey } from '../../lib/glossary'
 import type {
   CrossAssetMacroSnapshot,
@@ -107,6 +114,13 @@ function styleBarWidthPct(idx: StyleRegimeIndex): number {
       : 0
   const magnitude = drawdownMag > 0 ? drawdownMag * 3.5 : changeMag * 4
   return Math.min(100, Math.max(8, Math.round(magnitude)))
+}
+
+const DEFAULT_VISIBLE_PICKS = 3
+
+function sanitizeForensicText(text: string): string {
+  // Replace legacy >=900% sentinel percentages emitted when core operating profit nears zero.
+  return text.replace(/[+-]?(?:9\d{2}|[1-9]\d{3,})(?:\.\d+)?%/g, '主业微利(不适用)')
 }
 
 function formatSignedBps(value: number | null | undefined): string {
@@ -219,6 +233,46 @@ function MacroPulseStrip({
   const styleTone =
     styleSpread20d !== null ? (styleSpread20d > 0 ? 'macro-pulse-green' : 'macro-pulse-amber') : ''
 
+  const us2yPlain =
+    us2yBps === null || us2yBps === undefined || !Number.isFinite(us2yBps)
+      ? '100 基点(bps)=1%，反映美联储利率预期'
+      : us2yBps <= -15
+        ? '100 基点(bps)=1%；利率明显回落，利好估值与黄金'
+        : us2yBps >= 15
+          ? '100 基点(bps)=1%；利率走高，高估值成长易承压'
+          : '100 基点(bps)=1%；海外加息/降息预期暂时平稳'
+
+  const realYieldPlain =
+    realYield === null || realYield === undefined || !Number.isFinite(realYield)
+      ? '扣掉通胀后的真实利率，越低越利于黄金'
+      : realYield <= 1.2
+        ? '实际利率偏低，买黄金等保值资产不吃利息亏'
+        : realYield >= 2.0
+          ? '实际利率偏高，美债生息更有吸引力，压制高估值'
+          : '实际利率在中等区间，重点看公司自身赚钱能力'
+
+  const us10y2ySpread = crossAsset?.us_10y_2y_spread
+  const spreadPlain =
+    us10y2ySpread === null || us10y2ySpread === undefined || !Number.isFinite(us10y2ySpread)
+      ? '长短美债和中美利差，看海外经济和外资风向'
+      : us10y2ySpread < 0
+        ? '美债长短利率倒挂，说明市场担心海外经济降温'
+        : '美债恢复长高短低，中美利差影响外资回流节奏'
+
+  const goldPlain =
+    goldPct === null || goldPct === undefined || !Number.isFinite(goldPct)
+      ? 'SPDR 吨位看大资金有没有持续买黄金避险'
+      : goldPct >= 85
+        ? '金价处在近一年高位区，追高要注意短期波动'
+        : '金价未到极端过热区，可跟着持仓变化看避险风向'
+
+  const stylePlain =
+    styleSpread20d === null
+      ? '看最近 20 天高分红大盘股还是科技股更抗跌'
+      : styleSpread20d > 0
+        ? '近期“高分红防守股”跑赢科技，资金偏好稳健'
+        : '近期科技成长跑赢红利，市场更愿意追求弹性'
+
   return (
     <div className="macro-pulse-strip" role="region" aria-label="跨资产宏观脉搏">
       <div className={`macro-pulse-cell ${us2yTone}`.trim()}>
@@ -229,6 +283,7 @@ function MacroPulseStrip({
         </div>
         <div className="macro-pulse-value">{formatPct(crossAsset?.us_2y_yield, 2)}</div>
         <div className="macro-pulse-sub">{`近20日 ${formatSignedBps(us2yBps)}`}</div>
+        <div className="small muted">{us2yPlain}</div>
       </div>
 
       <div className={`macro-pulse-cell ${realYieldTone}`.trim()}>
@@ -241,6 +296,7 @@ function MacroPulseStrip({
         <div className="macro-pulse-sub">
           {`10Y ${formatPct(crossAsset?.us_10y_yield, 2)} − CPI ${formatPct(crossAsset?.us_cpi_yoy, 1)}`}
         </div>
+        <div className="small muted">{realYieldPlain}</div>
       </div>
 
       <div className={`macro-pulse-cell ${spreadTone}`.trim()}>
@@ -257,6 +313,7 @@ function MacroPulseStrip({
         <div className="macro-pulse-sub">
           {`中美10Y利差 ${formatPct(crossAsset?.us_cn_10y_spread, 2)} (CN ${formatPct(crossAsset?.cn_10y_yield, 2)})`}
         </div>
+        <div className="small muted">{spreadPlain}</div>
       </div>
 
       <div className={`macro-pulse-cell ${goldTone}`.trim()}>
@@ -278,6 +335,7 @@ function MacroPulseStrip({
         <div className="macro-pulse-sub">
           {`1Y分位 ${formatPct(goldPct, 0)} · SPDR ${etfTonnesText}${etfDeltaSuffix}`}
         </div>
+        <div className="small muted">{goldPlain}</div>
       </div>
 
       <div className={`macro-pulse-cell ${styleTone}`.trim()}>
@@ -292,6 +350,7 @@ function MacroPulseStrip({
         <div className="macro-pulse-sub">
           {`科创50 / 创业板 vs 上证红利 · 60D最大回撤 ${formatPct(worstTechDrawdown, 1)}`}
         </div>
+        <div className="small muted">{stylePlain}</div>
       </div>
     </div>
   )
@@ -324,7 +383,7 @@ function DiscoveryPickRow({
     pick.invest_profit_share_3y_pct !== null &&
     pick.invest_profit_share_3y_pct !== undefined
   ) {
-    stats.push(`投资占比 ${formatPct(pick.invest_profit_share_3y_pct, 1)}`)
+    stats.push(`投资占比 ${formatForensicRatioPct(pick.invest_profit_share_3y_pct)}`)
   }
   if (
     !pick.is_financial &&
@@ -334,35 +393,38 @@ function DiscoveryPickRow({
     stats.push(`净现金/市值 ${formatPct(pick.net_cash_to_mv_pct, 1)}`)
   }
 
+  const sanitizedBadgeLabel = pick.earnings_quality_label
+    ? sanitizeForensicText(pick.earnings_quality_label)
+    : null
+  const sanitizedReason = sanitizeForensicText(pick.reason)
+
   return (
     <div className="discovery-pick-item">
       <div className="discovery-pick-head">
         <div className="discovery-pick-title">
           <Link className="link-accent" to={`/stock/${pick.code}`}>
-            {pick.name}
+            {formatStockName(pick.name)}
           </Link>
           <span className="code-pill">{pick.code}</span>
           {pick.industry_sw1 ? <span className="small muted">{pick.industry_sw1}</span> : null}
         </div>
         <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-          {pick.earnings_quality_label ? (
+          {sanitizedBadgeLabel ? (
             <span
               className={
                 isCaution
                   ? 'quality-badge quality-badge-red'
-                  : getEarningsQualityBadgeMeta(
-                      pick.earnings_quality_tag,
-                      pick.earnings_quality_label,
-                    ).badgeClass
+                  : getEarningsQualityBadgeMeta(pick.earnings_quality_tag, sanitizedBadgeLabel)
+                      .badgeClass
               }
             >
-              {pick.earnings_quality_label}
+              {sanitizedBadgeLabel}
             </span>
           ) : isCaution &&
             pick.invest_profit_share_3y_pct !== null &&
             pick.invest_profit_share_3y_pct !== undefined ? (
             <span className="quality-badge quality-badge-red">
-              {`投资占比 ${formatPct(pick.invest_profit_share_3y_pct, 1)}`}
+              {`投资占比 ${formatForensicRatioPct(pick.invest_profit_share_3y_pct)}`}
             </span>
           ) : null}
           <Tag color={pick.total_score >= 70 ? 'green' : pick.total_score >= 45 ? 'blue' : 'amber'}>
@@ -377,7 +439,7 @@ function DiscoveryPickRow({
           ))}
         </div>
       ) : null}
-      <p className="discovery-pick-reason">{pick.reason}</p>
+      <p className="discovery-pick-reason">{sanitizedReason}</p>
     </div>
   )
 }
@@ -391,10 +453,16 @@ function DiscoveryThemeCardView({
   styleIndices: readonly StyleRegimeIndex[]
   onQuickFilter?: (filter: ScreenerQualityFilter) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
   const signalMeta = themeSignalMeta(theme.signal, theme.theme_id)
   const metrics = theme.metrics ?? []
   const picks = theme.picks ?? []
   const cautionPicks = theme.caution_picks ?? []
+  const visiblePicks = expanded ? picks : picks.slice(0, DEFAULT_VISIBLE_PICKS)
+  const visibleCautionPicks = expanded ? cautionPicks : cautionPicks.slice(0, DEFAULT_VISIBLE_PICKS)
+  const hasOverflow =
+    picks.length > DEFAULT_VISIBLE_PICKS || cautionPicks.length > DEFAULT_VISIBLE_PICKS
+  const totalPickCount = picks.length + cautionPicks.length
   const compareCodes = theme.compare_codes ?? []
   const quickAction = onQuickFilter ? quickFilterForTheme(theme.theme_id) : null
   const showFooter = compareCodes.length >= 2 || quickAction !== null
@@ -415,8 +483,8 @@ function DiscoveryThemeCardView({
       <div
         className={`discovery-verdict-box discovery-verdict-${theme.signal === 'na' ? 'blue' : theme.signal}`}
       >
-        <strong>{theme.verdict}</strong>
-        <span>{theme.regime_summary}</span>
+        <strong>{sanitizeForensicText(theme.verdict)}</strong>
+        <span>{sanitizeForensicText(theme.regime_summary)}</span>
       </div>
 
       {metrics.length > 0 ? (
@@ -456,9 +524,9 @@ function DiscoveryThemeCardView({
         </div>
       ) : null}
 
-      {picks.length > 0 ? (
+      {visiblePicks.length > 0 ? (
         <div className="discovery-picks-list">
-          {picks.map((pick) => (
+          {visiblePicks.map((pick) => (
             <DiscoveryPickRow key={pick.code} pick={pick} />
           ))}
         </div>
@@ -466,7 +534,7 @@ function DiscoveryThemeCardView({
         <p className="small muted">当前同步池内暂无符合该主题阈值的候选标的。</p>
       )}
 
-      {cautionPicks.length > 0 ? (
+      {visibleCautionPicks.length > 0 ? (
         <div
           className="discovery-caution-strip discovery-caution-strip-red"
           role="region"
@@ -477,10 +545,23 @@ function DiscoveryThemeCardView({
             <InfoHint term="invest_profit_share" />
           </div>
           <div className="discovery-picks-list">
-            {cautionPicks.map((pick) => (
+            {visibleCautionPicks.map((pick) => (
               <DiscoveryPickRow key={pick.code} pick={pick} isCaution />
             ))}
           </div>
+        </div>
+      ) : null}
+
+      {hasOverflow ? (
+        <div className="row" style={{ justifyContent: 'flex-start' }}>
+          <button
+            type="button"
+            className="btn-ghost"
+            aria-expanded={expanded}
+            onClick={() => setExpanded((prev) => !prev)}
+          >
+            {expanded ? '收起' : `展开更多（共 ${totalPickCount} 只）`}
+          </button>
         </div>
       ) : null}
 
@@ -530,7 +611,7 @@ export function DiscoveryBoard({
           <div className="row" style={{ justifyContent: 'flex-start', gap: 10, flexWrap: 'wrap' }}>
             <span className="eyebrow-pill">
               <span className="live-beacon" />
-              MACRO × FORENSICS DISCOVERY
+              跨资产机会 · 财报排雷看板
             </span>
             <h2 className="sec-title">
               <GlossaryLabel

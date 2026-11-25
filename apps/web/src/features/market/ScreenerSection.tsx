@@ -4,7 +4,7 @@ import { GlossaryLabel, InfoHint } from '../../components/ui/InfoHint'
 import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { getEarningsQualityBadgeMeta } from '../../lib/earningsQuality'
-import { formatNum, formatPct } from '../../lib/format'
+import { formatForensicRatioPct, formatNum, formatPct, formatStockName } from '../../lib/format'
 import type { GlossaryKey } from '../../lib/glossary'
 import { useStockScreener } from '../../lib/useStockAnalysis'
 import type {
@@ -57,6 +57,7 @@ const SORT_OPTIONS: ReadonlyArray<{
 ]
 
 const MAX_COMPARE_SELECTION = 5
+const DEFAULT_VISIBLE_ROWS = 12
 
 function ctTagColor(item: StockScreenerItem): 'green' | 'amber' | 'rose' {
   if (item.ct_red_count > 0) return 'rose'
@@ -124,6 +125,21 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
     const [sortBy, setSortBy] = useState<ScreenerSortField>('total_score')
     const [sortDir, setSortDir] = useState<ScreenerSortDir>('desc')
     const [selectedCompareCodes, setSelectedCompareCodes] = useState<string[]>([])
+    const [showAllRows, setShowAllRows] = useState(false)
+
+    useEffect(() => {
+      setShowAllRows(false)
+    }, [
+      zeroRedOnly,
+      maxPePercentile,
+      minRoe,
+      minDividendYield,
+      qualityFilter,
+      industry,
+      debouncedSearch,
+      sortBy,
+      sortDir,
+    ])
 
     useEffect(() => {
       const trimmed = searchInput.trim()
@@ -185,6 +201,7 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
       setDebouncedSearch('')
       setSortBy('total_score')
       setSortDir('desc')
+      setShowAllRows(false)
     }
 
     function toggleCompareCode(code: string) {
@@ -201,6 +218,7 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
 
     const screenerData = screenerQuery.data
     const screenerItems = screenerData?.items ?? []
+    const visibleItems = showAllRows ? screenerItems : screenerItems.slice(0, DEFAULT_VISIBLE_ROWS)
     const topCandidates = screenerItems.slice(0, 3)
     const hasActiveFilter =
       zeroRedOnly ||
@@ -443,7 +461,7 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
                             className="link-accent screener-card-name"
                             to={`/stock/${item.code}`}
                           >
-                            {item.name}
+                            {formatStockName(item.name)}
                           </Link>
                           <span className="code-pill">{item.code}</span>
                         </div>
@@ -481,9 +499,9 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
                         item.invest_profit_share_3y_pct !== null &&
                         item.invest_profit_share_3y_pct !== undefined ? (
                           <span
-                            className={`small tnum ${item.invest_profit_share_3y_pct >= 30 ? 'tone-bad' : 'muted'}`}
+                            className={`small tnum ${item.invest_profit_share_3y_pct >= 30 && Math.abs(item.invest_profit_share_3y_pct) < 900 ? 'tone-bad' : 'muted'}`}
                           >
-                            {`投资占比 ${formatPct(item.invest_profit_share_3y_pct, 1)}`}
+                            {`投资占比 ${formatForensicRatioPct(item.invest_profit_share_3y_pct)}`}
                           </span>
                         ) : null}
                       </div>
@@ -589,7 +607,8 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
                   </tr>
                 </thead>
                 <tbody>
-                  {screenerItems.map((item) => {
+                  {visibleItems.map((item) => {
+                    const displayName = formatStockName(item.name)
                     const isChecked = selectedCompareCodes.includes(item.code)
                     const isDisabled =
                       !isChecked && selectedCompareCodes.length >= MAX_COMPARE_SELECTION
@@ -598,7 +617,7 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
                         <td>
                           <input
                             type="checkbox"
-                            aria-label={`选择对比 ${item.code} ${item.name}`}
+                            aria-label={`选择对比 ${item.code} ${displayName}`}
                             checked={isChecked}
                             disabled={isDisabled}
                             onChange={() => toggleCompareCode(item.code)}
@@ -610,7 +629,7 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
                               className="link-accent screener-stock-name"
                               to={`/stock/${item.code}`}
                             >
-                              {item.name}
+                              {displayName}
                             </Link>
                             <span className="mono small muted">{item.code}</span>
                             {item.is_financial ? <Tag color="blue">金融</Tag> : null}
@@ -655,9 +674,9 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
                               item.invest_profit_share_3y_pct !== null &&
                               item.invest_profit_share_3y_pct !== undefined ? (
                                 <span
-                                  className={`small tnum ${item.invest_profit_share_3y_pct >= 30 ? 'tone-bad' : 'muted'}`}
+                                  className={`small tnum ${item.invest_profit_share_3y_pct >= 30 && Math.abs(item.invest_profit_share_3y_pct) < 900 ? 'tone-bad' : 'muted'}`}
                                 >
-                                  {`投资 ${formatPct(item.invest_profit_share_3y_pct, 1)}`}
+                                  {`投资 ${formatForensicRatioPct(item.invest_profit_share_3y_pct)}`}
                                 </span>
                               ) : null}
                             </div>
@@ -676,6 +695,20 @@ export const ScreenerSection = forwardRef<HTMLElement, ScreenerSectionProps>(
                 </tbody>
               </table>
             </div>
+            {screenerItems.length > DEFAULT_VISIBLE_ROWS ? (
+              <div className="row" style={{ justifyContent: 'center' }}>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  aria-expanded={showAllRows}
+                  onClick={() => setShowAllRows((prev) => !prev)}
+                >
+                  {showAllRows
+                    ? `收起至前 ${DEFAULT_VISIBLE_ROWS} 条`
+                    : `展开全部 ${screenerItems.length} 条`}
+                </button>
+              </div>
+            ) : null}
           </>
         )}
       </section>

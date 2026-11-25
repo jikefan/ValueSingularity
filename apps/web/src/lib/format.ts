@@ -97,3 +97,26 @@ export function qualityTone(
   }
   return value > 0 ? 'tone-good' : 'tone-bad'
 }
+
+export function formatStockName(name: string | null | undefined): string {
+  if (!name) {
+    return '—'
+  }
+  const compact = name.replace(/\s+/g, '')
+  return compact.length > 0 ? compact : '—'
+}
+
+export function formatForensicRatioPct(
+  value: number | null | undefined,
+  options?: { fallbackText?: string; maxDisplay?: number },
+): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return options?.fallbackText ?? '—'
+  }
+  const maxDisplay = options?.maxDisplay ?? 900
+  if (Math.abs(value) >= maxDisplay) {
+    // Guard against legacy 999.0% sentinel values produced when core profit nears zero.
+    return options?.fallbackText ?? '主业微利(不适用)'
+  }
+  return `${value.toFixed(1)}%`
+}

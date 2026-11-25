@@ -38,6 +38,7 @@ describe('InfoHint', () => {
     expect(tooltip).toBeInTheDocument()
     expect(container.contains(tooltip)).toBe(false)
     expect(document.body.contains(tooltip)).toBe(true)
+    expect(tooltip).toHaveTextContent(`大白话：${GLOSSARY.equity_bond_spread.plain}`)
     expect(tooltip).toHaveTextContent(GLOSSARY.equity_bond_spread.summary)
     expect(tooltip).toHaveTextContent(GLOSSARY.equity_bond_spread.formula)
     expect(tooltip).toHaveTextContent(GLOSSARY.equity_bond_spread.reading)
@@ -228,5 +229,51 @@ describe('InfoHint', () => {
     const tooltip = screen.getByRole('tooltip')
     expect(tooltip).toHaveAttribute('data-placement', 'bottom')
     expect(tooltip).toHaveStyle({ top: '194px' })
+  })
+
+  it('renders plain callout above summary when present, inherits base plain on term override, and omits when empty', () => {
+    const { rerender } = render(<InfoHint term="reverse_dcf" />)
+    fireEvent.click(screen.getByRole('button', { name: '解释：Reverse DCF 逆向估值反推器' }))
+
+    let tooltip = screen.getByRole('tooltip')
+    const plainEl = tooltip.querySelector('.info-hint-plain')
+    const summaryEl = tooltip.querySelector('.info-hint-summary')
+    expect(plainEl).not.toBeNull()
+    expect(summaryEl).not.toBeNull()
+    expect(plainEl).toHaveTextContent(`大白话：${GLOSSARY.reverse_dcf.plain}`)
+    if (plainEl && summaryEl) {
+      expect(
+        Boolean(plainEl.compareDocumentPosition(summaryEl) & Node.DOCUMENT_POSITION_FOLLOWING),
+      ).toBe(true)
+    }
+
+    rerender(
+      <InfoHint
+        term="reverse_dcf"
+        entry={{
+          summary: '仅覆盖专业说明，保留基础大白话。',
+        }}
+      />,
+    )
+    tooltip = screen.getByRole('tooltip')
+    expect(tooltip.querySelector('.info-hint-plain')).toHaveTextContent(
+      `大白话：${GLOSSARY.reverse_dcf.plain}`,
+    )
+    expect(tooltip.querySelector('.info-hint-summary')).toHaveTextContent(
+      '仅覆盖专业说明，保留基础大白话。',
+    )
+
+    rerender(
+      <InfoHint
+        title="无大白话词条"
+        entry={{
+          plain: '   ',
+          summary: '仅展示专业口径说明。',
+        }}
+      />,
+    )
+    tooltip = screen.getByRole('tooltip')
+    expect(tooltip.querySelector('.info-hint-plain')).toBeNull()
+    expect(tooltip.querySelector('.info-hint-summary')).toHaveTextContent('仅展示专业口径说明。')
   })
 })

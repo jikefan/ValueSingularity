@@ -8,7 +8,14 @@ import { EmptyBlock } from '../../components/ui/StateBlock'
 import { Tag } from '../../components/ui/Tag'
 import { createChartTheme } from '../../lib/chartTheme'
 import { Chart, type ChartOption } from '../../lib/charts'
-import { formatNum, formatPct, formatYi, qualityTone, toYi } from '../../lib/format'
+import {
+  formatForensicRatioPct,
+  formatNum,
+  formatPct,
+  formatYi,
+  qualityTone,
+  toYi,
+} from '../../lib/format'
 import type { GlossaryKey } from '../../lib/glossary'
 import { useThemeMode } from '../../lib/theme'
 import type { StockSnapshotPayload } from '../../types/api'
@@ -288,7 +295,10 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
                   <GlossaryLabel label="主业核心占比" term="core_operating_profit" />
                 </div>
                 <div className="forensic-bridge-value">
-                  {formatPct(forensics.core_profit_share_3y_pct, 1)}
+                  {forensics.core_profit_share_3y_pct === null ||
+                  forensics.core_profit_share_3y_pct === undefined
+                    ? '—'
+                    : formatForensicRatioPct(forensics.core_profit_share_3y_pct)}
                 </div>
                 <div className="forensic-bridge-sub">近3年主业核心营业利润占比</div>
               </div>
@@ -304,7 +314,12 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
                   <GlossaryLabel label="投资收益占比" term="invest_profit_share" />
                 </div>
                 <div className="forensic-bridge-value">
-                  {formatPct(forensics.invest_profit_share_3y_pct, 1)}
+                  {forensics.invest_profit_share_3y_pct === null ||
+                  forensics.invest_profit_share_3y_pct === undefined
+                    ? '—'
+                    : formatForensicRatioPct(forensics.invest_profit_share_3y_pct, {
+                        fallbackText: '主业微利(不适用)',
+                      })}
                 </div>
                 <div className="forensic-bridge-sub">近3年投资与公允价值占营业利润</div>
               </div>
@@ -320,7 +335,10 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
                   <GlossaryLabel label="表内投资资产占比" term="investment_assets_ratio" />
                 </div>
                 <div className="forensic-bridge-value">
-                  {formatPct(forensics.investment_assets_ratio_pct, 1)}
+                  {forensics.investment_assets_ratio_pct === null ||
+                  forensics.investment_assets_ratio_pct === undefined
+                    ? '—'
+                    : formatForensicRatioPct(forensics.investment_assets_ratio_pct)}
                 </div>
                 <div className="forensic-bridge-sub">
                   {`投资类资产 ${formatYi(forensics.investment_assets_yuan)}`}
@@ -332,7 +350,13 @@ export function StockOverviewTab({ snapshot }: { snapshot: StockSnapshotPayload 
                   <GlossaryLabel label="OCF/核心利润" term="ocf_to_core_profit" />
                 </div>
                 <div className="forensic-bridge-value">
-                  {formatPct(forensics.ocf_to_core_profit_3y_pct, 1)}
+                  {forensics.earnings_quality_tag === 'financial_special' &&
+                  (forensics.ocf_to_core_profit_3y_pct === null ||
+                    forensics.ocf_to_core_profit_3y_pct === undefined)
+                    ? '金融业不适用'
+                    : formatForensicRatioPct(forensics.ocf_to_core_profit_3y_pct, {
+                        fallbackText: '主业微利(不适用)',
+                      })}
                 </div>
                 <div className="forensic-bridge-sub">近3年经营现金流转化率</div>
               </div>

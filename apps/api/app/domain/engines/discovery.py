@@ -70,6 +70,30 @@ def _dividend_yield(snap: StockSnapshotPayload) -> float | None:
     return snap.shareholder_return.current_dividend_yield_pct
 
 
+def _mv_yi(snap: StockSnapshotPayload) -> float | None:
+    mv = (
+        snap.valuation.total_mv_yuan
+        if snap.valuation.total_mv_yuan is not None
+        else snap.peer_metrics.total_mv_yuan
+    )
+    if mv is None or not math.isfinite(mv):
+        return None
+    return mv / 1e8
+
+
+def _is_st_or_delisting(snap: StockSnapshotPayload) -> bool:
+    return "ST" in snap.name.upper() or "退" in snap.name
+
+
+def _has_enough_tenure(snap: StockSnapshotPayload, min_years: int) -> bool:
+    return len(snap.annual_trends) == 0 or len(snap.annual_trends) >= min_years
+
+
+def _mv_meets(snap: StockSnapshotPayload, min_yi: float) -> bool:
+    mv = _mv_yi(snap)
+    return mv is None or mv >= min_yi
+
+
 def _is_gold_stock(snap: StockSnapshotPayload) -> bool:
     if snap.code in _KNOWN_GOLD_CODES:
         return True
@@ -127,14 +151,19 @@ def _build_buckets(
     cn_10y_bond_yield: float | None,
 ) -> DiscoveryCandidateBuckets:
     dividend_candidates: list[tuple[tuple[int, int, float, str], DiscoveryStockPick]] = []
-    gold_candidates: list[tuple[tuple[int, int, int, str], DiscoveryStockPick]] = []
-    core_cow_candidates: list[tuple[tuple[int, float, int, str], DiscoveryStockPick]] = []
-    caution_candidates: list[tuple[tuple[float, str], DiscoveryStockPick]] = []
-    deep_value_candidates: list[tuple[tuple[int, int, float, int, str], DiscoveryStockPick]] = []
+    gold_candidates: list[tuple[tuple[int, int, int, int, str], DiscoveryStockPick]] = []
+    core_cow_candidates: list[tuple[tuple[int, int, float, int, str], DiscoveryStockPick]] = []
+    caution_candidates: list[tuple[tuple[int, int, float, str], DiscoveryStockPick]] = []
+    deep_value_candidates: list[
+        tuple[tuple[int, int, int, float, int, str], DiscoveryStockPick]
+    ] = []
 
     for snap in snapshots:
         forensics_rank = 0 if snap.forensics is not None else 1
         is_fin = is_financial_institution_from_snapshot(snap)
+        is_st = _is_st_or_delisting(snap)
+        mv = _mv_yi(snap)
+        roe = snap.moat.roe_5y_avg_pct
         div_yield = _dividend_yield(snap)
         div_spread = (
             round(div_yield - cn_10y_bond_yield, 2)
@@ -152,10 +181,14 @@ def _build_buckets(
         )
 
         if (
-            div_yield is not None
+            not is_st
+            and _mv_meets(snap, 100.0)
+            and _has_enough_tenure(snap, 3)
+            and div_yield is not None
             and div_yield >= 3.0
             and snap.financial_ct.red_count == 0
             and not has_caution
+            and (is_fin or eq_tag != "leveraged_roe")
             and (is_fin or (fcf_cov is not None and fcf_cov >= 0.8))
         ):
             spread_txt = (
@@ -166,7 +199,7 @@ def _build_buckets(
                 (
                     (
                         forensics_rank,
-                        0 if (snap.valuation.total_mv_yuan or 0) >= 300e8 else 1,
+                        0 if (mv is not None and mv >= 500.0) else 1,
                         -(min(div_yield, 8.0) * 8.0 + snap.radar.total_score * 0.5),
                         snap.code,
                     ),
@@ -178,14 +211,22 @@ def _build_buckets(
                 )
             )
 
-        if _is_gold_stock(snap):
+        if (
+            not is_st
+            and _is_gold_stock(snap)
+            and not has_caution
+            and snap.financial_ct.red_count == 0
+            and roe is not None
+            and roe >= 5.0
+        ):
             sector_label = snap.industry_sw2 or snap.industry_sw1 or "黄金贵金属"
             gold_candidates.append(
                 (
                     (
                         forensics_rank,
+                        0 if (mv is None or mv >= 200.0) else (1 if mv >= 80.0 else 2),
+                        0 if snap.code in _KNOWN_GOLD_CODES else 1,
                         -snap.radar.total_score,
-                        snap.financial_ct.red_count,
                         snap.code,
                     ),
                     _make_pick(
@@ -193,16 +234,21 @@ def _build_buckets(
                         cn_10y_bond_yield=cn_10y_bond_yield,
                         reason=(
                             f"{sector_label}资源标的，PE {_fmt_num(snap.valuation.pe_ttm, 'x')}，"
-                            f"ROE {_fmt_num(snap.moat.roe_5y_avg_pct, '%')}，"
+                            f"ROE {_fmt_num(roe, '%')}，"
                             f"评分 {snap.radar.total_score}。"
                         ),
                     ),
                 )
             )
 
-        if not is_fin and snap.financial_ct.red_count == 0:
+        if (
+            not is_st
+            and not is_fin
+            and snap.financial_ct.red_count == 0
+            and _mv_meets(snap, 100.0)
+            and _has_enough_tenure(snap, 4)
+        ):
             ocf_pct = snap.peer_metrics.ocf_to_profit_5y_pct
-            roe = snap.moat.roe_5y_avg_pct
             qualifies_cow = (
                 eq_tag == "core_cash_cow"
                 if eq_tag is not None
@@ -217,9 +263,20 @@ def _build_buckets(
                     if core_share is not None
                     else ""
                 )
+                cow_mv_tier = (
+                    0
+                    if (mv is not None and mv >= 500.0)
+                    else (1 if (mv is not None and mv >= 200.0) else 2)
+                )
                 core_cow_candidates.append(
                     (
-                        (forensics_rank, -(roe or 0.0), -snap.radar.total_score, snap.code),
+                        (
+                            forensics_rank,
+                            cow_mv_tier,
+                            -(roe or 0.0),
+                            -snap.radar.total_score,
+                            snap.code,
+                        ),
                         _make_pick(
                             snap,
                             cn_10y_bond_yield=cn_10y_bond_yield,
@@ -232,7 +289,21 @@ def _build_buckets(
                 )
 
         if has_caution:
-            severity = max(invest_share or 0.0, non_rec_share or 0.0, inv_ratio or 0.0)
+            bounded_non_rec = min(non_rec_share, 100.0) if non_rec_share is not None else 0.0
+            severity = max(invest_share or 0.0, bounded_non_rec, inv_ratio or 0.0)
+            caution_mv_tier = (
+                0
+                if (mv is not None and mv >= 100.0)
+                else (1 if (mv is not None and mv >= 50.0) else 2)
+            )
+            genuine_inv_tier = (
+                0
+                if (
+                    eq_tag == "investment_driven"
+                    or (invest_share is not None and invest_share >= 40.0)
+                )
+                else 1
+            )
             caution_parts: list[str] = []
             if invest_share is not None and (invest_share >= 30.0 or eq_tag == "investment_driven"):
                 caution_parts.append(f"近3年投资收益占营业利润 {invest_share:.1f}%")
@@ -241,10 +312,13 @@ def _build_buckets(
             if non_rec_share is not None and (
                 non_rec_share >= 30.0 or eq_tag == "subsidy_inflated"
             ):
-                caution_parts.append(f"非经常性/补贴占比 {non_rec_share:.1f}%")
+                if non_rec_share >= 900.0:
+                    caution_parts.append("全靠非经扭亏")
+                else:
+                    caution_parts.append(f"非经常性/补贴占比 {non_rec_share:.1f}%")
             caution_candidates.append(
                 (
-                    (-severity, snap.code),
+                    (caution_mv_tier, genuine_inv_tier, -severity, snap.code),
                     _make_pick(
                         snap,
                         cn_10y_bond_yield=cn_10y_bond_yield,
@@ -260,7 +334,13 @@ def _build_buckets(
         net_cash_mv = snap.peer_metrics.net_cash_to_mv_pct
         graham_margin = snap.valuation.graham_margin_pct
         if (
-            snap.financial_ct.red_count == 0
+            not is_st
+            and _mv_meets(snap, 100.0)
+            and _has_enough_tenure(snap, 3)
+            and roe is not None
+            and roe >= 8.0
+            and eq_tag != "leveraged_roe"
+            and snap.financial_ct.red_count == 0
             and not has_caution
             and (
                 (pe_pct is not None and pe_pct <= 35.0)
@@ -282,6 +362,7 @@ def _build_buckets(
                 (
                     (
                         forensics_rank,
+                        0 if (mv is not None and mv >= 300.0) else 1,
                         -snap.radar.valuation_margin,
                         -(net_cash_mv or 0.0),
                         -snap.radar.total_score,

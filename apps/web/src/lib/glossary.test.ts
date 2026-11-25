@@ -156,11 +156,69 @@ const REQUIRED_FOUR_FIELD_KEYS = [
   'quality_filter',
 ] as const satisfies readonly GlossaryKey[]
 
+const REQUIRED_PLAIN_GLOSSARY_KEYS = [
+  'market_temperature',
+  'pe_median',
+  'market_pe_percentile',
+  'bond_yield_10y',
+  'equity_bond_spread',
+  'industry_money_flow',
+  'workflow_guide',
+  'screener_radar',
+  'filter_zero_red',
+  'quality_filter',
+  'us_2y_fed_anchor',
+  'us_10y_real_yield',
+  'us_10y_2y_spread',
+  'us_cn_10y_spread',
+  'gold_au9999_sge',
+  'gold_fed_signal',
+  'style_rotation_signal',
+  'earnings_quality_contrast',
+  'deep_value_fortress',
+  'forensic_profit_truth',
+  'core_operating_profit',
+  'invest_profit_share',
+  'subsidy_and_oneoff',
+  'investment_assets_ratio',
+  'ocf_to_core_profit',
+  'interest_burden',
+  'dupont_attribution',
+  'capital_allocation',
+  'radar_total_score',
+  'valuation_pct_10y',
+  'ct_and_implied',
+  'reverse_dcf',
+  'graham_number',
+  'roe_5y_avg',
+  'dividend_yield',
+  'dividend_bond_spread',
+  'pb',
+  'pe_ttm',
+  'fcf',
+  'ocf',
+  'net_cash',
+  'strike_zone_threshold',
+  'strike_zone_sentinel',
+  'decision_ledger',
+  'emotion_win_rate',
+  'gross_margin',
+  'roe',
+  'pe_ttm_and_pct',
+  'net_margin',
+  'revenue',
+  'net_profit',
+  'deduct_net_profit',
+  'shareholder_return',
+  'net_cash_yield',
+] as const satisfies readonly GlossaryKey[]
+
 describe('GLOSSARY', () => {
-  it('defines non-empty label, summary, and valid optional formula/reading for every entry', () => {
+  it('defines non-empty label, summary, and valid optional plain/formula/reading for every entry', () => {
     const keys = Object.keys(GLOSSARY) as GlossaryKey[]
     const allRequired = [...REQUIRED_GLOSSARY_KEYS, ...REQUIRED_FOUR_FIELD_KEYS]
     expect(keys.length).toBeGreaterThanOrEqual(allRequired.length)
+    expect(REQUIRED_PLAIN_GLOSSARY_KEYS.length).toBeGreaterThanOrEqual(45)
 
     for (const requiredKey of allRequired) {
       expect(GLOSSARY[requiredKey]).toBeDefined()
@@ -174,10 +232,21 @@ describe('GLOSSARY', () => {
       expect(entry.reading.trim().length, `${fourFieldKey}.reading`).toBeGreaterThan(0)
     }
 
+    for (const plainKey of REQUIRED_PLAIN_GLOSSARY_KEYS) {
+      const entry = GLOSSARY[plainKey]
+      expect('plain' in entry && typeof entry.plain === 'string', `${plainKey}.plain`).toBe(true)
+      if ('plain' in entry && typeof entry.plain === 'string') {
+        expect(entry.plain.trim().length, `${plainKey}.plain`).toBeGreaterThan(0)
+      }
+    }
+
     for (const key of keys) {
       const entry = GLOSSARY[key]
       expect(entry.label.trim().length, `${key}.label`).toBeGreaterThan(0)
       expect(entry.summary.trim().length, `${key}.summary`).toBeGreaterThan(0)
+      if ('plain' in entry && entry.plain !== undefined) {
+        expect(entry.plain.trim().length, `${key}.plain`).toBeGreaterThan(0)
+      }
       if ('formula' in entry && entry.formula !== undefined) {
         expect(entry.formula.trim().length, `${key}.formula`).toBeGreaterThan(0)
       }
@@ -185,5 +254,10 @@ describe('GLOSSARY', () => {
         expect(entry.reading.trim().length, `${key}.reading`).toBeGreaterThan(0)
       }
     }
+
+    expect(GLOSSARY.quality_filter.summary).toContain('剔除投资依赖')
+    expect(GLOSSARY.quality_filter.reading).toContain('剔除投资依赖')
+    expect(GLOSSARY.quality_filter.summary).not.toContain('隐藏炒股/补贴虚胖股')
+    expect(GLOSSARY.quality_filter.reading).not.toContain('隐藏炒股/补贴虚胖股')
   })
 })

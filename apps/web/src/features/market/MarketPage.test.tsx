@@ -630,6 +630,7 @@ describe('MarketPage', () => {
 
     // Quick-access chips come from synced screener pool with industry diversity, never hardcoded 300750.
     const quickGroup = await screen.findByRole('group', { name: '精选已同步示例标的' })
+    expect(quickGroup).toHaveClass('sample-stock-row-scroll')
     expect(within(quickGroup).getByRole('link', { name: /600519.*贵州茅台/ })).toHaveAttribute(
       'href',
       '/stock/600519',
@@ -638,6 +639,22 @@ describe('MarketPage', () => {
     expect(within(quickGroup).getByRole('link', { name: /000333.*美的集团/ })).toBeInTheDocument()
     expect(within(quickGroup).getByRole('link', { name: /002594.*比亚迪/ })).toBeInTheDocument()
     expect(within(quickGroup).queryByText('300750')).not.toBeInTheDocument()
+
+    // Section hierarchy: 市场温度 appears above DiscoveryBoard, which appears above 行业资金流 and ScreenerSection.
+    const tempHeading = screen.getByText('市场温度')
+    const discoveryRegion = screen.getByRole('region', { name: '价值奇点机会挖掘看板' })
+    const flowHeading = screen.getByText('行业资金流（亿元）')
+    const screenerRegion = screen.getByRole('region', { name: '价值击球区精选雷达' })
+    expect(
+      tempHeading.compareDocumentPosition(discoveryRegion) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      discoveryRegion.compareDocumentPosition(flowHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      flowHeading.compareDocumentPosition(screenerRegion) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(screen.getByText(/全市场估值比历史上 69% 的时候都便宜/)).toBeInTheDocument()
 
     const flowOption = capturedChartOptions.get('行业净流入柱状图')
     expect(flowOption).toBeDefined()
@@ -873,7 +890,7 @@ describe('MarketPage', () => {
     expect(screen.getByText('行情服务维护中')).toBeInTheDocument()
 
     const discoveryBoard = await screen.findByRole('region', { name: '价值奇点机会挖掘看板' })
-    expect(within(discoveryBoard).getByText('MACRO × FORENSICS DISCOVERY')).toBeInTheDocument()
+    expect(within(discoveryBoard).getByText('跨资产机会 · 财报排雷看板')).toBeInTheDocument()
     expect(await within(discoveryBoard).findByText('4.18%')).toBeInTheDocument()
     expect(within(discoveryBoard).getByRole('link', { name: '贵州茅台' })).toBeInTheDocument()
 
@@ -986,7 +1003,7 @@ describe('MarketPage', () => {
     renderMarketPage()
 
     const discoveryBoard = await screen.findByRole('region', { name: '价值奇点机会挖掘看板' })
-    expect(within(discoveryBoard).getByText('MACRO × FORENSICS DISCOVERY')).toBeInTheDocument()
+    expect(within(discoveryBoard).getByText('跨资产机会 · 财报排雷看板')).toBeInTheDocument()
     expect(await within(discoveryBoard).findByText('已追踪 6 支深度快照')).toBeInTheDocument()
 
     // Macro pulse strip verifies US 2Y, real yield, spread, Au99.99 + SPDR, and style rotation diff.
@@ -995,6 +1012,7 @@ describe('MarketPage', () => {
     })
     expect(within(pulseStrip).getByText('4.18%')).toBeInTheDocument()
     expect(within(pulseStrip).getByText('近20日 -18 bps')).toBeInTheDocument()
+    expect(within(pulseStrip).getByText(/100 基点\(bps\)=1%/)).toBeInTheDocument()
     expect(within(pulseStrip).getByText('1.71%')).toBeInTheDocument()
     expect(within(pulseStrip).getByText('615.40 元/克')).toBeInTheDocument()
     expect(within(pulseStrip).getByText(/879\.5t \(\+4\.3t\)/)).toBeInTheDocument()
@@ -1300,5 +1318,172 @@ describe('MarketPage', () => {
       'quality-badge',
       'quality-badge-red',
     )
+  })
+
+  it('renders curated 5 blue-chip shortcuts, normalizes names, guards 999.0%, and collapses/expands DiscoveryBoard picks (3) and Screener rows (12)', async () => {
+    const baseA = SCREENER_ITEMS[0]
+    const baseB = SCREENER_ITEMS[1]
+    const baseC = SCREENER_ITEMS[2]
+    const baseD = SCREENER_ITEMS[3]
+    const baseE = SCREENER_ITEMS[4]
+    const deepValueTheme = SAMPLE_DISCOVERY.themes?.find(
+      (theme) => theme.theme_id === 'deep_value_fortress',
+    )
+    const samplePick = deepValueTheme?.picks?.[0]
+    const eqTheme = SAMPLE_DISCOVERY.themes?.find(
+      (theme) => theme.theme_id === 'earnings_quality_radar',
+    )
+    const sampleCaution = eqTheme?.caution_picks?.[0]
+    if (!baseA || !baseB || !baseC || !baseD || !baseE || !samplePick || !sampleCaution) {
+      throw new Error('Expected test fixtures')
+    }
+
+    const manyScreenerItems: StockScreenerItem[] = [
+      { ...baseA, code: '600519', name: '贵州 茅台', total_score: 95 },
+      {
+        ...baseC,
+        code: '600900',
+        name: '长江电力',
+        industry_sw1: '公用事业',
+        is_financial: false,
+        total_score: 91,
+      },
+      { ...baseC, code: '600036', name: '招商银行', total_score: 89 },
+      { ...baseB, code: '000858', name: '五 粮 液', total_score: 87 },
+      { ...baseD, code: '300750', name: '宁德时代', industry_sw1: '电力设备', total_score: 85 },
+      {
+        ...baseE,
+        code: '600177',
+        name: '雅戈尔',
+        industry_sw1: '纺织服饰',
+        ct_red_count: 1,
+        total_score: 54,
+      },
+      ...Array.from({ length: 9 }, (_, idx) => ({
+        ...baseD,
+        code: `60010${idx}`,
+        name: `示例标的${idx + 1}`,
+        total_score: 80 - idx,
+      })),
+    ]
+
+    const fivePicksDiscovery: MarketDiscoveryResponse = {
+      ...SAMPLE_DISCOVERY,
+      themes: (SAMPLE_DISCOVERY.themes ?? []).map((theme) => {
+        if (theme.theme_id === 'deep_value_fortress') {
+          return {
+            ...theme,
+            picks: [
+              { ...samplePick, code: '000858', name: '五 粮 液' },
+              { ...samplePick, code: '600900', name: '长江电力' },
+              { ...samplePick, code: '601088', name: '中国神华' },
+              { ...samplePick, code: '600028', name: '中国石化' },
+              { ...samplePick, code: '601398', name: '工商银行' },
+            ],
+          }
+        }
+        if (theme.theme_id === 'earnings_quality_radar') {
+          return {
+            ...theme,
+            caution_picks: [
+              {
+                ...sampleCaution,
+                code: '600177',
+                name: '雅 戈 尔',
+                earnings_quality_label: undefined,
+                invest_profit_share_3y_pct: 999.0,
+                reason: '近3年投资收益占营业利润 999.0%，存在盈利失真风险。',
+              },
+            ],
+          }
+        }
+        return theme
+      }),
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(asRequest(input).url)
+      if (url.pathname === '/api/market/overview') {
+        return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW))
+      }
+      if (url.pathname === '/api/market/discovery') {
+        return Promise.resolve(jsonResponse(fivePicksDiscovery))
+      }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(jsonResponse(filterScreenerResponse(url, manyScreenerItems)))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    renderMarketPage()
+
+    // Curated 5 blue chips render with role tags and compact stock names.
+    const quickGroup = await screen.findByRole('group', { name: '精选已同步示例标的' })
+    expect(
+      await within(quickGroup).findByRole('link', { name: /600519.*贵州茅台.*现金牛/ }),
+    ).toBeInTheDocument()
+    expect(
+      within(quickGroup).getByRole('link', { name: /600900.*长江电力.*红利防守/ }),
+    ).toBeInTheDocument()
+    expect(
+      within(quickGroup).getByRole('link', { name: /600177.*雅戈尔.*投资依赖反例/ }),
+    ).toBeInTheDocument()
+    expect(
+      within(quickGroup).getByRole('link', { name: /600036.*招商银行.*高息银行/ }),
+    ).toBeInTheDocument()
+    expect(
+      within(quickGroup).getByRole('link', { name: /300750.*宁德时代.*制造龙头/ }),
+    ).toBeInTheDocument()
+
+    // Discovery theme collapses 5 picks -> 3 by default and expands cleanly.
+    const deepValueCard = await screen.findByRole('article', {
+      name: '高净现金与低估值安全边际',
+    })
+    expect(within(deepValueCard).getByRole('link', { name: '五粮液' })).toBeInTheDocument()
+    expect(within(deepValueCard).queryByText('五 粮 液')).not.toBeInTheDocument()
+    expect(within(deepValueCard).queryByRole('link', { name: '中国石化' })).not.toBeInTheDocument()
+    expect(within(deepValueCard).queryByRole('link', { name: '工商银行' })).not.toBeInTheDocument()
+
+    const themeExpandBtn = within(deepValueCard).getByRole('button', {
+      name: '展开更多（共 5 只）',
+    })
+    fireEvent.click(themeExpandBtn)
+    expect(within(deepValueCard).getByRole('link', { name: '中国石化' })).toBeInTheDocument()
+    expect(within(deepValueCard).getByRole('link', { name: '工商银行' })).toBeInTheDocument()
+    fireEvent.click(within(deepValueCard).getByRole('button', { name: '收起' }))
+    expect(within(deepValueCard).queryByRole('link', { name: '工商银行' })).not.toBeInTheDocument()
+
+    // Caution pick guards 999.0% in stats, badge, and reason text.
+    const qualityCard = screen.getByRole('article', {
+      name: '主业造血现金牛 vs 投资收益依赖排查',
+    })
+    expect(within(qualityCard).queryByText(/999\.0%/)).not.toBeInTheDocument()
+    expect(within(qualityCard).getAllByText(/主业微利\(不适用\)/).length).toBeGreaterThan(0)
+    expect(within(qualityCard).getByRole('link', { name: '雅戈尔' })).toBeInTheDocument()
+
+    // Screener renders 12 rows by default out of 15, expands on click, and resets on filter change.
+    const screenerDeck = screen.getByRole('region', { name: '价值击球区精选雷达' })
+    const screenerTable = within(screenerDeck).getByRole('table', { name: '价值筛选结果明细表' })
+    const tbody = screenerTable.querySelector('tbody')
+    expect(tbody?.querySelectorAll('tr')).toHaveLength(12)
+    expect(within(screenerTable).getByRole('link', { name: '五粮液' })).toBeInTheDocument()
+    expect(within(screenerTable).queryByText('五 粮 液')).not.toBeInTheDocument()
+    expect(within(screenerTable).queryByText('示例标的9')).not.toBeInTheDocument()
+
+    fireEvent.click(within(screenerDeck).getByRole('button', { name: '展开全部 15 条' }))
+    expect(tbody?.querySelectorAll('tr')).toHaveLength(15)
+    expect(within(screenerTable).getByText('示例标的9')).toBeInTheDocument()
+
+    fireEvent.click(within(screenerDeck).getByRole('button', { name: '收起至前 12 条' }))
+    expect(tbody?.querySelectorAll('tr')).toHaveLength(12)
+
+    fireEvent.click(within(screenerDeck).getByRole('button', { name: '展开全部 15 条' }))
+    expect(tbody?.querySelectorAll('tr')).toHaveLength(15)
+
+    // Changing filter resets expanded screener table back to default 12 rows.
+    fireEvent.click(within(screenerDeck).getByRole('button', { name: '仅看零红灯' }))
+    await waitFor(() => {
+      expect(tbody?.querySelectorAll('tr')).toHaveLength(12)
+    })
   })
 })

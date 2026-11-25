@@ -9,6 +9,7 @@ import type { ChartOption } from '../../lib/charts'
 import { LIGHT_CHART_COLORS } from '../../lib/chartTheme'
 import { createQueryClient } from '../../lib/queryClient'
 import { solveImpliedFcfCagrPct } from '../../lib/reverseDcfSolver'
+import { VIEW_MODE_STORAGE_KEY } from '../../lib/viewMode'
 import type {
   AiPreferences,
   DevilsAdvocateRequest,
@@ -19,6 +20,7 @@ import type {
   MdaDiffRequest,
   MdaDiffResponse,
   StockDetail,
+  StockForensicsSection,
   StockScreenerResponse,
   StockSnapshotPayload,
   TokenResponse,
@@ -2947,5 +2949,334 @@ describe('StockPage', () => {
     expect(headerRow?.querySelector('.quality-badge-red')).toBeInTheDocument()
     const cautionStrip = screen.getByRole('note', { name: '利润成色鉴真提示' })
     expect(cautionStrip).toHaveClass('discovery-caution-strip-red')
+  })
+
+  it('renders 30-second Quick Checkup Card verdicts across core_cash_cow, 600177 investment_driven, 600036 financial exemption, and extreme subsidy fallback', async () => {
+    const baseForensics: StockForensicsSection = {
+      earnings_quality_tag: 'core_cash_cow',
+      earnings_quality_label: '主业造血现金牛',
+      verdict: '近3年主业核心营业利润占比 98.4%，盈利纯度极高。',
+      core_profit_share_3y_pct: 98.4,
+      invest_profit_share_3y_pct: 0.6,
+      non_recurring_share_3y_pct: 1.0,
+      ocf_to_core_profit_3y_pct: 107.2,
+      interest_burden_pct: 0.3,
+      investment_assets_yuan: 8.5e8,
+      investment_assets_ratio_pct: 0.3,
+      dupont_roe_5y_avg_pct: 31.8,
+      dupont_net_margin_5y_avg_pct: 49.4,
+      dupont_asset_turnover_5y_avg: 0.56,
+      dupont_equity_multiplier_5y_avg: 1.15,
+      findings: [],
+      annual_decomposition: [],
+      dupont_series: [],
+      capital_allocation: null,
+    }
+    const cashCowSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      forensics: baseForensics,
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(cashCowSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const cowView = renderStockPage('/stock/600519')
+    const cowCheckup = await screen.findByRole('region', { name: '30 秒小白体检卡' })
+    const cowCards = cowCheckup.querySelectorAll('.quick-checkup-card')
+    expect(cowCards).toHaveLength(3)
+    expect(cowCards[0]).toHaveAttribute('data-tone', 'signal')
+    expect(cowCards[0]).toHaveTextContent('赚的是真钱吗？')
+    expect(cowCards[0]).toHaveTextContent('主业造血扎实 · 主业核心利润占 98.4%')
+    expect(cowCards[1]).toHaveAttribute('data-tone', 'amber')
+    expect(cowCards[1]).toHaveTextContent('零红灯、1 项温和提示，整体财务底座较稳')
+    expect(cowCards[2]).toHaveAttribute('data-tone', 'signal')
+    expect(cowCards[2]).toHaveTextContent('10年 PE 分位 26.5%')
+    expect(cowCards[2]).toHaveTextContent('低于近10年多数时间 · 偏便宜')
+    expect(cowCards[2]).toHaveTextContent('当前股息率 3.45%')
+
+    fireEvent.click(screen.getByRole('button', { name: '查看利润真相 →' }))
+    expect(screen.getByRole('tab', { name: '利润真相' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '看排雷清单 →' }))
+    expect(screen.getByRole('tab', { name: '风险排雷' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByRole('button', { name: '看估值分位 →' }))
+    expect(screen.getByRole('tab', { name: '估值' })).toHaveAttribute('aria-selected', 'true')
+    cowView.unmount()
+
+    const youngorStock: StockDetail = {
+      ...SAMPLE_STOCK,
+      code: '600177',
+      name: '雅 戈 尔',
+      industry_sw1: '纺织服饰',
+      industry_sw2: '服装家纺',
+    }
+    const youngorSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      code: '600177',
+      name: '雅 戈 尔',
+      valuation: {
+        ...SAMPLE_SNAPSHOT.valuation,
+        pe_percentile_10y: 82.5,
+        dividend_yield_pct: 4.1,
+      },
+      financial_ct: {
+        ...SAMPLE_SNAPSHOT.financial_ct,
+        overall_status: 'red',
+        red_count: 1,
+        yellow_count: 2,
+      },
+      forensics: {
+        ...baseForensics,
+        earnings_quality_tag: 'investment_driven',
+        earnings_quality_label: '盈利高度依赖对外投资',
+        verdict: '近3年投资与公允价值变动收益占营业利润 64.2%。',
+        core_profit_share_3y_pct: 33.4,
+        invest_profit_share_3y_pct: 64.2,
+        non_recurring_share_3y_pct: 4.8,
+      },
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600177') {
+        return Promise.resolve(jsonResponse(youngorStock, 200))
+      }
+      if (pathname === '/api/stocks/600177/snapshot') {
+        return Promise.resolve(jsonResponse(youngorSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const youngorView = renderStockPage('/stock/600177')
+    expect(await screen.findByRole('heading', { name: '雅戈尔' })).toBeInTheDocument()
+    const youngorCheckup = await screen.findByRole('region', { name: '30 秒小白体检卡' })
+    const youngorCards = youngorCheckup.querySelectorAll('.quick-checkup-card')
+    expect(youngorCards[0]).toHaveAttribute('data-tone', 'danger')
+    expect(youngorCards[0]).toHaveTextContent(
+      '高度警惕 · 近3年投资/公允价值收益占营业利润 64.2%，需核查主业是否真赚钱',
+    )
+    expect(youngorCards[1]).toHaveAttribute('data-tone', 'danger')
+    expect(youngorCards[1]).toHaveTextContent('发现 1 项财报红灯（2 项黄灯），先看具体风险点')
+    expect(youngorCards[2]).toHaveAttribute('data-tone', 'amber')
+    expect(youngorCards[2]).toHaveTextContent('处于近10年高位区间 · 安全边际收窄')
+    youngorView.unmount()
+
+    const bankStock: StockDetail = {
+      ...SAMPLE_STOCK,
+      code: '600036',
+      name: '招商银行',
+      industry_sw1: '银行',
+      industry_sw2: '股份制银行Ⅱ',
+    }
+    const bankSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      code: '600036',
+      name: '招商银行',
+      industry_sw1: '银行',
+      industry_sw2: '股份制银行Ⅱ',
+      valuation: {
+        ...SAMPLE_SNAPSHOT.valuation,
+        pb_percentile_10y: 18.0,
+        dividend_yield_pct: 5.4,
+      },
+      financial_ct: {
+        overall_status: 'green',
+        red_count: 0,
+        yellow_count: 0,
+        green_count: 3,
+        checks: [],
+      },
+      radar: {
+        ...SAMPLE_SNAPSHOT.radar,
+        scoring_profile: 'financial',
+      },
+      forensics: {
+        ...baseForensics,
+        earnings_quality_tag: 'financial_special',
+        earnings_quality_label: '金融特殊结构',
+        verdict: '金融业豁免工业主业剥离。',
+        core_profit_share_3y_pct: null,
+        non_recurring_share_3y_pct: null,
+        ocf_to_core_profit_3y_pct: null,
+        interest_burden_pct: null,
+      },
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600036') {
+        return Promise.resolve(jsonResponse(bankStock, 200))
+      }
+      if (pathname === '/api/stocks/600036/snapshot') {
+        return Promise.resolve(jsonResponse(bankSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const bankView = renderStockPage('/stock/600036')
+    const bankCheckup = await screen.findByRole('region', { name: '30 秒小白体检卡' })
+    const bankCards = bankCheckup.querySelectorAll('.quick-checkup-card')
+    expect(bankCards[0]).toHaveAttribute('data-tone', 'cobalt')
+    expect(bankCards[0]).toHaveTextContent('金融业专项口径')
+    expect(bankCards[1]).toHaveAttribute('data-tone', 'signal')
+    expect(bankCards[1]).toHaveTextContent('零红灯零黄灯，现金流、偿债与应收表现稳健')
+    expect(bankCards[2]).toHaveAttribute('data-tone', 'signal')
+    expect(bankCards[2]).toHaveTextContent('10年 PB 分位 18.0%')
+    expect(bankCards[2]).toHaveTextContent('当前股息率 5.40%')
+    bankView.unmount()
+
+    const subsidyExtremeSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      valuation: {
+        ...SAMPLE_SNAPSHOT.valuation,
+        pe_percentile_10y: null,
+        pb_percentile_10y: null,
+      },
+      forensics: {
+        ...baseForensics,
+        earnings_quality_tag: 'subsidy_inflated',
+        earnings_quality_label: '补贴 / 一次性损益偏高',
+        non_recurring_share_3y_pct: 999.0,
+        ocf_to_core_profit_3y_pct: 999.0,
+      },
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse(SAMPLE_STOCK, 200))
+      }
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(subsidyExtremeSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    renderStockPage('/stock/600519')
+    const extremeCheckup = await screen.findByRole('region', { name: '30 秒小白体检卡' })
+    const extremeCards = extremeCheckup.querySelectorAll('.quick-checkup-card')
+    expect(extremeCards[0]).toHaveAttribute('data-tone', 'amber')
+    expect(extremeCards[0]).toHaveTextContent('全靠非经扭亏')
+    expect(extremeCards[0]).not.toHaveTextContent('999')
+    expect(extremeCards[2]).toHaveAttribute('data-tone', 'cobalt')
+    expect(extremeCards[2]).toHaveTextContent(
+      '暂缺足够长周期估值分位，建议结合 PE/PB 与股息率对比同业',
+    )
+    expect(screen.queryByText(/999\.0%/)).not.toBeInTheDocument()
+  })
+
+  it('groups tabs cleanly, replaces ribbon/decision labels, and switches simple/pro viewMode with persistent advanced disclosures', async () => {
+    const richSnapshot: StockSnapshotPayload = {
+      ...SAMPLE_SNAPSHOT,
+      forensics: {
+        earnings_quality_tag: 'core_cash_cow',
+        earnings_quality_label: '主业造血现金牛',
+        verdict: '主业现金牛。',
+        core_profit_share_3y_pct: 98.4,
+        invest_profit_share_3y_pct: 0.6,
+        non_recurring_share_3y_pct: 1.0,
+        ocf_to_core_profit_3y_pct: 107.2,
+        interest_burden_pct: 0.3,
+        investment_assets_yuan: 8.5e8,
+        investment_assets_ratio_pct: 0.3,
+        dupont_roe_5y_avg_pct: 31.8,
+        dupont_net_margin_5y_avg_pct: 49.4,
+        dupont_asset_turnover_5y_avg: 0.56,
+        dupont_equity_multiplier_5y_avg: 1.15,
+        findings: [],
+        annual_decomposition: [],
+        dupont_series: [
+          {
+            year: 2025,
+            roe_pct: 32.5,
+            net_margin_pct: 49.4,
+            asset_turnover: 0.56,
+            equity_multiplier: 1.15,
+          },
+        ],
+        capital_allocation: null,
+      },
+    }
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const pathname = new URL(asRequest(input).url).pathname
+      if (pathname === '/api/auth/refresh') {
+        return Promise.resolve(jsonResponse({ detail: '未登录' }, 401))
+      }
+      if (pathname === '/api/stocks/600519') {
+        return Promise.resolve(jsonResponse({ ...SAMPLE_STOCK, name: '贵 州 茅 台' }, 200))
+      }
+      if (pathname === '/api/stocks/600519/snapshot') {
+        return Promise.resolve(jsonResponse(richSnapshot, 200))
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${pathname}` }, 500))
+    })
+
+    const { container } = renderStockPage('/stock/600519')
+
+    expect(await screen.findByRole('heading', { name: '贵州茅台' })).toBeInTheDocument()
+    expect(await screen.findByText('财报排雷与市场预期')).toBeInTheDocument()
+    expect(screen.queryByText('CT 排雷与隐含预期')).not.toBeInTheDocument()
+
+    const tabBar = screen.getByRole('tablist', { name: '个股分析维度' })
+    expect(tabBar).toHaveClass('tab-bar-grouped')
+    expect(tabBar.querySelector('.tab-group-divider')).toBeInTheDocument()
+    expect(tabBar.querySelectorAll('.tab-group-tag')).toHaveLength(2)
+    expect(screen.getByText('核心必看')).toBeInTheDocument()
+    expect(screen.getByText('深度研究')).toBeInTheDocument()
+
+    const simpleBtn = screen.getByRole('button', { name: '简洁视角' })
+    const proBtn = screen.getByRole('button', { name: '专业视角' })
+    expect(simpleBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(proBtn).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('region', { name: '30 秒小白体检卡' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '估值' }))
+    const dcfDisclosure = container.querySelector('details.advanced-disclosure')
+    expect(dcfDisclosure).not.toBeNull()
+    expect(dcfDisclosure).not.toHaveAttribute('open')
+    expect(
+      screen.getByText('进阶估值模型 · 市场隐含 10Y FCF 增速 +8.42%（点击展开调节折现率与倍数）'),
+    ).toBeInTheDocument()
+
+    fireEvent.click(proBtn)
+    expect(window.localStorage.getItem(VIEW_MODE_STORAGE_KEY)).toBe('pro')
+    expect(proBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByRole('region', { name: '30 秒小白体检卡' })).not.toBeInTheDocument()
+    expect(dcfDisclosure).toHaveAttribute('open')
+
+    fireEvent.click(screen.getByRole('tab', { name: '利润真相' }))
+    const dupontDisclosure = container.querySelector('details.advanced-disclosure')
+    expect(dupontDisclosure).not.toBeNull()
+    expect(dupontDisclosure).toHaveAttribute('open')
+
+    fireEvent.click(simpleBtn)
+    expect(window.localStorage.getItem(VIEW_MODE_STORAGE_KEY)).toBe('simple')
+    expect(simpleBtn).toHaveAttribute('aria-pressed', 'true')
+    expect(dupontDisclosure).not.toHaveAttribute('open')
+    expect(screen.getByRole('region', { name: '30 秒小白体检卡' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('tab', { name: '投资决策' }))
+    expect(await screen.findByText('免费规则校验可用')).toBeInTheDocument()
+    expect(screen.queryByText('纯规则零额度可用')).not.toBeInTheDocument()
   })
 })

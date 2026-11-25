@@ -31,6 +31,7 @@ from app.domain.models import (
 )
 
 _CLAMP_SHARE_MAX = 999.0
+_CLAMP_OCF_RATIO_MAX = 500.0
 
 
 def _fmt_yi(value: float | None) -> str:
@@ -41,8 +42,8 @@ def _fmt_pct(value: float | None) -> str:
     return f"{value:.1f}%" if value is not None else "—"
 
 
-def _clamp_pct(value: float) -> float:
-    return round(max(-_CLAMP_SHARE_MAX, min(_CLAMP_SHARE_MAX, value)), 2)
+def _clamp_pct(value: float, *, max_abs: float = _CLAMP_SHARE_MAX) -> float:
+    return round(max(-max_abs, min(max_abs, value)), 2)
 
 
 def _mean_or_none(values: Sequence[float | None], ndigits: int = 2) -> float | None:
@@ -517,19 +518,26 @@ def analyze_stock_forensics(
     used_loss_fallback = False
     if not financial:
         if sum_np_3y is not None and sum_deduct_3y is not None and sum_np_3y > 1.0:
-            csrc_share = ((sum_np_3y - sum_deduct_3y) / sum_np_3y) * 100.0
-            share_candidates = [csrc_share]
-            # Blend pre-tax subsidies only when CSRC deduct profit also flags non-recurring items.
-            if csrc_share >= 15.0 and sum_subsidy_3y is not None:
-                share_candidates.append((sum_subsidy_3y / sum_np_3y) * 100.0)
-            non_recurring_share_3y = _clamp_pct(max(share_candidates))
+            if sum_deduct_3y <= 0:
+                non_recurring_share_3y = 100.0
+            else:
+                csrc_share = ((sum_np_3y - sum_deduct_3y) / sum_np_3y) * 100.0
+                share_candidates = [csrc_share]
+                # Blend pre-tax subsidies only when CSRC deduct profit flags non-recurring items.
+                if csrc_share >= 15.0 and sum_subsidy_3y is not None:
+                    subsidy_denom = max(sum_np_3y, abs(sum_subsidy_3y))
+                    share_candidates.append((sum_subsidy_3y / subsidy_denom) * 100.0)
+                non_recurring_share_3y = min(100.0, _clamp_pct(max(share_candidates)))
         elif (
             sum_np_3y is None
             and sum_np_only_3y is not None
             and sum_np_only_3y > 1.0
             and sum_subsidy_3y is not None
         ):
-            non_recurring_share_3y = _clamp_pct((sum_subsidy_3y / sum_np_only_3y) * 100.0)
+            subsidy_denom = max(sum_np_only_3y, abs(sum_subsidy_3y))
+            non_recurring_share_3y = min(
+                100.0, _clamp_pct((sum_subsidy_3y / subsidy_denom) * 100.0)
+            )
         elif sum_subsidy_3y is not None and (
             (sum_np_3y is not None and sum_np_3y <= 1.0)
             or (sum_np_only_3y is not None and sum_np_only_3y <= 1.0)
@@ -555,8 +563,16 @@ def analyze_stock_forensics(
         if core_ocf_pairs:
             sum_ocf_3y = sum(pair[0] for pair in core_ocf_pairs)
             sum_core_3y_for_cf = sum(pair[1] for pair in core_ocf_pairs)
-            if sum_core_3y_for_cf > 1.0:
-                ocf_to_core_3y = _clamp_pct((sum_ocf_3y / sum_core_3y_for_cf) * 100.0)
+            core_meaningful = (
+                sum_core_3y_for_cf > 1e7
+                and (core_share_3y is None or core_share_3y >= 15.0)
+                and (sum_op_3y is None or sum_op_3y <= 0 or sum_core_3y_for_cf >= 0.10 * sum_op_3y)
+            )
+            if core_meaningful:
+                ocf_to_core_3y = _clamp_pct(
+                    (sum_ocf_3y / sum_core_3y_for_cf) * 100.0,
+                    max_abs=_CLAMP_OCF_RATIO_MAX,
+                )
 
         int_core_pairs = [
             (max(0.0, r.interest_expense_yuan), pt.core_operating_profit_yuan)
@@ -735,8 +751,24 @@ def analyze_stock_forensics(
                 if sum_subsidy_3y is not None
                 else f"非经/补贴占比 {_fmt_pct(non_recurring_share_3y)}"
             )
+        elif (
+            sum_deduct_3y is not None
+            and sum_deduct_3y <= 0
+            and sum_np_3y is not None
+            and sum_np_3y > 1.0
+        ):
+            sub_parts = [
+                f"近3年扣非净利润 {_fmt_yi(sum_deduct_3y)} vs 归母净利润 {_fmt_yi(sum_np_3y)}",
+            ]
+            if sum_subsidy_3y is not None:
+                sub_parts.append(f"其他收益与资产处置等营业外项目合计 {_fmt_yi(sum_subsidy_3y)}")
+            sub_parts.append(
+                "近3年扣非净利润合计亏损，全部账面归母利润均由非经常性损益/政府补助撑起"
+            )
+            sub_detail = "，".join(sub_parts) + "。"
+            sub_metric = f"非经/补贴占比 {_fmt_pct(non_recurring_share_3y)}"
         else:
-            sub_parts: list[str] = []
+            sub_parts = []
             if sum_deduct_3y is not None and sum_np_3y is not None:
                 sub_parts.append(
                     f"近3年扣非净利润 {_fmt_yi(sum_deduct_3y)} vs 归母净利润 {_fmt_yi(sum_np_3y)}"
@@ -873,9 +905,16 @@ def analyze_stock_forensics(
         and sum_ocf_3y is not None
         and sum_ocf_3y < 0
     )
+    core_weak_cash_outflow = (
+        ocf_to_core_3y is None
+        and sum_core_3y_for_cf is not None
+        and sum_core_3y_for_cf > 1.0
+        and sum_ocf_3y is not None
+        and sum_ocf_3y < 0
+    )
     core_weak_nonneg_ocf = (
-        sum_core_3y_for_cf is not None
-        and sum_core_3y_for_cf <= 1.0
+        ocf_to_core_3y is None
+        and sum_core_3y_for_cf is not None
         and sum_ocf_3y is not None
         and sum_ocf_3y >= 0
     )
@@ -884,6 +923,7 @@ def analyze_stock_forensics(
         (interest_burden_pct is not None and interest_burden_pct >= 50.0)
         or heavy_interest_unsustainable
         or core_loss_cash_outflow
+        or core_weak_cash_outflow
         or (ocf_to_core_3y is not None and ocf_to_core_3y < 35.0)
     ):
         cf_status: SignalLight = "red"
@@ -915,8 +955,10 @@ def analyze_stock_forensics(
             issues.append(f"利息负担占息税前核心利润 {_fmt_pct(interest_burden_pct)}")
         if core_loss_cash_outflow:
             issues.append("主业经营亏损且现金流净流出")
+        elif core_weak_cash_outflow:
+            issues.append("主业核心利润微薄且现金流净流出")
         elif core_weak_nonneg_ocf:
-            issues.append("主业核心利润亏损或微利，现金转化率不适用")
+            issues.append("主业核心利润微薄或亏损，现金转化比率不适用")
         elif ocf_to_core_3y is not None and ocf_to_core_3y < 60.0:
             issues.append(f"近3年 OCF/主业核心利润仅 {_fmt_pct(ocf_to_core_3y)}")
         cf_headline = "、".join(issues) if issues else "主业核心利润现金转化扎实"
@@ -998,6 +1040,7 @@ def analyze_stock_forensics(
         or (interest_burden_pct is not None and interest_burden_pct >= 50.0)
         or heavy_interest_unsustainable
         or core_loss_cash_outflow
+        or core_weak_cash_outflow
     ):
         tag = "cashflow_divergent"
         label = "现金转化偏弱或利息负担偏重"

@@ -882,11 +882,189 @@ def test_discovery_prioritizes_hydrated_forensics_and_quality_dividend_ranking()
     assert [p.code for p in buckets.gold_resources] == ["600547", "600489"]
     assert [p.code for p in buckets.core_cash_cows] == [
         "601088",
-        "002001",
         "600547",
+        "002001",
         "601225",
         "600489",
     ]
     dv_codes = [p.code for p in buckets.deep_value]
     assert set(dv_codes) == {"601088", "002001", "600547", "601225", "600489"}
     assert [c in {"601225", "600489"} for c in dv_codes] == [False, False, False, True, True]
+
+
+def test_discovery_st_mv_tenure_leveraged_filters_and_legacy_caution_formatting() -> None:
+    as_of = date(2026, 11, 20)
+    overview = MarketOverview(
+        as_of=as_of,
+        data_source="akshare",
+        generated_at=datetime(2026, 11, 20, 9, 30, tzinfo=UTC),
+        indices=[IndexQuote(code="000001", name="上证指数", price=3350.0, change_pct=0.2)],
+        temperature=MarketTemperature(
+            score=35.0,
+            level=TemperatureLevel.COOL,
+            pe_median=22.0,
+            pe_percentile=25.0,
+            bond_yield=1.60,
+            equity_bond_spread=2.80,
+            comment="偏低区间",
+        ),
+        hot_industries=[],
+        cross_asset=None,
+    )
+
+    large_cow = _build_test_snapshot(
+        code="600900",
+        name="长江电力",
+        industry_sw1="公用事业",
+        latest_pe=12.0,
+        pe_history=(10.0, 14.0, 18.0, 22.0, 26.0),
+        dividend_total=45e8,
+        total_mv=800e8,
+        net_profit=22e8,
+        ocf=26e8,
+    )
+    st_stock = _build_test_snapshot(
+        code="600518",
+        name="*ST黄金样本",
+        industry_sw1="有色金属",
+        industry_sw2="黄金",
+        latest_pe=10.0,
+        pe_history=(10.0, 14.0, 18.0, 22.0, 26.0),
+        dividend_total=45e8,
+        total_mv=300e8,
+        net_profit=22e8,
+        ocf=26e8,
+    )
+    micro_cap = _build_test_snapshot(
+        code="300111",
+        name="小微高息",
+        industry_sw1="基础化工",
+        latest_pe=10.0,
+        pe_history=(10.0, 14.0, 18.0, 22.0, 26.0),
+        dividend_total=4e8,
+        total_mv=50e8,
+        net_profit=22e8,
+        ocf=26e8,
+    )
+    short_tenure_base = _build_test_snapshot(
+        code="688111",
+        name="次新股样本",
+        industry_sw1="医药生物",
+        latest_pe=10.0,
+        pe_history=(10.0, 14.0, 18.0, 22.0, 26.0),
+        dividend_total=25e8,
+        total_mv=500e8,
+        net_profit=22e8,
+        ocf=26e8,
+    )
+    short_tenure_2y = short_tenure_base.model_copy(
+        update={"annual_trends": short_tenure_base.annual_trends[:2]}
+    )
+    short_tenure_3y = short_tenure_base.model_copy(
+        update={
+            "code": "688222",
+            "name": "三年次新",
+            "annual_trends": short_tenure_base.annual_trends[:3],
+        }
+    )
+    leveraged_base = _build_test_snapshot(
+        code="600222",
+        name="高杠杆高息",
+        industry_sw1="建筑装饰",
+        latest_pe=9.0,
+        pe_history=(10.0, 14.0, 18.0, 22.0, 26.0),
+        dividend_total=30e8,
+        total_mv=600e8,
+        net_profit=22e8,
+        ocf=26e8,
+    )
+    leveraged = leveraged_base.model_copy(
+        update={
+            "forensics": leveraged_base.forensics.model_copy(
+                update={
+                    "earnings_quality_tag": "leveraged_roe",
+                    "earnings_quality_label": "高杠杆驱动型 ROE",
+                }
+            )
+            if leveraged_base.forensics is not None
+            else None,
+            "peer_metrics": leveraged_base.peer_metrics.model_copy(
+                update={"earnings_quality_tag": "leveraged_roe"}
+            ),
+        }
+    )
+    low_roe_gold = _build_test_snapshot(
+        code="600988",
+        name="低ROE黄金",
+        industry_sw1="有色金属",
+        industry_sw2="黄金",
+        latest_pe=25.0,
+        total_mv=500e8,
+        net_profit=5e8,
+        ocf=6e8,
+    )
+    cautioned_gold = _build_test_snapshot(
+        code="601899",
+        name="高投资黄金",
+        industry_sw1="有色金属",
+        industry_sw2="黄金",
+        latest_pe=18.0,
+        total_mv=800e8,
+        operate_profit=20e8,
+        invest_income=18e8,
+        net_profit=22e8,
+        ocf=26e8,
+    )
+    micro_legacy_999_base = _build_test_snapshot(
+        code="300222",
+        name="微盘补贴扭亏",
+        industry_sw1="机械设备",
+        total_mv=30e8,
+        operate_profit=5e8,
+        invest_income=0.0,
+        other_income=4e8,
+        net_profit=2e8,
+        deduct_net_profit=-1e8,
+        ocf=2e8,
+    )
+    micro_legacy_999 = micro_legacy_999_base.model_copy(
+        update={
+            "forensics": micro_legacy_999_base.forensics.model_copy(
+                update={
+                    "earnings_quality_tag": "subsidy_inflated",
+                    "non_recurring_share_3y_pct": 999.0,
+                }
+            )
+            if micro_legacy_999_base.forensics is not None
+            else None,
+            "peer_metrics": micro_legacy_999_base.peer_metrics.model_copy(
+                update={"earnings_quality_tag": "subsidy_inflated"}
+            ),
+        }
+    )
+
+    board = build_market_discovery_board(
+        overview,
+        [
+            large_cow,
+            st_stock,
+            micro_cap,
+            short_tenure_2y,
+            short_tenure_3y,
+            leveraged,
+            low_roe_gold,
+            cautioned_gold,
+            micro_legacy_999,
+        ],
+    )
+    buckets = board.candidate_buckets
+    assert [p.code for p in buckets.dividend_fortresses] == ["600900", "688222"]
+    assert [p.code for p in buckets.core_cash_cows] == ["600900"]
+    assert {p.code for p in buckets.deep_value} == {"600900", "688222"}
+    assert buckets.gold_resources == []
+
+    caution_codes = [p.code for p in buckets.investment_cautions]
+    assert caution_codes == ["601899", "300222"]
+    legacy_pick = next(p for p in buckets.investment_cautions if p.code == "300222")
+    assert "999.0%" not in legacy_pick.reason
+    assert "全靠非经扭亏" in legacy_pick.reason

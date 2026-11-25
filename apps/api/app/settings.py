@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     data_dir: Path = _REPO_ROOT / "data/market"
     market_sync_timeout_seconds: float = Field(default=20.0, gt=0)
     market_sync_max_attempts: int = Field(default=3, ge=1)
-    snapshot_summary_cache_ttl_seconds: float = Field(default=30.0, ge=0.0)
+    snapshot_summary_cache_ttl_seconds: float = Field(default=300.0, ge=0.0)
 
     jwt_secret: str = "dev-insecure-change-me-in-production"
     jwt_algorithm: str = "HS256"
