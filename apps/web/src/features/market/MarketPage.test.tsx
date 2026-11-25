@@ -1486,4 +1486,69 @@ describe('MarketPage', () => {
       expect(tbody?.querySelectorAll('tr')).toHaveLength(12)
     })
   })
+
+  it('shows all 5 curated showcase targets when total_synced >= 50 even if some targets fall outside the top-50 score slice', async () => {
+    const baseA = SCREENER_ITEMS[0]
+    const baseD = SCREENER_ITEMS[3]
+    if (!baseA || !baseD) {
+      throw new Error('Expected test fixtures')
+    }
+
+    const top50Items: StockScreenerItem[] = [
+      { ...baseA, code: '600519', name: '贵州 茅台', total_score: 95 },
+      { ...baseD, code: '300750', name: '宁德时代', industry_sw1: '电力设备', total_score: 88 },
+      ...Array.from({ length: 48 }, (_, idx) => ({
+        ...baseD,
+        code: `601${String(idx).padStart(3, '0')}`,
+        name: `高分示例${idx + 1}`,
+        total_score: 85 - idx * 0.1,
+      })),
+    ]
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = new URL(asRequest(input).url)
+      if (url.pathname === '/api/market/overview') {
+        return Promise.resolve(jsonResponse(SAMPLE_OVERVIEW))
+      }
+      if (url.pathname === '/api/market/discovery') {
+        return Promise.resolve(jsonResponse(SAMPLE_DISCOVERY))
+      }
+      if (url.pathname === '/api/stocks/screener') {
+        return Promise.resolve(
+          jsonResponse({
+            total_synced: 500,
+            filtered_count: 500,
+            industries: ['食品饮料', '电力设备', '家用电器'],
+            items: top50Items,
+          } satisfies StockScreenerResponse),
+        )
+      }
+      return Promise.resolve(jsonResponse({ detail: `Unhandled ${url.pathname}` }, 500))
+    })
+
+    renderMarketPage()
+
+    const quickGroup = await screen.findByRole('group', { name: '精选已同步示例标的' })
+    expect(
+      await within(quickGroup).findByRole('link', { name: /600519.*贵州茅台.*现金牛/ }),
+    ).toHaveAttribute('href', '/stock/600519')
+    expect(
+      within(quickGroup).getByRole('link', { name: /600900.*长江电力.*红利防守/ }),
+    ).toHaveAttribute('href', '/stock/600900')
+    expect(
+      within(quickGroup).getByRole('link', { name: /600177.*雅戈尔.*投资依赖反例/ }),
+    ).toHaveAttribute('href', '/stock/600177')
+    expect(
+      within(quickGroup).getByRole('link', { name: /600036.*招商银行.*高息银行/ }),
+    ).toHaveAttribute('href', '/stock/600036')
+    expect(
+      within(quickGroup).getByRole('link', { name: /300750.*宁德时代.*制造龙头/ }),
+    ).toHaveAttribute('href', '/stock/300750')
+    expect(within(quickGroup).getAllByRole('link')).toHaveLength(5)
+
+    const screenerTable = screen.getByRole('table', { name: '价值筛选结果明细表' })
+    expect(within(screenerTable).queryByText('长江电力')).not.toBeInTheDocument()
+    expect(within(screenerTable).queryByText('雅戈尔')).not.toBeInTheDocument()
+    expect(within(screenerTable).queryByText('招商银行')).not.toBeInTheDocument()
+  })
 })

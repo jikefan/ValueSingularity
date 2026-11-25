@@ -1,4 +1,5 @@
 import type { CustomGlossaryEntry } from '../../components/ui/InfoHint'
+import { formatStockName } from '../../lib/format'
 import type { MarketTemperature, StockScreenerItem, TemperatureLevel } from '../../types/api'
 
 export const LEVEL_META: Record<
@@ -39,37 +40,51 @@ export function getIndexHintEntry(name: string): CustomGlossaryEntry {
   }
 }
 
-const CURATED_FEATURED_TARGETS: ReadonlyArray<{ code: string; roleTag: string }> = [
-  { code: '600519', roleTag: '现金牛' },
-  { code: '600900', roleTag: '红利防守' },
-  { code: '600177', roleTag: '投资依赖反例' },
-  { code: '600036', roleTag: '高息银行' },
-  { code: '300750', roleTag: '制造龙头' },
+const CURATED_FEATURED_TARGETS: ReadonlyArray<{ code: string; name: string; roleTag: string }> = [
+  { code: '600519', name: '贵州茅台', roleTag: '现金牛' },
+  { code: '600900', name: '长江电力', roleTag: '红利防守' },
+  { code: '600177', name: '雅戈尔', roleTag: '投资依赖反例' },
+  { code: '600036', name: '招商银行', roleTag: '高息银行' },
+  { code: '300750', name: '宁德时代', roleTag: '制造龙头' },
 ]
 
-export type FeaturedSyncedStock = {
-  item: StockScreenerItem
+export type FeaturedQuickLink = {
+  code: string
+  name: string
   badgeText: string | null
 }
+
+const REAL_POOL_MIN_SYNCED = 50
 
 export function pickFeaturedSyncedStocks(
   items: readonly StockScreenerItem[],
   limit = 5,
-): FeaturedSyncedStock[] {
-  if (items.length === 0 || limit <= 0) {
+  totalSynced = items.length,
+): FeaturedQuickLink[] {
+  if (limit <= 0 || (items.length === 0 && totalSynced < REAL_POOL_MIN_SYNCED)) {
     return []
   }
 
   const byCode = new Map(items.map((item) => [item.code, item]))
-  const picked: FeaturedSyncedStock[] = []
+  const picked: FeaturedQuickLink[] = []
   const pickedCodes = new Set<string>()
   const seenIndustries = new Set<string>()
+  const allowCuratedFallback = totalSynced >= REAL_POOL_MIN_SYNCED
 
   for (const target of CURATED_FEATURED_TARGETS) {
     if (picked.length >= limit) break
     const matched = byCode.get(target.code)
-    if (!matched) continue
-    picked.push({ item: matched, badgeText: target.roleTag })
+    if (!matched) {
+      if (!allowCuratedFallback) continue
+      picked.push({ code: target.code, name: target.name, badgeText: target.roleTag })
+      pickedCodes.add(target.code)
+      continue
+    }
+    picked.push({
+      code: matched.code,
+      name: formatStockName(matched.name),
+      badgeText: target.roleTag,
+    })
     pickedCodes.add(matched.code)
     const industryKey = matched.industry_sw1?.trim() ?? ''
     if (industryKey) seenIndustries.add(industryKey)
@@ -91,7 +106,11 @@ export function pickFeaturedSyncedStocks(
     const industryKey = item.industry_sw1?.trim() ?? ''
     if (industryKey && seenIndustries.has(industryKey)) continue
     if (industryKey) seenIndustries.add(industryKey)
-    picked.push({ item, badgeText: industryKey || null })
+    picked.push({
+      code: item.code,
+      name: formatStockName(item.name),
+      badgeText: industryKey || null,
+    })
     pickedCodes.add(item.code)
   }
 
@@ -99,7 +118,11 @@ export function pickFeaturedSyncedStocks(
     if (picked.length >= limit) break
     if (pickedCodes.has(item.code)) continue
     const industryKey = item.industry_sw1?.trim() ?? ''
-    picked.push({ item, badgeText: industryKey || null })
+    picked.push({
+      code: item.code,
+      name: formatStockName(item.name),
+      badgeText: industryKey || null,
+    })
     pickedCodes.add(item.code)
   }
 

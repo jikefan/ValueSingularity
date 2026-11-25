@@ -8,7 +8,7 @@ import { EmptyBlock, ErrorBlock, LoadingBlock } from '../../components/ui/StateB
 import { Tag } from '../../components/ui/Tag'
 import { createChartTheme } from '../../lib/chartTheme'
 import { Chart, type ChartOption } from '../../lib/charts'
-import { chgClass, fmtDateTime, fmtMoney, fmtNum, fmtPct, formatStockName } from '../../lib/format'
+import { chgClass, fmtDateTime, fmtMoney, fmtNum, fmtPct } from '../../lib/format'
 import { useThemeMode } from '../../lib/theme'
 import { useStockScreener } from '../../lib/useStockAnalysis'
 import type { MarketOverview, ScreenerQualityFilter } from '../../types/api'
@@ -233,8 +233,9 @@ export function MarketPage() {
   const [qualityFilter, setQualityFilter] = useState<ScreenerQualityFilter | undefined>(undefined)
 
   const featuredStocks = useMemo(
-    () => pickFeaturedSyncedStocks(poolQuery.data?.items ?? [], 5),
-    [poolQuery.data?.items],
+    () =>
+      pickFeaturedSyncedStocks(poolQuery.data?.items ?? [], 5, poolQuery.data?.total_synced ?? 0),
+    [poolQuery.data?.items, poolQuery.data?.total_synced],
   )
 
   function scrollToScreener() {
@@ -343,10 +344,10 @@ export function MarketPage() {
           ) : featuredStocks.length === 0 ? (
             <span className="small muted">暂无已同步全量快照标的，请先通过同步任务接入。</span>
           ) : (
-            featuredStocks.map(({ item, badgeText }) => (
-              <Link key={item.code} className="sample-stock-chip" to={`/stock/${item.code}`}>
-                <span className="mono">{item.code}</span>
-                <span>{formatStockName(item.name)}</span>
+            featuredStocks.map(({ code, name, badgeText }) => (
+              <Link key={code} className="sample-stock-chip" to={`/stock/${code}`}>
+                <span className="mono">{code}</span>
+                <span>{name}</span>
                 {badgeText ? <span className="small muted">{`· ${badgeText}`}</span> : null}
               </Link>
             ))

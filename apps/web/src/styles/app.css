@@ -3012,6 +3012,10 @@ p {
   .sample-stock-row-scroll::-webkit-scrollbar {
     display: none;
   }
+  .sample-stock-row-scroll > .small {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
   .sample-stock-row-scroll .sample-stock-chip {
     flex: 0 0 auto;
     white-space: nowrap;
